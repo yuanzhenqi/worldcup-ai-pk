@@ -13,10 +13,30 @@ describe("admin raw API-Football fixtures sync", () => {
     saveApiFootballKey(db, "secret-api-football-key");
 
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ response: [{ fixture: { id: 1001 } }] }), {
+      new Response(
+        JSON.stringify({
+          response: [
+            {
+              fixture: {
+                id: 1001,
+                date: "2026-06-12T19:00:00+00:00",
+                venue: { name: "BMO Field" },
+                status: { short: "NS" }
+              },
+              league: { round: "Group Stage - 1" },
+              teams: {
+                home: { id: 5529, name: "Canada", logo: null },
+                away: { id: 1113, name: "Bosnia & Herzegovina", logo: null }
+              },
+              goals: { home: null, away: null }
+            }
+          ]
+        }),
+        {
         status: 200,
         headers: { "content-type": "application/json" }
-      })
+        }
+      )
     );
 
     const app = buildApp({ databasePath, logger: false });
@@ -27,7 +47,7 @@ describe("admin raw API-Football fixtures sync", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ captured: true });
+    expect(response.json()).toEqual({ captured: true, imported: 1 });
     expect(fetchMock).toHaveBeenCalledWith("https://v3.football.api-sports.io/fixtures?league=1&season=2026", {
       headers: {
         "x-apisports-key": "secret-api-football-key"
@@ -40,7 +60,24 @@ describe("admin raw API-Football fixtures sync", () => {
 
     expect(row.source).toBe("api-football");
     expect(row.message).toBe("Captured raw World Cup fixtures response");
-    expect(JSON.parse(row.details_json)).toEqual({ response: [{ fixture: { id: 1001 } }] });
+    expect(JSON.parse(row.details_json)).toEqual({
+      response: [
+        {
+          fixture: {
+            id: 1001,
+            date: "2026-06-12T19:00:00+00:00",
+            venue: { name: "BMO Field" },
+            status: { short: "NS" }
+          },
+          league: { round: "Group Stage - 1" },
+          teams: {
+            home: { id: 5529, name: "Canada", logo: null },
+            away: { id: 1113, name: "Bosnia & Herzegovina", logo: null }
+          },
+          goals: { home: null, away: null }
+        }
+      ]
+    });
 
     await app.close();
   });

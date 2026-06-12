@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Database } from "better-sqlite3";
 import { z } from "zod";
+import { importApiFootballFixturesResponse } from "../football/fixtureImport.service";
 import { FootballService } from "../football/football.service";
 import { writeSystemLog } from "../logs/log.service";
 import { getApiFootballKey, hasApiFootballKey, saveApiFootballKey } from "../settings/settings.repository";
@@ -84,6 +85,8 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
       });
     }
 
-    return { captured: true };
+    const importResult = importApiFootballFixturesResponse(options.db, fixturesResponse);
+
+    return { captured: true, imported: importResult.imported };
   });
 }
