@@ -3,6 +3,61 @@ import { buildApp } from "../src/app";
 import { createTestDatabase } from "./support/testDatabase";
 
 describe("admin config API", () => {
+  it("returns admin summary counts", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO matches (
+          id,
+          api_football_fixture_id,
+          stage,
+          kickoff_at,
+          status,
+          venue,
+          home_team_id,
+          home_team_name,
+          home_team_logo_url,
+          away_team_id,
+          away_team_name,
+          away_team_logo_url,
+          home_score,
+          away_score,
+          last_synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "match-1",
+      1001,
+      "Group Stage",
+      "2026-06-12T19:00:00.000Z",
+      "finished",
+      null,
+      "16",
+      "Mexico",
+      null,
+      "1531",
+      "South Africa",
+      null,
+      2,
+      0,
+      "2026-06-12T10:00:00.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "GET", url: "/api/admin/summary", remoteAddress: "127.0.0.1" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      matchCount: 1,
+      scheduledCount: 0,
+      liveCount: 0,
+      finishedCount: 1
+    });
+
+    await app.close();
+  });
+
   it("saves OpenAI-compatible providers without returning API keys", async () => {
     const { db, databasePath } = createTestDatabase();
     db.close();

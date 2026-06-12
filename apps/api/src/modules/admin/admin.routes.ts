@@ -8,6 +8,7 @@ import {
   deleteAiModel,
   deleteAiProvider,
   deletePromptTemplate,
+  getAdminSummary,
   listAiModels,
   listAiProviders,
   listPromptTemplates,
@@ -97,6 +98,8 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
     ok: true,
     service: "worldcup-ai-pk-admin"
   }));
+
+  app.get("/summary", async () => getAdminSummary(options.db));
 
   app.get("/settings/api-football", async () => ({
     configured: hasApiFootballKey(options.db)
@@ -212,6 +215,39 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
     }
 
     return updateTeamDisplayName(options.db, getIdParam(request, "apiFootballTeamId"), parsed.data.displayNameZh);
+  });
+
+  app.post("/sync/api-football/fixtures", async (request, reply) => {
+    const apiKey = getApiFootballKey(options.db);
+
+    if (!apiKey) {
+      return reply.code(400).send({ error: "API-Football key is not configured" });
+    }
+
+    const footballService = new FootballService({ apiKey });
+    const fixturesResponse = await footballService.getWorldCupFixtures();
+    const errors = getApiFootballErrors(fixturesResponse);
+
+    if (errors) {
+      writeSystemLog(options.db, {
+        level: "error",
+        source: "api-football",
+        message: "API-Football fixtures sync failed",
+        details: { errors }
+      });
+      return reply.code(502).send({ synced: false, error: "API-Football returned errors", errors });
+    }
+
+    const importResult = importApiFootballFixturesResponse(options.db, fixturesResponse);
+
+    writeSystemLog(options.db, {
+      level: "info",
+      source: "api-football",
+      message: "API-Football fixtures synced",
+      details: importResult
+    });
+
+    return { synced: true, imported: importResult.imported };
   });
 
   app.post("/sync/api-football/fixtures/raw", async (request, reply) => {
