@@ -1,13 +1,13 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDatabase } from "../../src/db/connection";
+import { applySchema } from "../../src/db/schema";
 
 export function createTestDatabase() {
   const directory = mkdtempSync(join(tmpdir(), "worldcup-ai-pk-"));
   const databasePath = join(directory, "test.sqlite");
   const db = createDatabase(databasePath);
-  const schema = readFileSync(new URL("../../src/db/schema.sql", import.meta.url), "utf8");
-  db.exec(schema);
+  applySchema(db);
   return { db, databasePath };
 }
