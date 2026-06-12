@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { MatchStatus } from "@worldcup-ai-pk/shared";
+import { upsertTeamDisplayName } from "../teams/teamDisplayName.repository";
 
 interface ApiFootballFixture {
   fixture?: {
@@ -126,6 +127,21 @@ export function importApiFootballFixturesResponse(
       const homeTeamName = requireString(item.teams?.home?.name, "teams.home.name");
       const awayTeamId = requireNumber(item.teams?.away?.id, "teams.away.id");
       const awayTeamName = requireString(item.teams?.away?.name, "teams.away.name");
+      const now = syncedAt;
+
+      upsertTeamDisplayName(db, {
+        apiFootballTeamId: String(homeTeamId),
+        originalName: homeTeamName,
+        logoUrl: item.teams?.home?.logo ?? null,
+        now
+      });
+
+      upsertTeamDisplayName(db, {
+        apiFootballTeamId: String(awayTeamId),
+        originalName: awayTeamName,
+        logoUrl: item.teams?.away?.logo ?? null,
+        now
+      });
 
       statement.run(
         `api-football-${fixtureId}`,

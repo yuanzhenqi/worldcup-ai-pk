@@ -77,3 +77,11 @@ export interface PredictionRequestResponseDto {
   message: string;
   scheduledFor: string | null;
 }
+
+export interface TeamDisplayNameDto {
+  apiFootballTeamId: string;
+  originalName: string;
+  displayNameZh: string;
+  logoUrl: string | null;
+  source: "seed" | "admin" | "api-football";
+}
