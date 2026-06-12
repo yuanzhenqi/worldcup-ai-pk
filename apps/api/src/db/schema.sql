@@ -19,6 +19,16 @@ CREATE TABLE IF NOT EXISTS matches (
   last_synced_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS team_display_names (
+  api_football_team_id TEXT PRIMARY KEY,
+  original_name TEXT NOT NULL,
+  display_name_zh TEXT NOT NULL,
+  logo_url TEXT,
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS odds_snapshots (
   id TEXT PRIMARY KEY,
   match_id TEXT NOT NULL REFERENCES matches(id),
@@ -47,6 +57,8 @@ CREATE TABLE IF NOT EXISTS api_predictions (
 CREATE TABLE IF NOT EXISTS ai_providers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  base_url TEXT NOT NULL,
   api_key TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
@@ -68,8 +80,10 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
   name TEXT NOT NULL,
   full_prompt TEXT NOT NULL,
   prompt_summary TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   scope TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
+  is_default INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -149,3 +163,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+ALTER TABLE ai_providers ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE ai_providers ADD COLUMN base_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE prompt_templates ADD COLUMN description TEXT NOT NULL DEFAULT '';
+ALTER TABLE prompt_templates ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0;

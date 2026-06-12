@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
+import { applySchema } from "../src/db/schema";
 import { createDatabase } from "../src/db/connection";
 
 describe("schema migration on app startup", () => {
@@ -45,5 +46,34 @@ describe("schema migration on app startup", () => {
     expect(response.json()).toEqual({ configured: true });
 
     await app.close();
+  });
+
+  it("creates config and team display migration columns", () => {
+    const directory = mkdtempSync(join(tmpdir(), "worldcup-ai-pk-schema-"));
+    const databasePath = join(directory, "test.sqlite");
+    const db = createDatabase(databasePath);
+
+    applySchema(db);
+
+    const teamColumns = db.prepare("PRAGMA table_info(team_display_names)").all() as Array<{ name: string }>;
+    expect(teamColumns.map((column) => column.name)).toEqual([
+      "api_football_team_id",
+      "original_name",
+      "display_name_zh",
+      "logo_url",
+      "source",
+      "created_at",
+      "updated_at"
+    ]);
+
+    const providerColumns = db.prepare("PRAGMA table_info(ai_providers)").all() as Array<{ name: string }>;
+    expect(providerColumns.map((column) => column.name)).toContain("display_name");
+    expect(providerColumns.map((column) => column.name)).toContain("base_url");
+
+    const promptColumns = db.prepare("PRAGMA table_info(prompt_templates)").all() as Array<{ name: string }>;
+    expect(promptColumns.map((column) => column.name)).toContain("description");
+    expect(promptColumns.map((column) => column.name)).toContain("is_default");
+
+    db.close();
   });
 });
