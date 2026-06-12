@@ -142,6 +142,49 @@ a {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.settings-form {
+  background: #ffffff;
+  border: 1px solid #d8dee4;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+.settings-form label {
+  font-weight: 700;
+}
+
+.settings-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+}
+
+.settings-row input {
+  border: 1px solid #b8c3c0;
+  border-radius: 6px;
+  font: inherit;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.settings-row button {
+  background: #173f35;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 16px;
+}
+
+.settings-status {
+  color: #50606a;
+  margin: 0;
+}
+
 .admin-card {
   background: #ffffff;
   border: 1px solid #d8dee4;
@@ -192,6 +235,10 @@ td {
   }
 
   .admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-row {
     grid-template-columns: 1fr;
   }
 }

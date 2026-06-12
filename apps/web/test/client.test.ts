@@ -1,0 +1,38 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getAdminApiFootballSettings, saveAdminApiFootballKey } from "../src/api/client";
+
+describe("web API client", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("loads API-Football configuration status", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ configured: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(getAdminApiFootballSettings()).resolves.toEqual({ configured: true });
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/settings/api-football");
+  });
+
+  it("saves API-Football key through local admin API", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ configured: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(saveAdminApiFootballKey("secret-api-football-key")).resolves.toEqual({ configured: true });
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/settings/api-football", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ apiKey: "secret-api-football-key" })
+    });
+  });
+});
