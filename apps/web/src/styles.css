@@ -82,6 +82,25 @@ a {
   gap: 12px;
 }
 
+.status-line {
+  margin: 24px auto 0;
+  max-width: 960px;
+  padding: 0 24px;
+}
+
+.status-line.error {
+  color: #a33a2a;
+}
+
+.empty-state {
+  background: #ffffff;
+  border: 1px dashed #b8c3c0;
+  border-radius: 8px;
+  color: #50606a;
+  margin: 0;
+  padding: 18px;
+}
+
 .match-row,
 .prediction-card,
 .detail-grid article {

@@ -9,6 +9,7 @@ export function FixturesPage({ matches }: FixturesPageProps) {
     <section id="fixtures" className="page-section">
       <h2>赛程</h2>
       <div className="match-list">
+        {matches.length === 0 ? <p className="empty-state">暂无赛程数据。配置 API-Football key 并同步后会显示在这里。</p> : null}
         {matches.map((match) => (
           <article className="match-row" key={match.id}>
             <time>{new Date(match.kickoffAt).toLocaleString("zh-CN")}</time>

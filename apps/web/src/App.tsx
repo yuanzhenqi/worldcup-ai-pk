@@ -1,12 +1,36 @@
+import { useEffect, useState } from "react";
 import type { MatchDto } from "@worldcup-ai-pk/shared";
+import { getPublicMatches } from "./api/client";
 import { AdminPage } from "./pages/AdminPage";
 import { FixturesPage } from "./pages/FixturesPage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 import "./styles.css";
 
-const sampleMatches: MatchDto[] = [];
-
 export function App() {
+  const [matches, setMatches] = useState<MatchDto[]>([]);
+  const [matchesStatus, setMatchesStatus] = useState<"loading" | "loaded" | "failed">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getPublicMatches()
+      .then((nextMatches) => {
+        if (!cancelled) {
+          setMatches(nextMatches);
+          setMatchesStatus("loaded");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMatchesStatus("failed");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -24,7 +48,9 @@ export function App() {
         <h2>赛程、赔率与 AI 预测对比</h2>
         <p>公开页面展示比赛信息、赔率摘要、AI 预测和模型排行榜。后台仅本机访问。</p>
       </section>
-      <FixturesPage matches={sampleMatches} />
+      {matchesStatus === "loading" ? <p className="status-line">正在加载赛程...</p> : null}
+      {matchesStatus === "failed" ? <p className="status-line error">赛程加载失败，请确认 API 服务正在运行。</p> : null}
+      <FixturesPage matches={matches} />
       <LeaderboardPage rows={[]} />
       <AdminPage />
     </main>
