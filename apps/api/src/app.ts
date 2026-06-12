@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { loadEnv } from "./config/env";
+import { registerAdminRoutes } from "./modules/admin/admin.routes";
 import { registerPublicRoutes } from "./modules/public/public.routes";
 
 export function buildApp() {
@@ -12,6 +13,7 @@ export function buildApp() {
   });
 
   app.register(registerPublicRoutes, { prefix: "/api/public" });
+  app.register(registerAdminRoutes, { prefix: "/api/admin" });
 
   return app;
 }

@@ -1,4 +1,5 @@
 import type { MatchDto } from "@worldcup-ai-pk/shared";
+import { AdminPage } from "./pages/AdminPage";
 import { FixturesPage } from "./pages/FixturesPage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 import "./styles.css";
@@ -25,6 +26,7 @@ export function App() {
       </section>
       <FixturesPage matches={sampleMatches} />
       <LeaderboardPage rows={[]} />
+      <AdminPage />
     </main>
   );
 }
