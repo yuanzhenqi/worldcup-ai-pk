@@ -6,6 +6,10 @@ export interface ApiFootballSettingsStatus {
   configured: boolean;
 }
 
+export interface RawFixturesCaptureResult {
+  captured: boolean;
+}
+
 export async function getPublicHealth(): Promise<{ ok: boolean; service: string }> {
   const response = await fetch(`${apiBaseUrl}/api/public/health`);
   if (!response.ok) {
@@ -43,4 +47,14 @@ export async function saveAdminApiFootballKey(apiKey: string): Promise<ApiFootba
     throw new Error(`Admin API-Football settings save failed with status ${response.status}`);
   }
   return (await response.json()) as ApiFootballSettingsStatus;
+}
+
+export async function captureApiFootballFixturesRaw(): Promise<RawFixturesCaptureResult> {
+  const response = await fetch(`${apiBaseUrl}/api/admin/sync/api-football/fixtures/raw`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(`Raw API-Football fixtures capture failed with status ${response.status}`);
+  }
+  return (await response.json()) as RawFixturesCaptureResult;
 }

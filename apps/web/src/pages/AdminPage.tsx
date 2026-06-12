@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { getAdminApiFootballSettings, saveAdminApiFootballKey } from "../api/client";
+import { captureApiFootballFixturesRaw, getAdminApiFootballSettings, saveAdminApiFootballKey } from "../api/client";
 
 const modules = ["模型配置", "提示词配置", "比赛数据同步", "预测任务", "预测记录", "人工修正", "系统日志"];
 
@@ -51,6 +51,17 @@ export function AdminPage() {
     }
   }
 
+  async function handleCaptureRawFixtures() {
+    setStatusText("正在抓取 API-Football 原始赛程响应...");
+
+    try {
+      await captureApiFootballFixturesRaw();
+      setStatusText("原始赛程响应已写入系统日志，下一步可基于真实响应实现字段映射");
+    } catch {
+      setStatusText("抓取失败，请确认 API-Football key 已配置且可用");
+    }
+  }
+
   return (
     <section id="admin" className="page-section admin-section">
       <h2>本地后台</h2>
@@ -69,6 +80,11 @@ export function AdminPage() {
         </div>
         <p className="settings-status">{statusText}</p>
       </form>
+      <div className="settings-actions">
+        <button type="button" onClick={handleCaptureRawFixtures} disabled={!configured}>
+          抓取原始赛程响应
+        </button>
+      </div>
       <div className="admin-grid">
         {modules.map((module) => (
           <article className="admin-card" key={module}>

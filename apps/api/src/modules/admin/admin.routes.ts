@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Database } from "better-sqlite3";
 import { z } from "zod";
-import { hasApiFootballKey, saveApiFootballKey } from "../settings/settings.repository";
+import { FootballService } from "../football/football.service";
+import { writeSystemLog } from "../logs/log.service";
+import { getApiFootballKey, hasApiFootballKey, saveApiFootballKey } from "../settings/settings.repository";
 
 export interface AdminRoutesOptions {
   db: Database;
@@ -41,5 +43,25 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
 
     saveApiFootballKey(options.db, parsed.data.apiKey);
     return { configured: true };
+  });
+
+  app.post("/sync/api-football/fixtures/raw", async (request, reply) => {
+    const apiKey = getApiFootballKey(options.db);
+
+    if (!apiKey) {
+      return reply.code(400).send({ error: "API-Football key is not configured" });
+    }
+
+    const footballService = new FootballService({ apiKey });
+    const fixturesResponse = await footballService.getWorldCupFixtures();
+
+    writeSystemLog(options.db, {
+      level: "info",
+      source: "api-football",
+      message: "Captured raw World Cup fixtures response",
+      details: fixturesResponse
+    });
+
+    return { captured: true };
   });
 }

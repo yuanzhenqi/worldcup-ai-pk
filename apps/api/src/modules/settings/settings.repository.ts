@@ -15,9 +15,13 @@ export function saveApiFootballKey(db: Database, apiKey: string, now = new Date(
 }
 
 export function hasApiFootballKey(db: Database): boolean {
+  return Boolean(getApiFootballKey(db));
+}
+
+export function getApiFootballKey(db: Database): string | null {
   const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get(apiFootballKey) as
     | { value: string }
     | undefined;
 
-  return Boolean(row?.value);
+  return row?.value ?? null;
 }
