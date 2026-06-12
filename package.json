@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --parallel --filter @worldcup-ai-pk/api --filter @worldcup-ai-pk/web dev",
-    "build": "pnpm --recursive build",
-    "test": "pnpm --recursive test",
-    "lint": "pnpm --recursive lint",
-    "typecheck": "pnpm --recursive typecheck"
+    "dev": "corepack pnpm --parallel --filter @worldcup-ai-pk/api --filter @worldcup-ai-pk/web dev",
+    "build": "corepack pnpm --recursive build",
+    "test": "corepack pnpm --recursive test",
+    "lint": "corepack pnpm --recursive lint",
+    "typecheck": "corepack pnpm --recursive typecheck"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
