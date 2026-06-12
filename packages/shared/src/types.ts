@@ -87,3 +87,44 @@ export interface TeamDisplayNameDto {
   logoUrl: string | null;
   source: "seed" | "admin" | "api-football";
 }
+
+export interface AdminSummaryDto {
+  matchCount: number;
+  scheduledCount: number;
+  liveCount: number;
+  finishedCount: number;
+  latestSyncLog: {
+    level: string;
+    source: string;
+    message: string;
+    createdAt: string;
+  } | null;
+}
+
+export interface AiProviderConfigDto {
+  id: string;
+  name: string;
+  displayName: string;
+  baseUrl: string;
+  enabled: boolean;
+  apiKeyConfigured: boolean;
+}
+
+export interface AiModelConfigDto {
+  id: string;
+  providerId: string;
+  modelName: string;
+  displayName: string;
+  enabled: boolean;
+}
+
+export interface PromptTemplateConfigDto {
+  id: string;
+  name: string;
+  description: string;
+  fullPrompt: string;
+  promptSummary: string;
+  scope: string;
+  enabled: boolean;
+  isDefault: boolean;
+}
