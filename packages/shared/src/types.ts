@@ -5,6 +5,7 @@ export type PredictionResult = "home" | "draw" | "away";
 export interface TeamDto {
   id: string;
   name: string;
+  displayNameZh: string;
   logoUrl: string | null;
 }
 
@@ -14,6 +15,7 @@ export interface MatchDto {
   stage: string;
   kickoffAt: string;
   status: MatchStatus;
+  statusLabelZh: string;
   venue: string | null;
   homeTeam: TeamDto;
   awayTeam: TeamDto;

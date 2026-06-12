@@ -33,13 +33,41 @@ describe("public matches API", () => {
       "scheduled",
       "Estadio Azteca",
       "team-home",
-      "墨西哥",
+      "Mexico",
       null,
       "team-away",
+      "Canada",
+      null,
+      null,
+      null,
+      "2026-06-12T10:00:00.000Z"
+    );
+    db.prepare(
+      `
+        INSERT INTO team_display_names (
+          api_football_team_id,
+          original_name,
+          display_name_zh,
+          logo_url,
+          source,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "team-home",
+      "Mexico",
+      "墨西哥",
+      null,
+      "admin",
+      "2026-06-12T10:00:00.000Z",
+      "2026-06-12T10:00:00.000Z",
+      "team-away",
+      "Canada",
       "加拿大",
       null,
-      null,
-      null,
+      "admin",
+      "2026-06-12T10:00:00.000Z",
       "2026-06-12T10:00:00.000Z"
     );
     db.close();
@@ -56,15 +84,18 @@ describe("public matches API", () => {
       stage: "Group Stage",
       kickoffAt: "2026-06-12T19:00:00.000Z",
       status: "scheduled",
+      statusLabelZh: "未开始",
       venue: "Estadio Azteca",
       homeTeam: {
         id: "team-home",
-        name: "墨西哥",
+        name: "Mexico",
+        displayNameZh: "墨西哥",
         logoUrl: null
       },
       awayTeam: {
         id: "team-away",
-        name: "加拿大",
+        name: "Canada",
+        displayNameZh: "加拿大",
         logoUrl: null
       },
       homeScore: null,

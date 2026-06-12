@@ -86,15 +86,18 @@ describe("importApiFootballFixturesResponse", () => {
         stage: "Group Stage - 1",
         kickoffAt: "2026-06-11T19:00:00.000Z",
         status: "finished",
+        statusLabelZh: "已结束",
         venue: "Estadio Azteca",
         homeTeam: {
           id: "16",
           name: "Mexico",
+          displayNameZh: "墨西哥",
           logoUrl: "https://media.api-sports.io/football/teams/16.png"
         },
         awayTeam: {
           id: "1531",
           name: "South Africa",
+          displayNameZh: "南非",
           logoUrl: "https://media.api-sports.io/football/teams/1531.png"
         },
         homeScore: 2,
@@ -108,15 +111,18 @@ describe("importApiFootballFixturesResponse", () => {
         stage: "Group Stage - 1",
         kickoffAt: "2026-06-12T19:00:00.000Z",
         status: "scheduled",
+        statusLabelZh: "未开始",
         venue: "BMO Field",
         homeTeam: {
           id: "5529",
           name: "Canada",
+          displayNameZh: "加拿大",
           logoUrl: "https://media.api-sports.io/football/teams/5529.png"
         },
         awayTeam: {
           id: "1113",
           name: "Bosnia & Herzegovina",
+          displayNameZh: "波黑",
           logoUrl: "https://media.api-sports.io/football/teams/1113.png"
         },
         homeScore: null,
