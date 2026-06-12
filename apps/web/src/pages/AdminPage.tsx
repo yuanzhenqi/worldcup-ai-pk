@@ -57,8 +57,8 @@ export function AdminPage() {
     try {
       await captureApiFootballFixturesRaw();
       setStatusText("原始赛程响应已写入系统日志，下一步可基于真实响应实现字段映射");
-    } catch {
-      setStatusText("抓取失败，请确认 API-Football key 已配置且可用");
+    } catch (error) {
+      setStatusText(error instanceof Error ? `抓取失败：${error.message}` : "抓取失败，请确认 API-Football key 已配置且可用");
     }
   }
 

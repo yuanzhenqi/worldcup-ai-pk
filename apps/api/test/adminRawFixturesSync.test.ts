@@ -44,4 +44,43 @@ describe("admin raw API-Football fixtures sync", () => {
 
     await app.close();
   });
+
+  it("returns API-Football errors without marking capture successful", async () => {
+    const { db, databasePath } = createTestDatabase();
+    saveApiFootballKey(db, "secret-api-football-key");
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          errors: {
+            plan: "Free plans do not have access to this season, try from 2022 to 2024."
+          },
+          results: 0,
+          response: []
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      )
+    );
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/sync/api-football/fixtures/raw",
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({
+      captured: false,
+      error: "API-Football returned errors",
+      errors: {
+        plan: "Free plans do not have access to this season, try from 2022 to 2024."
+      }
+    });
+
+    await app.close();
+  });
 });

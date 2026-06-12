@@ -13,6 +13,19 @@ const apiFootballSettingsSchema = z.object({
   apiKey: z.string().min(1)
 });
 
+function getApiFootballErrors(response: unknown): unknown | null {
+  if (!response || typeof response !== "object" || !("errors" in response)) {
+    return null;
+  }
+
+  const errors = (response as { errors: unknown }).errors;
+  if (!errors || typeof errors !== "object") {
+    return null;
+  }
+
+  return Object.keys(errors).length > 0 ? errors : null;
+}
+
 function isLocalRequest(request: FastifyRequest): boolean {
   const ip = request.ip;
   return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
@@ -54,6 +67,7 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
 
     const footballService = new FootballService({ apiKey });
     const fixturesResponse = await footballService.getWorldCupFixtures();
+    const errors = getApiFootballErrors(fixturesResponse);
 
     writeSystemLog(options.db, {
       level: "info",
@@ -61,6 +75,14 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
       message: "Captured raw World Cup fixtures response",
       details: fixturesResponse
     });
+
+    if (errors) {
+      return reply.code(502).send({
+        captured: false,
+        error: "API-Football returned errors",
+        errors
+      });
+    }
 
     return { captured: true };
   });

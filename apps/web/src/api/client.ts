@@ -8,6 +8,8 @@ export interface ApiFootballSettingsStatus {
 
 export interface RawFixturesCaptureResult {
   captured: boolean;
+  error?: string;
+  errors?: unknown;
 }
 
 export async function getPublicHealth(): Promise<{ ok: boolean; service: string }> {
@@ -54,7 +56,8 @@ export async function captureApiFootballFixturesRaw(): Promise<RawFixturesCaptur
     method: "POST"
   });
   if (!response.ok) {
-    throw new Error(`Raw API-Football fixtures capture failed with status ${response.status}`);
+    const body = (await response.json().catch(() => null)) as RawFixturesCaptureResult | null;
+    throw new Error(body?.error ?? `Raw API-Football fixtures capture failed with status ${response.status}`);
   }
   return (await response.json()) as RawFixturesCaptureResult;
 }
