@@ -73,11 +73,57 @@ export interface LeaderboardRowDto {
   recentScores: number[];
 }
 
+export type PredictionTaskType =
+  | "result_1x2"
+  | "scoreline"
+  | "odds_interpretation"
+  | "player_lineup_impact"
+  | "head_to_head"
+  | "upset_risk";
+
+export type PredictionOutputStyle = "concise" | "detailed";
+
+export interface PredictionDataOptionsDto {
+  useOdds: boolean;
+  useApiFootballPrediction: boolean;
+  useHeadToHead: boolean;
+  usePlayerLineupInjuries: boolean;
+}
+
+export type FixtureContextDomain = "odds" | "api_prediction" | "head_to_head" | "squad";
+
+export type FixtureContextDomainStatus = "cached" | "unavailable" | "refresh_failed" | "not_requested";
+
+export interface FixtureContextDomainSummaryDto {
+  domain: FixtureContextDomain;
+  status: FixtureContextDomainStatus;
+  summary: string;
+  lastSyncedAt: string | null;
+  error: string | null;
+}
+
+export interface FixtureContextSummaryDto {
+  matchId: string;
+  completeness: "full" | "partial" | "base_only";
+  domains: FixtureContextDomainSummaryDto[];
+  createdAt: string | null;
+}
+
+export interface PredictionRequestInputDto {
+  taskTypes: PredictionTaskType[];
+  dataOptions: PredictionDataOptionsDto;
+  promptTemplateId: string | null;
+  customPrompt: string;
+  outputStyle: PredictionOutputStyle;
+  refreshContext: boolean;
+}
+
 export interface PredictionRequestResponseDto {
   matchId: string;
   status: "scheduled" | "running" | "rejected" | "rate_limited";
   message: string;
   scheduledFor: string | null;
+  context: FixtureContextSummaryDto | null;
 }
 
 export interface TeamDisplayNameDto {

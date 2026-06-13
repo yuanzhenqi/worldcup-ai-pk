@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { applySchema } from "../src/db/schema";
 import { createDatabase } from "../src/db/connection";
+import { createTestDatabase } from "./support/testDatabase";
 
 describe("schema migration on app startup", () => {
   it("adds settings table to an existing SQLite database", async () => {
@@ -73,6 +74,33 @@ describe("schema migration on app startup", () => {
     const promptColumns = db.prepare("PRAGMA table_info(prompt_templates)").all() as Array<{ name: string }>;
     expect(promptColumns.map((column) => column.name)).toContain("description");
     expect(promptColumns.map((column) => column.name)).toContain("is_default");
+
+    db.close();
+  });
+
+  it("creates fixture context cache tables and prediction request option columns", () => {
+    const { db } = createTestDatabase();
+
+    expect(
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("fixture_context_snapshots")
+    ).toMatchObject({ name: "fixture_context_snapshots" });
+    expect(
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("fixture_data_sync_logs")
+    ).toMatchObject({ name: "fixture_data_sync_logs" });
+
+    const predictionRequestColumns = db.prepare("PRAGMA table_info(prediction_requests)").all() as Array<{ name: string }>;
+    expect(predictionRequestColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "context_snapshot_id",
+        "task_types_json",
+        "data_options_json",
+        "prompt_template_id",
+        "custom_prompt",
+        "output_style"
+      ])
+    );
+
+    expect(() => applySchema(db)).not.toThrow();
 
     db.close();
   });

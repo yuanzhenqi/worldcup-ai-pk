@@ -168,3 +168,31 @@ ALTER TABLE ai_providers ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE ai_providers ADD COLUMN base_url TEXT NOT NULL DEFAULT '';
 ALTER TABLE prompt_templates ADD COLUMN description TEXT NOT NULL DEFAULT '';
 ALTER TABLE prompt_templates ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS fixture_context_snapshots (
+  id TEXT PRIMARY KEY,
+  match_id TEXT NOT NULL REFERENCES matches(id),
+  odds_summary_json TEXT NOT NULL,
+  api_prediction_summary_json TEXT NOT NULL,
+  head_to_head_summary_json TEXT NOT NULL,
+  squad_summary_json TEXT NOT NULL,
+  completeness TEXT NOT NULL,
+  raw_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fixture_data_sync_logs (
+  id TEXT PRIMARY KEY,
+  match_id TEXT NOT NULL REFERENCES matches(id),
+  domain TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT,
+  synced_at TEXT NOT NULL
+);
+
+ALTER TABLE prediction_requests ADD COLUMN context_snapshot_id TEXT REFERENCES fixture_context_snapshots(id);
+ALTER TABLE prediction_requests ADD COLUMN task_types_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE prediction_requests ADD COLUMN data_options_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE prediction_requests ADD COLUMN prompt_template_id TEXT;
+ALTER TABLE prediction_requests ADD COLUMN custom_prompt TEXT NOT NULL DEFAULT '';
+ALTER TABLE prediction_requests ADD COLUMN output_style TEXT NOT NULL DEFAULT 'concise';
