@@ -16,6 +16,7 @@ import {
   updateAiProvider,
   updatePromptTemplate
 } from "./adminConfig.repository";
+import { refreshFixtureContext } from "../context/fixtureContext.service";
 import { importApiFootballFixturesResponse } from "../football/fixtureImport.service";
 import { FootballService } from "../football/football.service";
 import { writeSystemLog } from "../logs/log.service";
@@ -279,5 +280,34 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
     const importResult = importApiFootballFixturesResponse(options.db, fixturesResponse);
 
     return { captured: true, imported: importResult.imported };
+  });
+
+  app.post("/sync/api-football/matches/:matchId/context", async (request, reply) => {
+    const apiKey = getApiFootballKey(options.db);
+
+    if (!apiKey) {
+      return reply.code(400).send({ error: "API-Football key is not configured" });
+    }
+
+    const match = options.db
+      .prepare("SELECT id, api_football_fixture_id FROM matches WHERE id = ?")
+      .get(getIdParam(request, "matchId")) as { id: string; api_football_fixture_id: number } | undefined;
+
+    if (!match) {
+      return reply.code(404).send({ error: "Match not found" });
+    }
+
+    return refreshFixtureContext({
+      db: options.db,
+      matchId: match.id,
+      apiFootballFixtureId: match.api_football_fixture_id,
+      footballService: new FootballService({ apiKey }),
+      dataOptions: {
+        useOdds: true,
+        useApiFootballPrediction: true,
+        useHeadToHead: true,
+        usePlayerLineupInjuries: true
+      }
+    });
   });
 }

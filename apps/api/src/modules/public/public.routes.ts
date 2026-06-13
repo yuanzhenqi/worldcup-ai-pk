@@ -1,13 +1,28 @@
 import type { FastifyInstance } from "fastify";
 import type { Database } from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { MatchStatus, PredictionRequestResponseDto } from "@worldcup-ai-pk/shared";
+import { z } from "zod";
+import type { MatchStatus, PredictionDataOptionsDto, PredictionRequestResponseDto } from "@worldcup-ai-pk/shared";
+import { getFixtureContextSummary, refreshFixtureContext } from "../context/fixtureContext.service";
+import { FootballService } from "../football/football.service";
 import { listMatches } from "../matches/match.repository";
 import { planPredictionRequest } from "../predictions/prediction.service";
+import { getApiFootballKey } from "../settings/settings.repository";
 
 export interface PublicRoutesOptions {
   db: Database;
 }
+
+const predictionDataOptionsSchema = z.object({
+  useOdds: z.boolean(),
+  useApiFootballPrediction: z.boolean(),
+  useHeadToHead: z.boolean(),
+  usePlayerLineupInjuries: z.boolean()
+});
+
+const contextRefreshSchema = z.object({
+  dataOptions: predictionDataOptionsSchema
+});
 
 export async function registerPublicRoutes(app: FastifyInstance, options: PublicRoutesOptions): Promise<void> {
   app.get("/health", async () => ({
@@ -18,6 +33,42 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
   app.get("/matches", async () => ({
     matches: listMatches(options.db)
   }));
+
+  app.get<{ Params: { matchId: string } }>("/matches/:matchId/context", async (request, reply) => {
+    const match = options.db.prepare("SELECT id FROM matches WHERE id = ?").get(request.params.matchId) as { id: string } | undefined;
+
+    if (!match) {
+      return reply.code(404).send({ error: "Match not found" });
+    }
+
+    return getFixtureContextSummary(options.db, match.id);
+  });
+
+  app.post<{ Params: { matchId: string } }>("/matches/:matchId/context/refresh", async (request, reply) => {
+    const parsed = contextRefreshSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid context refresh payload" });
+    }
+
+    const match = options.db
+      .prepare("SELECT id, api_football_fixture_id FROM matches WHERE id = ?")
+      .get(request.params.matchId) as { id: string; api_football_fixture_id: number } | undefined;
+
+    if (!match) {
+      return reply.code(404).send({ error: "Match not found" });
+    }
+
+    const apiKey = getApiFootballKey(options.db);
+    const footballService = apiKey ? new FootballService({ apiKey }) : null;
+
+    return refreshFixtureContext({
+      db: options.db,
+      matchId: match.id,
+      apiFootballFixtureId: match.api_football_fixture_id,
+      footballService,
+      dataOptions: parsed.data.dataOptions as PredictionDataOptionsDto
+    });
+  });
 
   app.post<{ Params: { matchId: string } }>("/matches/:matchId/prediction-request", async (request, reply) => {
     const match = options.db
