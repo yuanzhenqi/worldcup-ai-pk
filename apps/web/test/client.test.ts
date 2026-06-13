@@ -67,7 +67,7 @@ describe("web API client", () => {
     await expect(getPublicHealth()).resolves.toEqual({ ok: true, service: "worldcup-ai-pk-api" });
     expect(latestRequest).toMatchObject({
       method: "GET",
-      url: "http://127.0.0.1:4000/api/public/health"
+      url: "/api/public/health"
     });
   });
 
@@ -80,7 +80,7 @@ describe("web API client", () => {
     );
 
     await expect(getAdminApiFootballSettings()).resolves.toEqual({ configured: true });
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/settings/api-football");
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/settings/api-football");
   });
 
   it("saves API-Football key through local admin API", async () => {
@@ -92,7 +92,7 @@ describe("web API client", () => {
     );
 
     await expect(saveAdminApiFootballKey("secret-api-football-key")).resolves.toEqual({ configured: true });
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/settings/api-football", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/settings/api-football", {
       method: "PUT",
       headers: {
         "content-type": "application/json"
@@ -110,7 +110,7 @@ describe("web API client", () => {
     );
 
     await expect(captureApiFootballFixturesRaw()).resolves.toEqual({ captured: true });
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/sync/api-football/fixtures/raw", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/sync/api-football/fixtures/raw", {
       method: "POST"
     });
   });
@@ -131,7 +131,7 @@ describe("web API client", () => {
     );
 
     await expect(getAdminSummary()).resolves.toEqual(summary);
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/summary");
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/summary");
   });
 
   it("triggers normal API-Football fixtures sync", async () => {
@@ -143,7 +143,7 @@ describe("web API client", () => {
     );
 
     await expect(syncApiFootballFixtures()).resolves.toEqual({ synced: true, imported: 72 });
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/sync/api-football/fixtures", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/sync/api-football/fixtures", {
       method: "POST"
     });
   });
@@ -188,7 +188,7 @@ describe("web API client", () => {
     );
 
     await expect(requestMatchPrediction("match-1", input)).resolves.toEqual(result);
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/matches/match-1/prediction-request", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/matches/match-1/prediction-request", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
@@ -220,7 +220,7 @@ describe("web API client", () => {
     );
 
     await expect(getPredictionRunStatus("run-1")).resolves.toEqual(status);
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/prediction-runs/run-1", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/prediction-runs/run-1", {
       cache: "no-store"
     });
   });
@@ -240,7 +240,7 @@ describe("web API client", () => {
     );
 
     await expect(getMatchContext("match-1")).resolves.toEqual(context);
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/matches/match-1/context");
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/matches/match-1/context");
   });
 
   it("refreshes public match context", async () => {
@@ -264,7 +264,7 @@ describe("web API client", () => {
     );
 
     await expect(refreshMatchContext("match-1", dataOptions)).resolves.toEqual(context);
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/matches/match-1/context/refresh", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/matches/match-1/context/refresh", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ dataOptions })
@@ -299,7 +299,7 @@ describe("web API client", () => {
       })
     ).resolves.toMatchObject({ apiKeyConfigured: true });
 
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/ai-providers", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/ai-providers", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -343,8 +343,8 @@ describe("web API client", () => {
       enabled: true
     })).resolves.toEqual(model);
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:4000/api/admin/ai-models");
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:4000/api/admin/ai-models", {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/admin/ai-models");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/ai-models", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -395,16 +395,16 @@ describe("web API client", () => {
     await expect(deleteAdminAiProvider("provider-1")).resolves.toEqual({ deleted: true });
     await expect(deleteAdminPromptTemplate("prompt-1")).resolves.toEqual({ deleted: true });
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:4000/api/admin/ai-models/model-1/test", {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/admin/ai-models/model-1/test", {
       method: "POST"
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:4000/api/admin/ai-models/model-1", {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/ai-models/model-1", {
       method: "DELETE"
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(3, "http://127.0.0.1:4000/api/admin/ai-providers/provider-1", {
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/admin/ai-providers/provider-1", {
       method: "DELETE"
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(4, "http://127.0.0.1:4000/api/admin/prompt-templates/prompt-1", {
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/admin/prompt-templates/prompt-1", {
       method: "DELETE"
     });
   });
@@ -461,9 +461,9 @@ describe("web API client", () => {
       isDefault: true
     })).resolves.toEqual(promptTemplate);
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:4000/api/admin/ai-providers");
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:4000/api/admin/prompt-templates");
-    expect(fetchMock).toHaveBeenNthCalledWith(3, "http://127.0.0.1:4000/api/admin/prompt-templates", {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/admin/ai-providers");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/prompt-templates");
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/admin/prompt-templates", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -496,7 +496,7 @@ describe("web API client", () => {
     );
 
     await expect(listAdminContextCacheLogs()).resolves.toEqual(logs);
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/context-cache");
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/context-cache");
   });
 
   it("updates an existing prompt template", async () => {
@@ -527,7 +527,7 @@ describe("web API client", () => {
       isDefault: true
     })).resolves.toEqual(promptTemplate);
 
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/prompt-templates/prompt-1", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/prompt-templates/prompt-1", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -568,8 +568,8 @@ describe("web API client", () => {
     await expect(listAdminTeamDisplayNames("墨西哥")).resolves.toEqual([team]);
     await expect(saveAdminTeamDisplayName("16", "墨西哥队")).resolves.toEqual(team);
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:4000/api/admin/team-display-names?q=%E5%A2%A8%E8%A5%BF%E5%93%A5");
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:4000/api/admin/team-display-names/16", {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/admin/team-display-names?q=%E5%A2%A8%E8%A5%BF%E5%93%A5");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/team-display-names/16", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ displayNameZh: "墨西哥队" })

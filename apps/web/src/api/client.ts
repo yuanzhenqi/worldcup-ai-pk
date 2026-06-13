@@ -12,7 +12,7 @@ import type {
   TeamDisplayNameDto
 } from "@worldcup-ai-pk/shared";
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:4000";
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
 interface ApiResponse {
   ok: boolean;
