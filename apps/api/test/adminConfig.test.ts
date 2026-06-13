@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { createTestDatabase } from "./support/testDatabase";
 
+const builtInPromptTemplateNames = ["稳健胜平负预测", "比分预测", "爆冷风险评估", "数据权重型预测"];
+
 describe("admin config API", () => {
   it("returns admin summary counts", async () => {
     const { db, databasePath } = createTestDatabase();
@@ -178,8 +180,90 @@ describe("admin config API", () => {
 
     const list = await app.inject({ method: "GET", url: "/api/admin/prompt-templates", remoteAddress: "127.0.0.1" });
     const templates = list.json().promptTemplates as Array<{ isDefault: boolean }>;
-    expect(templates).toHaveLength(2);
+    expect(templates).toHaveLength(6);
     expect(templates.filter((template) => template.isDefault)).toHaveLength(1);
+
+    await app.close();
+  });
+
+  it("seeds built-in prompt templates for a fresh app database", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const list = await app.inject({ method: "GET", url: "/api/admin/prompt-templates", remoteAddress: "127.0.0.1" });
+    const templates = list.json().promptTemplates as Array<{
+      name: string;
+      scope: string;
+      enabled: boolean;
+      isDefault: boolean;
+      fullPrompt: string;
+    }>;
+
+    expect(list.statusCode).toBe(200);
+    expect(templates.map((template) => template.name).sort()).toEqual([...builtInPromptTemplateNames].sort());
+    expect(templates.every((template) => template.scope === "match_prediction")).toBe(true);
+    expect(templates.every((template) => template.enabled)).toBe(true);
+    expect(templates.filter((template) => template.isDefault).map((template) => template.name)).toEqual(["稳健胜平负预测"]);
+    expect(templates.every((template) => template.fullPrompt.includes("{{homeTeam}}") && template.fullPrompt.includes("{{awayTeam}}"))).toBe(true);
+
+    await app.close();
+  });
+
+  it("does not duplicate built-in prompt templates when the app starts repeatedly", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+
+    const firstApp = buildApp({ databasePath, logger: false });
+    await firstApp.close();
+    const secondApp = buildApp({ databasePath, logger: false });
+    const list = await secondApp.inject({ method: "GET", url: "/api/admin/prompt-templates", remoteAddress: "127.0.0.1" });
+    const templates = list.json().promptTemplates as Array<{ name: string }>;
+
+    expect(templates.map((template) => template.name).sort()).toEqual([...builtInPromptTemplateNames].sort());
+
+    await secondApp.close();
+  });
+
+  it("keeps an existing default prompt template when seeding built-ins", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO prompt_templates (
+          id,
+          name,
+          description,
+          full_prompt,
+          prompt_summary,
+          scope,
+          enabled,
+          is_default,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "manual-default",
+      "手动默认",
+      "用户已经配置的默认模板",
+      "请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+      "手动默认",
+      "match_prediction",
+      1,
+      1,
+      "2026-06-13T00:00:00.000Z",
+      "2026-06-13T00:00:00.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const list = await app.inject({ method: "GET", url: "/api/admin/prompt-templates", remoteAddress: "127.0.0.1" });
+    const templates = list.json().promptTemplates as Array<{ name: string; isDefault: boolean }>;
+    const defaultTemplates = templates.filter((template) => template.isDefault);
+
+    expect(templates.map((template) => template.name)).toEqual(expect.arrayContaining(["手动默认", ...builtInPromptTemplateNames]));
+    expect(defaultTemplates).toHaveLength(1);
+    expect(defaultTemplates[0]).toMatchObject({ name: "手动默认", isDefault: true });
 
     await app.close();
   });

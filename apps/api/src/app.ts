@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import { loadEnv } from "./config/env";
 import { createDatabase } from "./db/connection";
 import { applySchema } from "./db/schema";
+import { seedBuiltInPromptTemplates } from "./modules/admin/builtInPromptTemplates";
 import { registerAdminRoutes } from "./modules/admin/admin.routes";
 import { registerPublicRoutes } from "./modules/public/public.routes";
 
@@ -18,6 +19,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({ logger: options.logger ?? true });
   const db = createDatabase(options.databasePath ?? env.DATABASE_PATH);
   applySchema(db);
+  seedBuiltInPromptTemplates(db);
 
   app.register(cors, {
     origin: [env.PUBLIC_WEB_ORIGIN, ...localViteOrigins]
