@@ -171,10 +171,26 @@ describe("FixturesPage", () => {
     ];
     const onRequestPrediction = vi.fn().mockResolvedValue({
       matchId: "scheduled-1",
-      status: "scheduled",
-      message: "Prediction scheduled for two hours before kickoff",
-      scheduledFor: "2026-06-13T10:00:00.000Z",
-      context: null
+      status: "completed",
+      message: "已完成 1 个模型预测",
+      scheduledFor: null,
+      context: null,
+      runId: "run-1",
+      predictionsCount: 1,
+      logs: [
+        {
+          level: "info",
+          message: "预测请求已创建",
+          modelDisplayName: null,
+          createdAt: "2026-06-13T08:00:00.000Z"
+        },
+        {
+          level: "info",
+          message: "模型预测完成：GPT-4o mini",
+          modelDisplayName: "GPT-4o mini",
+          createdAt: "2026-06-13T08:00:01.000Z"
+        }
+      ]
     });
     const match = buildMatch({
       id: "scheduled-1",
@@ -204,6 +220,8 @@ describe("FixturesPage", () => {
       outputStyle: "concise",
       refreshContext: true
     });
-    expect(await screen.findByText("预测已排程")).toBeInTheDocument();
+    expect(await screen.findByText("已完成 1 个模型预测")).toBeInTheDocument();
+    expect(screen.getByText("预测请求已创建")).toBeInTheDocument();
+    expect(screen.getByText("GPT-4o mini：模型预测完成：GPT-4o mini")).toBeInTheDocument();
   });
 });

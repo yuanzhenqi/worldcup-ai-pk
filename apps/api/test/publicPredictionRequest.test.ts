@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app";
 import { createDatabase } from "../src/db/connection";
 import { createTestDatabase } from "./support/testDatabase";
@@ -43,8 +43,44 @@ function insertMatch(db: ReturnType<typeof createTestDatabase>["db"], input: { i
   );
 }
 
+function insertAiConfig(db: ReturnType<typeof createTestDatabase>["db"]) {
+  db.prepare(
+    `
+      INSERT INTO ai_providers (id, name, display_name, base_url, api_key, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run("provider-1", "openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "secret-provider-key", 1, "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:00.000Z");
+  db.prepare(
+    `
+      INSERT INTO ai_models (id, provider_id, model_name, display_name, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run("model-1", "provider-1", "openai/gpt-4o-mini", "GPT-4o mini", 1, "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:00.000Z");
+  db.prepare(
+    `
+      INSERT INTO prompt_templates (id, name, full_prompt, prompt_summary, description, scope, enabled, is_default, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    "prompt-1",
+    "综合赛前报告",
+    "请基于 prediction_context 输出 JSON。{{homeTeam}} vs {{awayTeam}}",
+    "综合分析",
+    "综合分析",
+    "match_prediction",
+    1,
+    1,
+    "2026-06-13T08:00:00.000Z",
+    "2026-06-13T08:00:00.000Z"
+  );
+}
+
 describe("public prediction request API", () => {
-  it("schedules a prediction request for a future match", async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("runs a manual prediction request immediately and reports missing models", async () => {
     const { db, databasePath } = createTestDatabase();
     insertMatch(db, {
       id: "match-1",
@@ -60,26 +96,121 @@ describe("public prediction request API", () => {
     expect(response.statusCode).toBe(200);
     expect(body).toMatchObject({
       matchId: "match-1",
-      status: "scheduled",
-      scheduledFor: "2099-06-12T17:00:00.000Z"
+      status: "completed",
+      scheduledFor: null,
+      predictionsCount: 0,
+      logs: [
+        expect.objectContaining({ level: "info", message: "预测请求已创建" }),
+        expect.objectContaining({ level: "error", message: "没有可用的大模型配置" })
+      ]
     });
 
     await app.close();
 
     const verifyDb = createDatabase(databasePath);
-    expect(verifyDb.prepare("SELECT match_id, status, next_executable_at FROM prediction_requests").all()).toEqual([
+    expect(verifyDb.prepare("SELECT match_id, status, next_executable_at FROM prediction_requests").all()).toMatchObject([
       {
         match_id: "match-1",
-        status: "scheduled",
-        next_executable_at: "2099-06-12T17:00:00.000Z"
+        status: "completed",
+        next_executable_at: null
       }
     ]);
-    expect(verifyDb.prepare("SELECT match_id, scheduled_at, status FROM prediction_runs").all()).toEqual([
+    expect(verifyDb.prepare("SELECT match_id, status FROM prediction_runs").all()).toEqual([
       {
         match_id: "match-1",
-        scheduled_at: "2099-06-12T17:00:00.000Z",
-        status: "scheduled"
+        status: "completed"
       }
+    ]);
+    verifyDb.close();
+  });
+
+  it("calls enabled models and stores parsed AI predictions", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, {
+      id: "match-1",
+      kickoffAt: "2099-06-12T19:00:00.000Z",
+      status: "scheduled"
+    });
+    insertAiConfig(db);
+    db.close();
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  predicted_result: "home",
+                  predicted_home_score: 2,
+                  predicted_away_score: 1,
+                  confidence: 0.64,
+                  short_reason: "墨西哥主场和赔率更有利。",
+                  key_factors: ["主场", "赔率"],
+                  odds_interpretation: "主胜赔率更低。",
+                  risk_points: ["加拿大反击"]
+                })
+              }
+            }
+          ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/public/matches/match-1/prediction-request",
+      payload: {
+        taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
+        dataOptions: {
+          useOdds: true,
+          useApiFootballPrediction: false,
+          useHeadToHead: true,
+          usePlayerLineupInjuries: false
+        },
+        promptTemplateId: "prompt-1",
+        customPrompt: "偏重上半场节奏。",
+        outputStyle: "detailed",
+        refreshContext: false
+      }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      matchId: "match-1",
+      status: "completed",
+      predictionsCount: 1,
+      logs: [
+        expect.objectContaining({ level: "info", message: "预测请求已创建" }),
+        expect.objectContaining({ level: "info", message: "开始调用模型：GPT-4o mini", modelDisplayName: "GPT-4o mini" }),
+        expect.objectContaining({ level: "info", message: "模型预测完成：GPT-4o mini", modelDisplayName: "GPT-4o mini" })
+      ]
+    });
+    expect(fetchMock).toHaveBeenCalledWith("https://openrouter.ai/api/v1/chat/completions", expect.objectContaining({ method: "POST" }));
+
+    await app.close();
+
+    const verifyDb = createDatabase(databasePath);
+    expect(
+      verifyDb
+        .prepare("SELECT model_id, predicted_result, predicted_home_score, predicted_away_score, parse_status FROM ai_predictions WHERE match_id = ?")
+        .all("match-1")
+    ).toEqual([
+      {
+        model_id: "model-1",
+        predicted_result: "home",
+        predicted_home_score: 2,
+        predicted_away_score: 1,
+        parse_status: "parsed"
+      }
+    ]);
+    expect(verifyDb.prepare("SELECT level, message, model_id FROM prediction_run_logs WHERE match_id = ? ORDER BY created_at ASC").all("match-1")).toEqual([
+      { level: "info", message: "预测请求已创建", model_id: null },
+      { level: "info", message: "开始调用模型：GPT-4o mini", model_id: "model-1" },
+      { level: "info", message: "模型预测完成：GPT-4o mini", model_id: "model-1" }
     ]);
     verifyDb.close();
   });
@@ -149,7 +280,7 @@ describe("public prediction request API", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       matchId: "match-1",
-      status: "scheduled",
+      status: "completed",
       context: {
         matchId: "match-1",
         completeness: "base_only"

@@ -150,10 +150,20 @@ describe("web API client", () => {
   it("requests a prediction for a public match", async () => {
     const result = {
       matchId: "match-1",
-      status: "scheduled",
-      message: "Prediction scheduled for two hours before kickoff",
-      scheduledFor: "2026-06-12T17:00:00.000Z",
-      context: null
+      status: "completed",
+      message: "已完成 1 个模型预测",
+      scheduledFor: null,
+      context: null,
+      runId: "run-1",
+      predictionsCount: 1,
+      logs: [
+        {
+          level: "info",
+          message: "模型预测完成：GPT-4o mini",
+          modelDisplayName: "GPT-4o mini",
+          createdAt: "2026-06-13T08:00:00.000Z"
+        }
+      ]
     };
     const input: PredictionRequestInputDto = {
       taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],

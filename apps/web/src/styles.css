@@ -416,6 +416,13 @@ a {
   white-space: nowrap;
 }
 
+.prediction-feedback-block {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  max-width: 260px;
+}
+
 .prediction-feedback.info {
   background: #e4f3ee;
   color: #1d6f5b;
@@ -423,6 +430,22 @@ a {
 
 .prediction-feedback.error {
   background: #f8e6df;
+  color: #b64225;
+}
+
+.prediction-log-list {
+  color: #4d5b63;
+  display: grid;
+  font-size: 12px;
+  gap: 4px;
+  line-height: 1.45;
+  list-style-position: inside;
+  margin: 0;
+  padding: 0;
+  text-align: right;
+}
+
+.prediction-log-list .error {
   color: #b64225;
 }
 
@@ -1065,6 +1088,16 @@ td {
   .match-action button {
     flex: 1 1 120px;
     min-height: 42px;
+  }
+
+  .prediction-feedback-block {
+    justify-items: start;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .prediction-log-list {
+    text-align: left;
   }
 
   .drawer-option-grid {

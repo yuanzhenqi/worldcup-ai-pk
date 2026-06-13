@@ -118,12 +118,22 @@ export interface PredictionRequestInputDto {
   refreshContext: boolean;
 }
 
+export interface PredictionRunLogDto {
+  level: "info" | "error";
+  message: string;
+  modelDisplayName: string | null;
+  createdAt: string;
+}
+
 export interface PredictionRequestResponseDto {
   matchId: string;
-  status: "scheduled" | "running" | "rejected" | "rate_limited";
+  status: "scheduled" | "running" | "completed" | "failed" | "rejected" | "rate_limited";
   message: string;
   scheduledFor: string | null;
   context: FixtureContextSummaryDto | null;
+  runId: string | null;
+  predictionsCount: number;
+  logs: PredictionRunLogDto[];
 }
 
 export interface TeamDisplayNameDto {

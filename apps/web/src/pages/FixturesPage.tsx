@@ -6,6 +6,7 @@ import type {
   PredictionDataOptionsDto,
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
+  PredictionRunLogDto,
   PromptTemplateConfigDto
 } from "@worldcup-ai-pk/shared";
 import { MatchContextDrawer } from "../components/MatchContextDrawer";
@@ -23,6 +24,7 @@ type FixtureTab = Extract<MatchStatus, "scheduled" | "live" | "finished">;
 type PredictionFeedback = {
   message: string;
   tone: "info" | "error";
+  logs: PredictionRunLogDto[];
 };
 
 const statusTabs: Array<{ status: FixtureTab; label: string }> = [
@@ -60,13 +62,21 @@ function getScoreText(match: MatchDto): string {
 function getPredictionFeedback(response: PredictionRequestResponseDto): PredictionFeedback {
   switch (response.status) {
     case "scheduled":
-      return { message: "预测已排程", tone: "info" };
+      return { message: "预测已排程", tone: "info", logs: response.logs };
     case "running":
-      return { message: "预测已加入队列", tone: "info" };
+      return { message: "预测执行中", tone: "info", logs: response.logs };
+    case "completed":
+      return {
+        message: response.predictionsCount > 0 ? `已完成 ${response.predictionsCount} 个模型预测` : response.message,
+        tone: "info",
+        logs: response.logs
+      };
+    case "failed":
+      return { message: response.message || "预测失败", tone: "error", logs: response.logs };
     case "rate_limited":
-      return { message: "30 分钟内已生成过预测", tone: "error" };
+      return { message: "30 分钟内已生成过预测", tone: "error", logs: response.logs };
     case "rejected":
-      return { message: "当前比赛不可请求预测", tone: "error" };
+      return { message: "当前比赛不可请求预测", tone: "error", logs: response.logs };
   }
 }
 
@@ -181,7 +191,21 @@ function MatchCard({
         <button type="button" className="secondary-action" onClick={() => onOpenContext(match)}>
           数据
         </button>
-        {feedback ? <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span> : null}
+        {feedback ? (
+          <div className="prediction-feedback-block">
+            <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span>
+            {feedback.logs.length > 0 ? (
+              <ol className="prediction-log-list" aria-label="预测执行日志">
+                {feedback.logs.map((log) => (
+                  <li className={log.level} key={`${log.createdAt}-${log.message}`}>
+                    {log.modelDisplayName ? `${log.modelDisplayName}：` : ""}
+                    {log.message}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </article>
   );
@@ -290,7 +314,8 @@ export function FixturesPage({
         ...currentFeedback,
         [match.id]: {
           message: "预测请求失败，请稍后重试",
-          tone: "error"
+          tone: "error",
+          logs: []
         }
       }));
     } finally {

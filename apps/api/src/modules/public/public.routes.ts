@@ -6,6 +6,7 @@ import type { MatchStatus, PredictionDataOptionsDto, PredictionRequestInputDto, 
 import { getFixtureContextSummary, refreshFixtureContext } from "../context/fixtureContext.service";
 import { FootballService } from "../football/football.service";
 import { listMatches } from "../matches/match.repository";
+import { executeManualPredictionRequest } from "../predictions/predictionExecutor.service";
 import { planPredictionRequest } from "../predictions/prediction.service";
 import { getApiFootballKey } from "../settings/settings.repository";
 
@@ -100,8 +101,33 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
 
   app.post<{ Params: { matchId: string } }>("/matches/:matchId/prediction-request", async (request, reply) => {
     const match = options.db
-      .prepare("SELECT id, api_football_fixture_id, kickoff_at, status FROM matches WHERE id = ?")
-      .get(request.params.matchId) as { id: string; api_football_fixture_id: number; kickoff_at: string; status: MatchStatus } | undefined;
+      .prepare(
+        `
+          SELECT
+            id,
+            api_football_fixture_id,
+            stage,
+            kickoff_at,
+            status,
+            venue,
+            home_team_name,
+            away_team_name
+          FROM matches
+          WHERE id = ?
+        `
+      )
+      .get(request.params.matchId) as
+      | {
+          id: string;
+          api_football_fixture_id: number;
+          stage: string;
+          kickoff_at: string;
+          status: MatchStatus;
+          venue: string | null;
+          home_team_name: string;
+          away_team_name: string;
+        }
+      | undefined;
 
     if (!match) {
       return reply.code(404).send({ error: "Match not found" });
@@ -144,10 +170,59 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       latestSuccessfulRunAt: latestSuccessfulRun ? new Date(latestSuccessfulRun.finished_at) : null
     });
     const requestedAt = now.toISOString();
-    const scheduledFor = plan.scheduledFor?.toISOString() ?? null;
+    const scheduledFor = plan.status === "scheduled" ? null : plan.scheduledFor?.toISOString() ?? null;
     const latestContextSnapshot = options.db
       .prepare("SELECT id FROM fixture_context_snapshots WHERE match_id = ? ORDER BY created_at DESC LIMIT 1")
       .get(match.id) as { id: string } | undefined;
+    const requestId = randomUUID();
+    const runId = randomUUID();
+
+    if (plan.status === "rejected" || plan.status === "rate_limited") {
+      options.db
+        .prepare(
+          `
+            INSERT INTO prediction_requests (
+              id,
+              match_id,
+              requested_at,
+              status,
+              next_executable_at,
+              context_snapshot_id,
+              task_types_json,
+              data_options_json,
+              prompt_template_id,
+              custom_prompt,
+              output_style
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `
+        )
+        .run(
+          requestId,
+          match.id,
+          requestedAt,
+          plan.status,
+          scheduledFor,
+          latestContextSnapshot?.id ?? null,
+          JSON.stringify(predictionInput.taskTypes),
+          JSON.stringify(predictionInput.dataOptions),
+          predictionInput.promptTemplateId,
+          predictionInput.customPrompt,
+          predictionInput.outputStyle
+        );
+
+      const response: PredictionRequestResponseDto = {
+        matchId: match.id,
+        status: plan.status,
+        message: plan.message,
+        scheduledFor,
+        context,
+        runId: null,
+        predictionsCount: 0,
+        logs: []
+      };
+
+      return response;
+    }
 
     options.db
       .transaction(() => {
@@ -170,10 +245,10 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
             `
           )
           .run(
-            randomUUID(),
+            requestId,
             match.id,
             requestedAt,
-            plan.status,
+            "running",
             scheduledFor,
             latestContextSnapshot?.id ?? null,
             JSON.stringify(predictionInput.taskTypes),
@@ -183,31 +258,42 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
             predictionInput.outputStyle
           );
 
-        if (plan.status === "scheduled" || plan.status === "running") {
-          options.db
-            .prepare(
-              `
-                INSERT INTO prediction_runs (
-                  id,
-                  match_id,
-                  scheduled_at,
-                  started_at,
-                  finished_at,
-                  status,
-                  failure_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-              `
-            )
-            .run(randomUUID(), match.id, scheduledFor ?? requestedAt, null, null, plan.status, null);
-        }
+        options.db
+          .prepare(
+            `
+              INSERT INTO prediction_runs (
+                id,
+                match_id,
+                scheduled_at,
+                started_at,
+                finished_at,
+                status,
+                failure_reason
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            `
+          )
+          .run(runId, match.id, requestedAt, null, null, "running", null);
       })();
+
+    const execution = await executeManualPredictionRequest({
+      db: options.db,
+      match,
+      requestId,
+      runId,
+      predictionInput,
+      context,
+      now
+    });
 
     const response: PredictionRequestResponseDto = {
       matchId: match.id,
-      status: plan.status,
-      message: plan.message,
+      status: execution.status,
+      message: execution.message,
       scheduledFor,
-      context
+      context,
+      runId,
+      predictionsCount: execution.predictionsCount,
+      logs: execution.logs
     };
 
     return response;

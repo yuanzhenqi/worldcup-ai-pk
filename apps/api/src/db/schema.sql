@@ -106,6 +106,16 @@ CREATE TABLE IF NOT EXISTS prediction_runs (
   failure_reason TEXT
 );
 
+CREATE TABLE IF NOT EXISTS prediction_run_logs (
+  id TEXT PRIMARY KEY,
+  prediction_run_id TEXT NOT NULL REFERENCES prediction_runs(id),
+  match_id TEXT NOT NULL REFERENCES matches(id),
+  model_id TEXT REFERENCES ai_models(id),
+  level TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS ai_predictions (
   id TEXT PRIMARY KEY,
   prediction_run_id TEXT NOT NULL REFERENCES prediction_runs(id),

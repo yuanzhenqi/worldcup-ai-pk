@@ -87,6 +87,9 @@ describe("schema migration on app startup", () => {
     expect(
       db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("fixture_data_sync_logs")
     ).toMatchObject({ name: "fixture_data_sync_logs" });
+    expect(
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("prediction_run_logs")
+    ).toMatchObject({ name: "prediction_run_logs" });
 
     const predictionRequestColumns = db.prepare("PRAGMA table_info(prediction_requests)").all() as Array<{ name: string }>;
     expect(predictionRequestColumns.map((column) => column.name)).toEqual(
