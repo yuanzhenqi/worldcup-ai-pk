@@ -9,6 +9,7 @@ import {
   deleteAiProvider,
   deletePromptTemplate,
   getAdminSummary,
+  getAiModelConnectionConfig,
   listAiModels,
   listAiProviders,
   listContextCacheLogs,
@@ -17,6 +18,7 @@ import {
   updateAiProvider,
   updatePromptTemplate
 } from "./adminConfig.repository";
+import { testOpenAiCompatibleModel } from "../ai/openAiCompatibleClient";
 import { refreshFixtureContext } from "../context/fixtureContext.service";
 import { importApiFootballFixturesResponse } from "../football/fixtureImport.service";
 import { FootballService } from "../football/football.service";
@@ -178,6 +180,20 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
   app.delete("/ai-models/:id", async (request) => {
     deleteAiModel(options.db, getIdParam(request, "id"));
     return { deleted: true };
+  });
+
+  app.post("/ai-models/:id/test", async (request, reply) => {
+    try {
+      const config = getAiModelConnectionConfig(options.db, getIdParam(request, "id"));
+      return testOpenAiCompatibleModel({
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        modelName: config.modelName
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "AI model test failed";
+      return reply.code(404).send({ ok: false, status: 404, message, latencyMs: 0 });
+    }
   });
 
   app.get("/prompt-templates", async () => ({

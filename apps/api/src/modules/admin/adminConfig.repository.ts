@@ -27,6 +27,17 @@ export interface SavePromptTemplateInput {
   isDefault: boolean;
 }
 
+export interface AiModelConnectionConfig {
+  modelId: string;
+  modelName: string;
+  modelDisplayName: string;
+  providerId: string;
+  providerName: string;
+  providerDisplayName: string;
+  baseUrl: string;
+  apiKey: string;
+}
+
 interface AiProviderRow {
   id: string;
   name: string;
@@ -299,6 +310,53 @@ export function updateAiModel(db: Database, id: string, input: SaveAiModelInput,
 
 export function deleteAiModel(db: Database, id: string): void {
   db.prepare("DELETE FROM ai_models WHERE id = ?").run(id);
+}
+
+export function getAiModelConnectionConfig(db: Database, id: string): AiModelConnectionConfig {
+  const row = db
+    .prepare(
+      `
+        SELECT
+          ai_models.id AS model_id,
+          ai_models.model_name,
+          ai_models.display_name AS model_display_name,
+          ai_providers.id AS provider_id,
+          ai_providers.name AS provider_name,
+          ai_providers.display_name AS provider_display_name,
+          ai_providers.base_url,
+          ai_providers.api_key
+        FROM ai_models
+        INNER JOIN ai_providers ON ai_providers.id = ai_models.provider_id
+        WHERE ai_models.id = ?
+      `
+    )
+    .get(id) as
+    | {
+        model_id: string;
+        model_name: string;
+        model_display_name: string;
+        provider_id: string;
+        provider_name: string;
+        provider_display_name: string;
+        base_url: string;
+        api_key: string;
+      }
+    | undefined;
+
+  if (!row) {
+    throw new Error(`AI model not found: ${id}`);
+  }
+
+  return {
+    modelId: row.model_id,
+    modelName: row.model_name,
+    modelDisplayName: row.model_display_name,
+    providerId: row.provider_id,
+    providerName: row.provider_name,
+    providerDisplayName: row.provider_display_name,
+    baseUrl: row.base_url,
+    apiKey: row.api_key
+  };
 }
 
 export function listPromptTemplates(db: Database): PromptTemplateConfigDto[] {

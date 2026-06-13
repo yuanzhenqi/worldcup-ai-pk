@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app";
 import { createTestDatabase } from "./support/testDatabase";
 
@@ -13,6 +13,10 @@ const builtInPromptTemplateNames = [
 ];
 
 describe("admin config API", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("returns admin summary counts", async () => {
     const { db, databasePath } = createTestDatabase();
     db.prepare(
@@ -211,6 +215,137 @@ describe("admin config API", () => {
     const listResponse = await app.inject({ method: "GET", url: "/api/admin/ai-models", remoteAddress: "127.0.0.1" });
     expect(listResponse.statusCode).toBe(200);
     expect(listResponse.json().models).toHaveLength(1);
+
+    await app.close();
+  });
+
+  it("tests an OpenAI-compatible model without returning provider secrets", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const providerResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-providers",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        name: "openrouter",
+        displayName: "OpenRouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        apiKey: "secret-provider-key",
+        enabled: true
+      }
+    });
+    const provider = providerResponse.json() as { id: string };
+
+    const modelResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-models",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        providerId: provider.id,
+        modelName: "openai/gpt-4o-mini",
+        displayName: "GPT-4o mini",
+        enabled: true
+      }
+    });
+    const model = modelResponse.json() as { id: string };
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "ok" } }]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const testResponse = await app.inject({
+      method: "POST",
+      url: `/api/admin/ai-models/${model.id}/test`,
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(testResponse.statusCode).toBe(200);
+    expect(testResponse.json()).toMatchObject({
+      ok: true,
+      status: 200,
+      message: "模型测试成功"
+    });
+    expect(JSON.stringify(testResponse.json())).not.toContain("secret-provider-key");
+    expect(fetchMock).toHaveBeenCalledWith("https://openrouter.ai/api/v1/chat/completions", expect.objectContaining({
+      method: "POST",
+      headers: expect.objectContaining({
+        authorization: "Bearer secret-provider-key",
+        "content-type": "application/json"
+      })
+    }));
+
+    await app.close();
+  });
+
+  it("deletes model provider and prompt template configuration", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const providerResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-providers",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        name: "deepseek",
+        displayName: "DeepSeek",
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKey: "secret-provider-key",
+        enabled: true
+      }
+    });
+    const provider = providerResponse.json() as { id: string };
+
+    const modelResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-models",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        providerId: provider.id,
+        modelName: "deepseek-chat",
+        displayName: "DeepSeek Chat",
+        enabled: true
+      }
+    });
+    const model = modelResponse.json() as { id: string };
+
+    const promptResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/prompt-templates",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        name: "临时模板",
+        description: "临时",
+        fullPrompt: "请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+        promptSummary: "临时",
+        scope: "match_prediction",
+        enabled: true,
+        isDefault: false
+      }
+    });
+    const prompt = promptResponse.json() as { id: string };
+
+    const modelDeleteResponse = await app.inject({ method: "DELETE", url: `/api/admin/ai-models/${model.id}`, remoteAddress: "127.0.0.1" });
+    const providerDeleteResponse = await app.inject({ method: "DELETE", url: `/api/admin/ai-providers/${provider.id}`, remoteAddress: "127.0.0.1" });
+    const promptDeleteResponse = await app.inject({ method: "DELETE", url: `/api/admin/prompt-templates/${prompt.id}`, remoteAddress: "127.0.0.1" });
+
+    expect(modelDeleteResponse.statusCode).toBe(200);
+    expect(providerDeleteResponse.statusCode).toBe(200);
+    expect(promptDeleteResponse.statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/admin/ai-models", remoteAddress: "127.0.0.1" })).json().models).toHaveLength(0);
+    expect((await app.inject({ method: "GET", url: "/api/admin/ai-providers", remoteAddress: "127.0.0.1" })).json().providers).toHaveLength(0);
+    expect(
+      ((await app.inject({ method: "GET", url: "/api/admin/prompt-templates", remoteAddress: "127.0.0.1" })).json().promptTemplates as Array<{ id: string }>).some(
+        (template) => template.id === prompt.id
+      )
+    ).toBe(false);
 
     await app.close();
   });
