@@ -80,8 +80,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
     }
 
     const match = options.db
-      .prepare("SELECT id, api_football_fixture_id FROM matches WHERE id = ?")
-      .get(request.params.matchId) as { id: string; api_football_fixture_id: number } | undefined;
+      .prepare("SELECT id, api_football_fixture_id, home_team_id, away_team_id FROM matches WHERE id = ?")
+      .get(request.params.matchId) as { id: string; api_football_fixture_id: number; home_team_id: string; away_team_id: string } | undefined;
 
     if (!match) {
       return reply.code(404).send({ error: "Match not found" });
@@ -94,6 +94,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       db: options.db,
       matchId: match.id,
       apiFootballFixtureId: match.api_football_fixture_id,
+      homeTeamId: match.home_team_id,
+      awayTeamId: match.away_team_id,
       footballService,
       dataOptions: parsed.data.dataOptions as PredictionDataOptionsDto
     });
@@ -110,6 +112,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
             kickoff_at,
             status,
             venue,
+            home_team_id,
+            away_team_id,
             home_team_name,
             away_team_name
           FROM matches
@@ -124,6 +128,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
           kickoff_at: string;
           status: MatchStatus;
           venue: string | null;
+          home_team_id: string;
+          away_team_id: string;
           home_team_name: string;
           away_team_name: string;
         }
@@ -143,6 +149,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
         db: options.db,
         matchId: match.id,
         apiFootballFixtureId: match.api_football_fixture_id,
+        homeTeamId: match.home_team_id,
+        awayTeamId: match.away_team_id,
         footballService,
         dataOptions: predictionInput.dataOptions
       });
@@ -218,7 +226,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
         context,
         runId: null,
         predictionsCount: 0,
-        logs: []
+        logs: [],
+        predictions: []
       };
 
       return response;
@@ -293,7 +302,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       context,
       runId,
       predictionsCount: execution.predictionsCount,
-      logs: execution.logs
+      logs: execution.logs,
+      predictions: execution.predictions
     };
 
     return response;

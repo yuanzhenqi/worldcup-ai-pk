@@ -284,6 +284,64 @@ describe("admin config API", () => {
     await app.close();
   });
 
+  it("falls back to /v1 chat completions when the provider root returns HTML", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const providerResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-providers",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        name: "newapi",
+        displayName: "NewAPI",
+        baseUrl: "https://newapi.example.com",
+        apiKey: "secret-provider-key",
+        enabled: true
+      }
+    });
+    const provider = providerResponse.json() as { id: string };
+
+    const modelResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-models",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        providerId: provider.id,
+        modelName: "glm-5.1",
+        displayName: "GLM 5.1",
+        enabled: true
+      }
+    });
+    const model = modelResponse.json() as { id: string };
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("<!doctype html><html></html>", { status: 200, headers: { "content-type": "text/html" } }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "ok" } }]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      );
+
+    const testResponse = await app.inject({
+      method: "POST",
+      url: `/api/admin/ai-models/${model.id}/test`,
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(testResponse.statusCode).toBe(200);
+    expect(testResponse.json()).toMatchObject({ ok: true, message: "模型测试成功" });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://newapi.example.com/chat/completions", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://newapi.example.com/v1/chat/completions", expect.objectContaining({ method: "POST" }));
+
+    await app.close();
+  });
+
   it("deletes model provider and prompt template configuration", async () => {
     const { db, databasePath } = createTestDatabase();
     db.close();

@@ -7,9 +7,11 @@ import type {
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
   PredictionRunLogDto,
+  PredictionRunPredictionDto,
   PromptTemplateConfigDto
 } from "@worldcup-ai-pk/shared";
 import { MatchContextDrawer } from "../components/MatchContextDrawer";
+import { BottomDrawer } from "../components/BottomDrawer";
 import { PredictionRequestDrawer } from "../components/PredictionRequestDrawer";
 
 interface FixturesPageProps {
@@ -25,6 +27,7 @@ type PredictionFeedback = {
   message: string;
   tone: "info" | "error";
   logs: PredictionRunLogDto[];
+  predictions: PredictionRunPredictionDto[];
 };
 
 const statusTabs: Array<{ status: FixtureTab; label: string }> = [
@@ -35,7 +38,7 @@ const statusTabs: Array<{ status: FixtureTab; label: string }> = [
 
 const defaultContextDataOptions: PredictionDataOptionsDto = {
   useOdds: true,
-  useApiFootballPrediction: true,
+  useApiFootballPrediction: false,
   useHeadToHead: true,
   usePlayerLineupInjuries: true
 };
@@ -62,21 +65,22 @@ function getScoreText(match: MatchDto): string {
 function getPredictionFeedback(response: PredictionRequestResponseDto): PredictionFeedback {
   switch (response.status) {
     case "scheduled":
-      return { message: "预测已排程", tone: "info", logs: response.logs };
+      return { message: "预测已排程", tone: "info", logs: response.logs, predictions: response.predictions };
     case "running":
-      return { message: "预测执行中", tone: "info", logs: response.logs };
+      return { message: "预测执行中", tone: "info", logs: response.logs, predictions: response.predictions };
     case "completed":
       return {
         message: response.predictionsCount > 0 ? `已完成 ${response.predictionsCount} 个模型预测` : response.message,
         tone: "info",
-        logs: response.logs
+        logs: response.logs,
+        predictions: response.predictions
       };
     case "failed":
-      return { message: response.message || "预测失败", tone: "error", logs: response.logs };
+      return { message: response.message || "预测失败", tone: "error", logs: response.logs, predictions: response.predictions };
     case "rate_limited":
-      return { message: "30 分钟内已生成过预测", tone: "error", logs: response.logs };
+      return { message: "30 分钟内已生成过预测", tone: "error", logs: response.logs, predictions: response.predictions };
     case "rejected":
-      return { message: "当前比赛不可请求预测", tone: "error", logs: response.logs };
+      return { message: "当前比赛不可请求预测", tone: "error", logs: response.logs, predictions: response.predictions };
   }
 }
 
@@ -151,13 +155,15 @@ function MatchCard({
   feedback,
   isRequesting,
   onOpenPrediction,
-  onOpenContext
+  onOpenContext,
+  onOpenReport
 }: {
   match: MatchDto;
   feedback?: PredictionFeedback;
   isRequesting: boolean;
   onOpenPrediction: (match: MatchDto) => void;
   onOpenContext: (match: MatchDto) => void;
+  onOpenReport: (feedback: PredictionFeedback) => void;
 }) {
   return (
     <article className={`match-card status-${match.status}`}>
@@ -204,6 +210,11 @@ function MatchCard({
                 ))}
               </ol>
             ) : null}
+            {feedback.predictions.length > 0 ? (
+              <button type="button" className="secondary-action" onClick={() => onOpenReport(feedback)}>
+                查看报告
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -216,13 +227,15 @@ function FixtureDateGroups({
   predictionFeedbackByMatchId,
   requestingMatchIds,
   onOpenPrediction,
-  onOpenContext
+  onOpenContext,
+  onOpenReport
 }: {
   groups: Array<{ key: string; label: string; matches: MatchDto[] }>;
   predictionFeedbackByMatchId: Record<string, PredictionFeedback>;
   requestingMatchIds: Set<string>;
   onOpenPrediction: (match: MatchDto) => void;
   onOpenContext: (match: MatchDto) => void;
+  onOpenReport: (feedback: PredictionFeedback) => void;
 }) {
   return (
     <div className="fixture-date-groups">
@@ -241,6 +254,7 @@ function FixtureDateGroups({
                 isRequesting={requestingMatchIds.has(match.id)}
                 onOpenPrediction={onOpenPrediction}
                 onOpenContext={onOpenContext}
+                onOpenReport={onOpenReport}
               />
             ))}
           </div>
@@ -264,6 +278,7 @@ export function FixturesPage({
   const [predictionFeedbackByMatchId, setPredictionFeedbackByMatchId] = useState<Record<string, PredictionFeedback>>({});
   const [requestingMatchIds, setRequestingMatchIds] = useState<Set<string>>(() => new Set());
   const [activePredictionMatch, setActivePredictionMatch] = useState<MatchDto | null>(null);
+  const [activePredictionReport, setActivePredictionReport] = useState<PredictionRunPredictionDto[] | null>(null);
   const [activeContextMatch, setActiveContextMatch] = useState<MatchDto | null>(null);
   const [contextByMatchId, setContextByMatchId] = useState<Record<string, FixtureContextSummaryDto>>({});
   const [contextLoadingMatchIds, setContextLoadingMatchIds] = useState<Set<string>>(() => new Set());
@@ -315,7 +330,8 @@ export function FixturesPage({
         [match.id]: {
           message: "预测请求失败，请稍后重试",
           tone: "error",
-          logs: []
+          logs: [],
+          predictions: []
         }
       }));
     } finally {
@@ -347,15 +363,18 @@ export function FixturesPage({
 
   function handleOpenContext(match: MatchDto) {
     setActiveContextMatch(match);
-    void loadContext(match);
+    if (onRefreshMatchContext) {
+      void handleRefreshContextForMatch(match);
+    } else {
+      void loadContext(match);
+    }
   }
 
-  async function handleRefreshContext() {
-    if (!activeContextMatch || !onRefreshMatchContext) {
+  async function handleRefreshContextForMatch(match: MatchDto) {
+    if (!onRefreshMatchContext) {
       return;
     }
 
-    const match = activeContextMatch;
     setContextLoadingMatchIds((currentIds) => new Set(currentIds).add(match.id));
     try {
       const context = await onRefreshMatchContext(match.id, defaultContextDataOptions);
@@ -445,6 +464,7 @@ export function FixturesPage({
         requestingMatchIds={requestingMatchIds}
         onOpenPrediction={setActivePredictionMatch}
         onOpenContext={handleOpenContext}
+        onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions)}
       />
 
       {activeStatus === "scheduled" && foldedMatches.length > 0 ? (
@@ -459,6 +479,7 @@ export function FixturesPage({
               requestingMatchIds={requestingMatchIds}
               onOpenPrediction={setActivePredictionMatch}
               onOpenContext={handleOpenContext}
+              onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions)}
             />
           ) : null}
         </section>
@@ -478,8 +499,43 @@ export function FixturesPage({
         context={activeContextMatch ? contextByMatchId[activeContextMatch.id] ?? null : null}
         loading={activeContextMatch ? contextLoadingMatchIds.has(activeContextMatch.id) : false}
         onClose={() => setActiveContextMatch(null)}
-        onRefresh={handleRefreshContext}
       />
+      <BottomDrawer open={Boolean(activePredictionReport)} title="预测分析报告" onClose={() => setActivePredictionReport(null)}>
+        {activePredictionReport ? (
+          <div className="prediction-report-list">
+            {activePredictionReport.map((prediction) => (
+              <article className="prediction-report-card" key={prediction.id}>
+                <header>
+                  <h3>{prediction.modelDisplayName}</h3>
+                  <strong>
+                    {prediction.predictedHomeScore} - {prediction.predictedAwayScore}
+                  </strong>
+                </header>
+                <p>置信度：{prediction.confidence}</p>
+                <p>{prediction.shortReason}</p>
+                <p>{prediction.oddsInterpretation}</p>
+                <div>
+                  <span>关键因素</span>
+                  <ul>
+                    {prediction.keyFactors.map((factor) => (
+                      <li key={factor}>{factor}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span>风险点</span>
+                  <ul>
+                    {prediction.riskPoints.map((riskPoint) => (
+                      <li key={riskPoint}>{riskPoint}</li>
+                    ))}
+                  </ul>
+                </div>
+                <p>{prediction.analysisReport}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </BottomDrawer>
     </section>
   );
 }

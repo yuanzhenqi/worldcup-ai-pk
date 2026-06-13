@@ -14,4 +14,16 @@ describe("admin API", () => {
 
     await app.close();
   });
+
+  it("allows private LAN callers and rejects public remote callers", async () => {
+    const app = buildApp();
+
+    const lanResponse = await app.inject({ method: "GET", url: "/api/admin/health", remoteAddress: "192.168.1.23" });
+    expect(lanResponse.statusCode).toBe(200);
+
+    const publicResponse = await app.inject({ method: "GET", url: "/api/admin/health", remoteAddress: "8.8.8.8" });
+    expect(publicResponse.statusCode).toBe(403);
+
+    await app.close();
+  });
 });

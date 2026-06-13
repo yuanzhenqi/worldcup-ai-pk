@@ -190,6 +190,21 @@ describe("FixturesPage", () => {
           modelDisplayName: "GPT-4o mini",
           createdAt: "2026-06-13T08:00:01.000Z"
         }
+      ],
+      predictions: [
+        {
+          id: "prediction-1",
+          modelDisplayName: "GPT-4o mini",
+          predictedResult: "home",
+          predictedHomeScore: 2,
+          predictedAwayScore: 1,
+          confidence: 0.72,
+          shortReason: "主队更稳定。",
+          keyFactors: ["赔率", "主场"],
+          oddsInterpretation: "主胜赔率更低。",
+          riskPoints: ["客队反击"],
+          analysisReport: "详细分析报告正文。"
+        }
       ]
     });
     const match = buildMatch({
@@ -211,7 +226,7 @@ describe("FixturesPage", () => {
       taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
       dataOptions: {
         useOdds: true,
-        useApiFootballPrediction: true,
+        useApiFootballPrediction: false,
         useHeadToHead: true,
         usePlayerLineupInjuries: true
       },
@@ -223,5 +238,44 @@ describe("FixturesPage", () => {
     expect(await screen.findByText("已完成 1 个模型预测")).toBeInTheDocument();
     expect(screen.getByText("预测请求已创建")).toBeInTheDocument();
     expect(screen.getByText("GPT-4o mini：模型预测完成：GPT-4o mini")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "查看报告" }));
+    expect(screen.getByText("GPT-4o mini")).toBeInTheDocument();
+    expect(screen.getByText("2 - 1")).toBeInTheDocument();
+    expect(screen.getByText("详细分析报告正文。")).toBeInTheDocument();
+  });
+
+  it("refreshes match context automatically when opening the data card", async () => {
+    const match = buildMatch({
+      id: "scheduled-1",
+      kickoffAt: "2026-06-13T12:00:00.000Z",
+      status: "scheduled",
+      homeDisplayNameZh: "美国",
+      homeName: "USA",
+      awayDisplayNameZh: "巴拉圭",
+      awayName: "Paraguay"
+    });
+    const onRefreshMatchContext = vi.fn().mockResolvedValue({
+      matchId: "scheduled-1",
+      completeness: "partial",
+      createdAt: "2026-06-13T08:00:00.000Z",
+      domains: [
+        { domain: "odds", status: "cached", summary: "主胜 2.10", lastSyncedAt: "2026-06-13T08:00:00.000Z", error: null },
+        { domain: "head_to_head", status: "cached", summary: "历史交锋 2 场", lastSyncedAt: "2026-06-13T08:00:00.000Z", error: null },
+        { domain: "squad", status: "cached", summary: "伤停 1 人", lastSyncedAt: "2026-06-13T08:00:00.000Z", error: null }
+      ]
+    });
+
+    render(<FixturesPage matches={[match]} onRefreshMatchContext={onRefreshMatchContext} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "数据" }));
+
+    expect(onRefreshMatchContext).toHaveBeenCalledWith("scheduled-1", {
+      useOdds: true,
+      useApiFootballPrediction: false,
+      useHeadToHead: true,
+      usePlayerLineupInjuries: true
+    });
+    expect(await screen.findByText("历史交锋 2 场")).toBeInTheDocument();
   });
 });

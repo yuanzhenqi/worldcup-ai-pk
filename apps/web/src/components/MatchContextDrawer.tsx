@@ -7,7 +7,6 @@ interface MatchContextDrawerProps {
   context: FixtureContextSummaryDto | null;
   loading: boolean;
   onClose: () => void;
-  onRefresh: () => void;
 }
 
 const contextStatusLabels: Record<FixtureContextDomainStatus, string> = {
@@ -30,7 +29,9 @@ const completenessLabels: Record<FixtureContextSummaryDto["completeness"], strin
   base_only: "仅基础信息"
 };
 
-export function MatchContextDrawer({ open, match, context, loading, onClose, onRefresh }: MatchContextDrawerProps) {
+export function MatchContextDrawer({ open, match, context, loading, onClose }: MatchContextDrawerProps) {
+  const visibleDomains = context?.domains.filter((domain) => domain.domain !== "api_prediction") ?? [];
+
   return (
     <BottomDrawer open={open} title="预测数据" onClose={onClose}>
       {match ? (
@@ -44,9 +45,7 @@ export function MatchContextDrawer({ open, match, context, loading, onClose, onR
 
           <div className="context-summary-bar">
             <span>{context ? completenessLabels[context.completeness] : "等待加载"}</span>
-            <button type="button" onClick={onRefresh} disabled={loading}>
-              {loading ? "刷新中" : "刷新数据"}
-            </button>
+            {loading ? <span>刷新中</span> : null}
           </div>
 
           {loading && !context ? <p className="drawer-muted">正在加载预测数据...</p> : null}
@@ -54,7 +53,7 @@ export function MatchContextDrawer({ open, match, context, loading, onClose, onR
 
           {context ? (
             <div className="context-domain-list">
-              {context.domains.map((domain) => (
+              {visibleDomains.map((domain) => (
                 <article className={`context-domain status-${domain.status}`} key={domain.domain}>
                   <header>
                     <strong>{domainLabels[domain.domain]}</strong>

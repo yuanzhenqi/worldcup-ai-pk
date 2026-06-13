@@ -17,19 +17,53 @@ export interface OpenAiCompatiblePredictionResult {
   rawResponse: string;
 }
 
-function buildChatCompletionsUrl(baseUrl: string): string {
-  return new URL(`${baseUrl.replace(/\/+$/, "")}/chat/completions`).toString();
+function buildChatCompletionsUrls(baseUrl: string): string[] {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
+  if (normalizedBaseUrl.endsWith("/v1")) {
+    return [new URL(`${normalizedBaseUrl}/chat/completions`).toString()];
+  }
+  return [
+    new URL(`${normalizedBaseUrl}/chat/completions`).toString(),
+    new URL(`${normalizedBaseUrl}/v1/chat/completions`).toString()
+  ];
+}
+
+function isJsonResponse(response: Response): boolean {
+  return response.headers.get("content-type")?.toLowerCase().includes("application/json") ?? false;
+}
+
+async function postChatCompletion(config: OpenAiCompatibleModelConfig, body: unknown): Promise<{ response: Response; rawResponse: string }> {
+  let latestResponse: Response | null = null;
+  let latestRawResponse = "";
+
+  for (const url of buildChatCompletionsUrls(config.baseUrl)) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.apiKey}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    const rawResponse = await response.text();
+    latestResponse = response;
+    latestRawResponse = rawResponse;
+
+    if (response.ok && isJsonResponse(response)) {
+      return { response, rawResponse };
+    }
+  }
+
+  if (!latestResponse) {
+    throw new Error("AI request was not sent");
+  }
+
+  return { response: latestResponse, rawResponse: latestRawResponse };
 }
 
 export async function testOpenAiCompatibleModel(config: OpenAiCompatibleModelConfig, now = performance.now.bind(performance)): Promise<OpenAiCompatibleTestResult> {
   const startedAt = now();
-  const response = await fetch(buildChatCompletionsUrl(config.baseUrl), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.apiKey}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
+  const { response, rawResponse } = await postChatCompletion(config, {
       model: config.modelName,
       messages: [
         {
@@ -39,8 +73,7 @@ export async function testOpenAiCompatibleModel(config: OpenAiCompatibleModelCon
       ],
       temperature: 0,
       max_tokens: 8
-    })
-  });
+    });
   const latencyMs = Math.max(0, Math.round(now() - startedAt));
 
   if (!response.ok) {
@@ -51,6 +84,16 @@ export async function testOpenAiCompatibleModel(config: OpenAiCompatibleModelCon
       latencyMs
     };
   }
+  if (!isJsonResponse(response)) {
+    return {
+      ok: false,
+      status: response.status,
+      message: "模型测试失败：接口返回的不是 JSON",
+      latencyMs
+    };
+  }
+
+  JSON.parse(rawResponse);
 
   return {
     ok: true,
@@ -89,13 +132,7 @@ function extractAssistantContent(body: unknown): string {
 }
 
 export async function runOpenAiCompatiblePrediction(config: OpenAiCompatibleModelConfig, prompt: string): Promise<OpenAiCompatiblePredictionResult> {
-  const response = await fetch(buildChatCompletionsUrl(config.baseUrl), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.apiKey}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
+  const { response, rawResponse } = await postChatCompletion(config, {
       model: config.modelName,
       messages: [
         {
@@ -109,12 +146,13 @@ export async function runOpenAiCompatiblePrediction(config: OpenAiCompatibleMode
       ],
       temperature: 0.2,
       max_tokens: 1200
-    })
-  });
-  const rawResponse = await response.text();
+    });
 
   if (!response.ok) {
     throw new Error(`AI prediction failed with HTTP ${response.status}`);
+  }
+  if (!isJsonResponse(response)) {
+    throw new Error("AI prediction response was not JSON");
   }
 
   const body = JSON.parse(rawResponse) as unknown;

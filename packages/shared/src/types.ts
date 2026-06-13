@@ -125,6 +125,20 @@ export interface PredictionRunLogDto {
   createdAt: string;
 }
 
+export interface PredictionRunPredictionDto {
+  id: string;
+  modelDisplayName: string;
+  predictedResult: PredictionResult;
+  predictedHomeScore: number;
+  predictedAwayScore: number;
+  confidence: number;
+  shortReason: string;
+  keyFactors: string[];
+  oddsInterpretation: string;
+  riskPoints: string[];
+  analysisReport: string;
+}
+
 export interface PredictionRequestResponseDto {
   matchId: string;
   status: "scheduled" | "running" | "completed" | "failed" | "rejected" | "rate_limited";
@@ -134,6 +148,7 @@ export interface PredictionRequestResponseDto {
   runId: string | null;
   predictionsCount: number;
   logs: PredictionRunLogDto[];
+  predictions: PredictionRunPredictionDto[];
 }
 
 export interface TeamDisplayNameDto {

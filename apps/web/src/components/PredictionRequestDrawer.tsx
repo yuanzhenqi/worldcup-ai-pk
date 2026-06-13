@@ -31,7 +31,7 @@ const taskOptions: Array<{ value: PredictionTaskType; label: string }> = [
 
 const defaultDataOptions: PredictionDataOptionsDto = {
   useOdds: true,
-  useApiFootballPrediction: true,
+  useApiFootballPrediction: false,
   useHeadToHead: true,
   usePlayerLineupInjuries: true
 };
@@ -122,14 +122,6 @@ export function PredictionRequestDrawer({
               <label>
                 <input type="checkbox" checked={dataOptions.useOdds} onChange={(event) => setDataOption("useOdds", event.target.checked)} />
                 <span>使用赔率</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={dataOptions.useApiFootballPrediction}
-                  onChange={(event) => setDataOption("useApiFootballPrediction", event.target.checked)}
-                />
-                <span>使用官方预测</span>
               </label>
               <label>
                 <input type="checkbox" checked={dataOptions.useHeadToHead} onChange={(event) => setDataOption("useHeadToHead", event.target.checked)} />

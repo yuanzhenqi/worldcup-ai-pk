@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS ai_predictions (
   predicted_away_score INTEGER NOT NULL,
   confidence REAL NOT NULL,
   short_reason TEXT NOT NULL,
+  analysis_report TEXT NOT NULL DEFAULT '',
   key_factors_json TEXT NOT NULL,
   odds_interpretation TEXT NOT NULL,
   risk_points_json TEXT NOT NULL,
@@ -206,3 +207,4 @@ ALTER TABLE prediction_requests ADD COLUMN data_options_json TEXT NOT NULL DEFAU
 ALTER TABLE prediction_requests ADD COLUMN prompt_template_id TEXT;
 ALTER TABLE prediction_requests ADD COLUMN custom_prompt TEXT NOT NULL DEFAULT '';
 ALTER TABLE prediction_requests ADD COLUMN output_style TEXT NOT NULL DEFAULT 'concise';
+ALTER TABLE ai_predictions ADD COLUMN analysis_report TEXT NOT NULL DEFAULT '';

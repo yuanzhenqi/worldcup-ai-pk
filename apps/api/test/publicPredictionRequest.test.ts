@@ -146,6 +146,7 @@ describe("public prediction request API", () => {
                   predicted_away_score: 1,
                   confidence: 0.64,
                   short_reason: "墨西哥主场和赔率更有利。",
+                  analysis_report: "墨西哥在主场和赔率层面更有优势，但需要防守加拿大反击。",
                   key_factors: ["主场", "赔率"],
                   odds_interpretation: "主胜赔率更低。",
                   risk_points: ["加拿大反击"]

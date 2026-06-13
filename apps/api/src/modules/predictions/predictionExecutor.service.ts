@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
-import type { FixtureContextSummaryDto, PredictionRequestInputDto, PredictionRequestResponseDto, PredictionResult, PredictionRunLogDto } from "@worldcup-ai-pk/shared";
+import type {
+  FixtureContextSummaryDto,
+  PredictionRequestInputDto,
+  PredictionRequestResponseDto,
+  PredictionResult,
+  PredictionRunLogDto,
+  PredictionRunPredictionDto
+} from "@worldcup-ai-pk/shared";
 import { runOpenAiCompatiblePrediction } from "../ai/openAiCompatibleClient";
 
 interface PredictionMatchRow {
@@ -36,6 +43,7 @@ interface ParsedModelPrediction {
   predictedAwayScore: number;
   confidence: number;
   shortReason: string;
+  analysisReport: string;
   keyFactors: string[];
   oddsInterpretation: string;
   riskPoints: string[];
@@ -179,6 +187,7 @@ function buildPredictionPrompt(input: {
     predicted_away_score: "integer",
     confidence: "number between 0 and 1",
     short_reason: "Chinese text",
+    analysis_report: "Detailed Chinese analysis report",
     key_factors: ["Chinese text"],
     odds_interpretation: "Chinese text",
     risk_points: ["Chinese text"]
@@ -245,6 +254,7 @@ function parseModelPrediction(content: string): ParsedModelPrediction {
     predictedAwayScore: getInteger(record.predicted_away_score, "predicted_away_score"),
     confidence: record.confidence,
     shortReason: record.short_reason,
+    analysisReport: typeof record.analysis_report === "string" && record.analysis_report.trim() ? record.analysis_report : record.short_reason,
     keyFactors: getStringArray(record.key_factors, "key_factors"),
     oddsInterpretation: record.odds_interpretation,
     riskPoints: getStringArray(record.risk_points, "risk_points")
@@ -273,6 +283,7 @@ function insertParsedPrediction(db: Database, input: {
         predicted_away_score,
         confidence,
         short_reason,
+        analysis_report,
         key_factors_json,
         odds_interpretation,
         risk_points_json,
@@ -280,7 +291,7 @@ function insertParsedPrediction(db: Database, input: {
         parse_status,
         eligible_for_scoring,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     randomUUID(),
@@ -293,6 +304,7 @@ function insertParsedPrediction(db: Database, input: {
     input.prediction.predictedAwayScore,
     input.prediction.confidence,
     input.prediction.shortReason,
+    input.prediction.analysisReport,
     JSON.stringify(input.prediction.keyFactors),
     input.prediction.oddsInterpretation,
     JSON.stringify(input.prediction.riskPoints),
@@ -303,11 +315,12 @@ function insertParsedPrediction(db: Database, input: {
   );
 }
 
-export async function executeManualPredictionRequest(input: ExecutePredictionInput): Promise<Pick<PredictionRequestResponseDto, "status" | "message" | "predictionsCount" | "logs">> {
+export async function executeManualPredictionRequest(input: ExecutePredictionInput): Promise<Pick<PredictionRequestResponseDto, "status" | "message" | "predictionsCount" | "logs" | "predictions">> {
   const startedAt = input.now ?? new Date();
   const logWriter = createLogWriter(input.db, { runId: input.runId, matchId: input.match.id, startedAt });
   let predictionsCount = 0;
   let failedModelCount = 0;
+  const predictions: PredictionRunPredictionDto[] = [];
 
   input.db
     .prepare("UPDATE prediction_runs SET started_at = ?, status = ? WHERE id = ?")
@@ -324,7 +337,8 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
       status: "completed",
       message: "没有可用的大模型配置",
       predictionsCount,
-      logs: logWriter.logs
+      logs: logWriter.logs,
+      predictions
     };
   }
 
@@ -338,7 +352,8 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
       status: "failed",
       message: "没有可用的提示词模板",
       predictionsCount,
-      logs: logWriter.logs
+      logs: logWriter.logs,
+      predictions
     };
   }
 
@@ -372,6 +387,19 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
         now: addMilliseconds(startedAt, logWriter.logs.length)
       });
       predictionsCount += 1;
+      predictions.push({
+        id: `${input.runId}-${model.model_id}`,
+        modelDisplayName: model.model_display_name,
+        predictedResult: parsedPrediction.predictedResult,
+        predictedHomeScore: parsedPrediction.predictedHomeScore,
+        predictedAwayScore: parsedPrediction.predictedAwayScore,
+        confidence: parsedPrediction.confidence,
+        shortReason: parsedPrediction.shortReason,
+        keyFactors: parsedPrediction.keyFactors,
+        oddsInterpretation: parsedPrediction.oddsInterpretation,
+        riskPoints: parsedPrediction.riskPoints,
+        analysisReport: parsedPrediction.analysisReport
+      });
       logWriter.write("info", `模型预测完成：${model.model_display_name}`, logModel);
     } catch (error) {
       failedModelCount += 1;
@@ -392,6 +420,7 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
     status,
     message,
     predictionsCount,
-    logs: logWriter.logs
+    logs: logWriter.logs,
+    predictions
   };
 }

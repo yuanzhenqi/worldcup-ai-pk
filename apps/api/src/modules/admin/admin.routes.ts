@@ -78,7 +78,15 @@ function getApiFootballErrors(response: unknown): unknown | null {
 
 function isLocalRequest(request: FastifyRequest): boolean {
   const ip = request.ip;
-  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") {
+    return true;
+  }
+  const ipv4 = ip.startsWith("::ffff:") ? ip.slice("::ffff:".length) : ip;
+  const parts = ipv4.split(".").map((part) => Number(part));
+  if (parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)) {
+    return parts[0] === 10 || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168);
+  }
+  return ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80:");
 }
 
 function getIdParam(request: FastifyRequest, key: string): string {
@@ -311,8 +319,8 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
     }
 
     const match = options.db
-      .prepare("SELECT id, api_football_fixture_id FROM matches WHERE id = ?")
-      .get(getIdParam(request, "matchId")) as { id: string; api_football_fixture_id: number } | undefined;
+      .prepare("SELECT id, api_football_fixture_id, home_team_id, away_team_id FROM matches WHERE id = ?")
+      .get(getIdParam(request, "matchId")) as { id: string; api_football_fixture_id: number; home_team_id: string; away_team_id: string } | undefined;
 
     if (!match) {
       return reply.code(404).send({ error: "Match not found" });
@@ -322,10 +330,12 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
       db: options.db,
       matchId: match.id,
       apiFootballFixtureId: match.api_football_fixture_id,
+      homeTeamId: match.home_team_id,
+      awayTeamId: match.away_team_id,
       footballService: new FootballService({ apiKey }),
       dataOptions: {
         useOdds: true,
-        useApiFootballPrediction: true,
+        useApiFootballPrediction: false,
         useHeadToHead: true,
         usePlayerLineupInjuries: true
       }

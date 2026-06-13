@@ -449,6 +449,42 @@ a {
   color: #b64225;
 }
 
+.prediction-report-list {
+  display: grid;
+  gap: 14px;
+}
+
+.prediction-report-card {
+  border: 1px solid #d7e0e3;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.prediction-report-card header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prediction-report-card h3,
+.prediction-report-card p,
+.prediction-report-card ul {
+  margin: 0;
+}
+
+.prediction-report-card ul {
+  padding-left: 18px;
+}
+
+.prediction-report-card span {
+  color: #5b6870;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .folded-fixtures {
   border-top: 1px solid #d8dee4;
   display: grid;

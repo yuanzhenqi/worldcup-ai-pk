@@ -45,7 +45,7 @@ describe("PredictionRequestDrawer", () => {
       taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
       dataOptions: {
         useOdds: true,
-        useApiFootballPrediction: true,
+        useApiFootballPrediction: false,
         useHeadToHead: true,
         usePlayerLineupInjuries: true
       },
@@ -54,5 +54,6 @@ describe("PredictionRequestDrawer", () => {
       outputStyle: "concise",
       refreshContext: true
     });
+    expect(screen.queryByText("使用官方预测")).not.toBeInTheDocument();
   });
 });

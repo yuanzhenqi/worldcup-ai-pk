@@ -85,3 +85,104 @@ export function parseApiFootballFixturePrediction(response: unknown): ParsedCont
     raw: response
   };
 }
+
+function readNestedString(value: unknown, keys: string[]): string | null {
+  let current = value;
+  for (const key of keys) {
+    if (!current || typeof current !== "object" || !(key in current)) {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" && current.trim() ? current.trim() : null;
+}
+
+function readNestedNumber(value: unknown, keys: string[]): number | null {
+  let current = value;
+  for (const key of keys) {
+    if (!current || typeof current !== "object" || !(key in current)) {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "number" ? current : null;
+}
+
+export function parseFixtureHeadToHeadSummary(response: unknown): ParsedContextDomain {
+  const fixtures = getResponseArray(response);
+  if (fixtures.length === 0) {
+    return { status: "unavailable", summary: "未获取历史交锋", raw: response };
+  }
+
+  const latestRows = fixtures.slice(0, 5).map((fixture) => {
+    const homeName = readNestedString(fixture, ["teams", "home", "name"]) ?? "主队";
+    const awayName = readNestedString(fixture, ["teams", "away", "name"]) ?? "客队";
+    const homeGoals = readNestedNumber(fixture, ["goals", "home"]);
+    const awayGoals = readNestedNumber(fixture, ["goals", "away"]);
+    if (homeGoals === null || awayGoals === null) {
+      return `${homeName} vs ${awayName}（比分未公布）`;
+    }
+    return `${homeName} ${homeGoals ?? "-"}-${awayGoals ?? "-"} ${awayName}`;
+  });
+
+  return {
+    status: "cached",
+    summary: `历史交锋 ${fixtures.length} 场；最近：${latestRows.join("；")}`,
+    raw: response
+  };
+}
+
+function getSquadPlayerCount(response: unknown): number {
+  const first = getResponseArray(response)[0];
+  if (!first || typeof first !== "object" || !("players" in first)) {
+    return 0;
+  }
+  const players = (first as { players: unknown }).players;
+  return Array.isArray(players) ? players.length : 0;
+}
+
+export function parseFixtureSquadSummary(input: { injuries: unknown; lineups: unknown; homeSquad: unknown; awaySquad: unknown }): ParsedContextDomain {
+  const injuries = getResponseArray(input.injuries);
+  const lineups = getResponseArray(input.lineups);
+  const homeSquadCount = getSquadPlayerCount(input.homeSquad);
+  const awaySquadCount = getSquadPlayerCount(input.awaySquad);
+
+  if (injuries.length === 0 && lineups.length === 0 && homeSquadCount === 0 && awaySquadCount === 0) {
+    return {
+      status: "unavailable",
+      summary: "未获取球员、阵容、伤停信息",
+      raw: input
+    };
+  }
+
+  const injurySummary =
+    injuries.length > 0
+      ? `伤停 ${injuries.length} 人：${injuries
+          .slice(0, 5)
+          .map((injury) => {
+            const teamName = readNestedString(injury, ["team", "name"]) ?? "球队";
+            const playerName = readNestedString(injury, ["player", "name"]) ?? "球员";
+            const reason = readNestedString(injury, ["reason"]) ?? "原因未给出";
+            return `${teamName} ${playerName} ${reason}`;
+          })
+          .join("；")}`
+      : "伤停 0 人";
+  const lineupSummary =
+    lineups.length > 0
+      ? `已公布阵容：${lineups
+          .slice(0, 2)
+          .map((lineup) => {
+            const teamName = readNestedString(lineup, ["team", "name"]) ?? "球队";
+            const formation = readNestedString(lineup, ["formation"]) ?? "阵型未给出";
+            return `${teamName} ${formation}`;
+          })
+          .join("；")}`
+      : "阵容未公布";
+  const squadSummary = `名单人数：主队 ${homeSquadCount} 人，客队 ${awaySquadCount} 人`;
+
+  return {
+    status: "cached",
+    summary: `${injurySummary}；${lineupSummary}；${squadSummary}`,
+    raw: input
+  };
+}

@@ -163,7 +163,8 @@ describe("web API client", () => {
           modelDisplayName: "GPT-4o mini",
           createdAt: "2026-06-13T08:00:00.000Z"
         }
-      ]
+      ],
+      predictions: []
     };
     const input: PredictionRequestInputDto = {
       taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
