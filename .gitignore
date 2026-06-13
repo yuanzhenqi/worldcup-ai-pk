@@ -11,3 +11,4 @@ apps/api/data/*.sqlite-shm
 apps/api/data/*.sqlite-wal
 coverage/
 .DS_Store
+.worktrees/
