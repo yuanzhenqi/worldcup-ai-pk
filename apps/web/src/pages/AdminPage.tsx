@@ -13,7 +13,8 @@ import {
   saveAdminApiFootballKey,
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
-  syncApiFootballFixtures
+  syncApiFootballFixtures,
+  updateAdminPromptTemplate
 } from "../api/client";
 
 type AdminModule = "data-source" | "providers" | "models" | "prompts" | "teams";
@@ -67,6 +68,7 @@ export function AdminPage() {
   const [providerForm, setProviderForm] = useState(initialProviderForm);
   const [modelForm, setModelForm] = useState(initialModelForm);
   const [promptForm, setPromptForm] = useState(initialPromptForm);
+  const [editingPromptTemplateId, setEditingPromptTemplateId] = useState<string | null>(null);
   const [statusText, setStatusText] = useState("正在读取配置...");
 
   async function loadTeams(query = teamSearch) {
@@ -172,10 +174,29 @@ export function AdminPage() {
 
   async function handleSavePrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await saveAdminPromptTemplate(promptForm);
+    if (editingPromptTemplateId) {
+      await updateAdminPromptTemplate(editingPromptTemplateId, promptForm);
+    } else {
+      await saveAdminPromptTemplate(promptForm);
+    }
     setPromptForm(initialPromptForm);
+    setEditingPromptTemplateId(null);
     setPromptTemplates(await listAdminPromptTemplates());
-    setStatusText("提示词模板已保存");
+    setStatusText(editingPromptTemplateId ? "提示词模板已更新" : "提示词模板已保存");
+  }
+
+  function handleEditPromptTemplate(template: PromptTemplateConfigDto) {
+    setEditingPromptTemplateId(template.id);
+    setPromptForm({
+      name: template.name,
+      description: template.description,
+      promptSummary: template.promptSummary,
+      scope: template.scope,
+      fullPrompt: template.fullPrompt,
+      enabled: template.enabled,
+      isDefault: template.isDefault
+    });
+    setStatusText(`正在编辑提示词模板：${template.name}`);
   }
 
   async function handleTeamSearch(event: FormEvent<HTMLFormElement>) {
@@ -411,7 +432,7 @@ export function AdminPage() {
                   <input type="checkbox" checked={promptForm.isDefault} onChange={(event) => setPromptForm({ ...promptForm, isDefault: event.target.checked })} />
                   默认模板
                 </label>
-                <button type="submit">保存模板</button>
+                <button type="submit">{editingPromptTemplateId ? "更新模板" : "保存模板"}</button>
               </form>
               <div className="variable-list">
                 {promptVariables.map((variable) => (
@@ -424,6 +445,7 @@ export function AdminPage() {
                     <th>名称</th>
                     <th>摘要</th>
                     <th>状态</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -432,6 +454,11 @@ export function AdminPage() {
                       <td>{template.name}</td>
                       <td>{template.promptSummary}</td>
                       <td>{template.enabled ? "启用" : "停用"}{template.isDefault ? " · 默认" : ""}</td>
+                      <td>
+                        <button type="button" onClick={() => handleEditPromptTemplate(template)} aria-label={`编辑 ${template.name}`}>
+                          编辑
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

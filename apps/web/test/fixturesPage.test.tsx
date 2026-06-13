@@ -155,4 +155,29 @@ describe("FixturesPage", () => {
     expect(screen.getByText("墨西哥")).toBeInTheDocument();
     expect(screen.getByText("2 - 0")).toBeInTheDocument();
   });
+
+  it("requests a prediction from a scheduled match card", async () => {
+    const onRequestPrediction = vi.fn().mockResolvedValue({
+      matchId: "scheduled-1",
+      status: "scheduled",
+      message: "Prediction scheduled for two hours before kickoff",
+      scheduledFor: "2026-06-13T10:00:00.000Z"
+    });
+    const match = buildMatch({
+      id: "scheduled-1",
+      kickoffAt: "2026-06-13T12:00:00.000Z",
+      status: "scheduled",
+      homeDisplayNameZh: "美国",
+      homeName: "USA",
+      awayDisplayNameZh: "巴拉圭",
+      awayName: "Paraguay"
+    });
+
+    render(<FixturesPage matches={[match]} onRequestPrediction={onRequestPrediction} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "请求预测" }));
+
+    expect(onRequestPrediction).toHaveBeenCalledWith(match);
+    expect(await screen.findByText("预测已排程")).toBeInTheDocument();
+  });
 });

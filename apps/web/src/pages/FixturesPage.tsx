@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react";
-import type { MatchDto, MatchStatus } from "@worldcup-ai-pk/shared";
+import type { MatchDto, MatchStatus, PredictionRequestResponseDto } from "@worldcup-ai-pk/shared";
 
 interface FixturesPageProps {
   matches: MatchDto[];
+  onRequestPrediction?: (match: MatchDto) => Promise<PredictionRequestResponseDto>;
 }
 
 type FixtureTab = Extract<MatchStatus, "scheduled" | "live" | "finished">;
+type PredictionFeedback = {
+  message: string;
+  tone: "info" | "error";
+};
 
 const statusTabs: Array<{ status: FixtureTab; label: string }> = [
   { status: "scheduled", label: "未开始" },
@@ -30,6 +35,19 @@ function getScoreText(match: MatchDto): string {
   }
 
   return `${match.homeScore} - ${match.awayScore}`;
+}
+
+function getPredictionFeedback(response: PredictionRequestResponseDto): PredictionFeedback {
+  switch (response.status) {
+    case "scheduled":
+      return { message: "预测已排程", tone: "info" };
+    case "running":
+      return { message: "预测已加入队列", tone: "info" };
+    case "rate_limited":
+      return { message: "30 分钟内已生成过预测", tone: "error" };
+    case "rejected":
+      return { message: "当前比赛不可请求预测", tone: "error" };
+  }
 }
 
 function getStageLabelZh(stage: string): string {
@@ -98,7 +116,17 @@ function groupMatchesByDate(matches: MatchDto[]): Array<{ key: string; label: st
   return Array.from(groups.values());
 }
 
-function MatchCard({ match }: { match: MatchDto }) {
+function MatchCard({
+  match,
+  feedback,
+  isRequesting,
+  onRequestPrediction
+}: {
+  match: MatchDto;
+  feedback?: PredictionFeedback;
+  isRequesting: boolean;
+  onRequestPrediction?: (match: MatchDto) => Promise<void>;
+}) {
   return (
     <article className={`match-card status-${match.status}`}>
       <div className="match-time-block">
@@ -124,16 +152,27 @@ function MatchCard({ match }: { match: MatchDto }) {
       <div className="match-action">
         {match.status === "finished" || match.status === "live" ? <strong className="score-pill">{getScoreText(match)}</strong> : null}
         {match.status === "scheduled" ? (
-          <button disabled={!match.canRequestPrediction} type="button">
-            请求预测
+          <button disabled={!match.canRequestPrediction || isRequesting || !onRequestPrediction} type="button" onClick={() => onRequestPrediction?.(match)}>
+            {isRequesting ? "请求中" : "请求预测"}
           </button>
         ) : null}
+        {feedback ? <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span> : null}
       </div>
     </article>
   );
 }
 
-function FixtureDateGroups({ groups }: { groups: Array<{ key: string; label: string; matches: MatchDto[] }> }) {
+function FixtureDateGroups({
+  groups,
+  predictionFeedbackByMatchId,
+  requestingMatchIds,
+  onRequestPrediction
+}: {
+  groups: Array<{ key: string; label: string; matches: MatchDto[] }>;
+  predictionFeedbackByMatchId: Record<string, PredictionFeedback>;
+  requestingMatchIds: Set<string>;
+  onRequestPrediction?: (match: MatchDto) => Promise<void>;
+}) {
   return (
     <div className="fixture-date-groups">
       {groups.map((group) => (
@@ -144,7 +183,13 @@ function FixtureDateGroups({ groups }: { groups: Array<{ key: string; label: str
           </header>
           <div className="match-card-list">
             {group.matches.map((match) => (
-              <MatchCard key={match.id} match={match} />
+              <MatchCard
+                key={match.id}
+                match={match}
+                feedback={predictionFeedbackByMatchId[match.id]}
+                isRequesting={requestingMatchIds.has(match.id)}
+                onRequestPrediction={onRequestPrediction}
+              />
             ))}
           </div>
         </section>
@@ -153,11 +198,13 @@ function FixtureDateGroups({ groups }: { groups: Array<{ key: string; label: str
   );
 }
 
-export function FixturesPage({ matches }: FixturesPageProps) {
+export function FixturesPage({ matches, onRequestPrediction }: FixturesPageProps) {
   const [activeStatus, setActiveStatus] = useState<FixtureTab>("scheduled");
   const [searchText, setSearchText] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [scheduledFoldOpen, setScheduledFoldOpen] = useState(false);
+  const [predictionFeedbackByMatchId, setPredictionFeedbackByMatchId] = useState<Record<string, PredictionFeedback>>({});
+  const [requestingMatchIds, setRequestingMatchIds] = useState<Set<string>>(() => new Set());
 
   const stages = useMemo(() => Array.from(new Set(matches.map((match) => match.stage))).sort(), [matches]);
   const filteredMatches = useMemo(
@@ -181,6 +228,36 @@ export function FixturesPage({ matches }: FixturesPageProps) {
   const dateGroups = useMemo(() => groupMatchesByDate(primaryMatches), [primaryMatches]);
   const foldedDateGroups = useMemo(() => groupMatchesByDate(foldedMatches), [foldedMatches]);
   const latestSyncHint = matches.length > 0 ? `${matches.length} 场比赛已载入` : "等待同步赛程数据";
+
+  async function handleRequestPrediction(match: MatchDto) {
+    if (!onRequestPrediction) {
+      return;
+    }
+
+    setRequestingMatchIds((currentIds) => new Set(currentIds).add(match.id));
+
+    try {
+      const response = await onRequestPrediction(match);
+      setPredictionFeedbackByMatchId((currentFeedback) => ({
+        ...currentFeedback,
+        [match.id]: getPredictionFeedback(response)
+      }));
+    } catch {
+      setPredictionFeedbackByMatchId((currentFeedback) => ({
+        ...currentFeedback,
+        [match.id]: {
+          message: "预测请求失败，请稍后重试",
+          tone: "error"
+        }
+      }));
+    } finally {
+      setRequestingMatchIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(match.id);
+        return nextIds;
+      });
+    }
+  }
 
   return (
     <section id="fixtures" className="page-section fixtures-console">
@@ -252,14 +329,26 @@ export function FixturesPage({ matches }: FixturesPageProps) {
       {matches.length === 0 ? <p className="empty-state">暂无赛程数据。配置 API-Football key 并同步后会显示在这里。</p> : null}
       {matches.length > 0 && dateGroups.length === 0 && foldedMatches.length === 0 ? <p className="empty-state">当前筛选下暂无比赛。</p> : null}
 
-      <FixtureDateGroups groups={dateGroups} />
+      <FixtureDateGroups
+        groups={dateGroups}
+        predictionFeedbackByMatchId={predictionFeedbackByMatchId}
+        requestingMatchIds={requestingMatchIds}
+        onRequestPrediction={handleRequestPrediction}
+      />
 
       {activeStatus === "scheduled" && foldedMatches.length > 0 ? (
         <section className="folded-fixtures">
           <button type="button" onClick={() => setScheduledFoldOpen((isOpen) => !isOpen)}>
             {`其余 ${foldedMatches.length} 场未开始比赛`}
           </button>
-          {scheduledFoldOpen ? <FixtureDateGroups groups={foldedDateGroups} /> : null}
+          {scheduledFoldOpen ? (
+            <FixtureDateGroups
+              groups={foldedDateGroups}
+              predictionFeedbackByMatchId={predictionFeedbackByMatchId}
+              requestingMatchIds={requestingMatchIds}
+              onRequestPrediction={handleRequestPrediction}
+            />
+          ) : null}
         </section>
       ) : null}
     </section>

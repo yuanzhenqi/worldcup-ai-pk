@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MatchDto } from "@worldcup-ai-pk/shared";
-import { getPublicMatches } from "./api/client";
+import { getPublicMatches, requestMatchPrediction, syncApiFootballFixtures } from "./api/client";
 import { AdminPage } from "./pages/AdminPage";
 import { FixturesPage } from "./pages/FixturesPage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
@@ -13,23 +13,49 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    getPublicMatches()
-      .then((nextMatches) => {
+    async function loadMatches() {
+      try {
+        const nextMatches = await getPublicMatches();
         if (!cancelled) {
           setMatches(nextMatches);
           setMatchesStatus("loaded");
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) {
           setMatchesStatus("failed");
         }
-      });
+      }
+    }
+
+    async function syncAndLoadMatches() {
+      try {
+        await syncApiFootballFixtures();
+      } catch {
+        // The public page can still show the last loaded schedule if sync is temporarily unavailable.
+      }
+      await loadMatches();
+    }
+
+    void loadMatches();
+    const refreshInterval = window.setInterval(() => {
+      void syncAndLoadMatches();
+    }, 60_000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(refreshInterval);
     };
   }, []);
+
+  async function handleRequestPrediction(match: MatchDto) {
+    const response = await requestMatchPrediction(match.id);
+    try {
+      setMatches(await getPublicMatches());
+    } catch {
+      // The request feedback is still useful even if the immediate refresh fails.
+    }
+    return response;
+  }
 
   return (
     <main className="app-shell">
@@ -50,7 +76,7 @@ export function App() {
       </section>
       {matchesStatus === "loading" ? <p className="status-line">正在加载赛程...</p> : null}
       {matchesStatus === "failed" ? <p className="status-line error">赛程加载失败，请确认 API 服务正在运行。</p> : null}
-      <FixturesPage matches={matches} />
+      <FixturesPage matches={matches} onRequestPrediction={handleRequestPrediction} />
       <LeaderboardPage rows={[]} />
       <AdminPage />
     </main>

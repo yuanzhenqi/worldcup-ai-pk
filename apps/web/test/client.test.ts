@@ -13,7 +13,9 @@ import {
   saveAdminApiFootballKey,
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
-  syncApiFootballFixtures
+  requestMatchPrediction,
+  syncApiFootballFixtures,
+  updateAdminPromptTemplate
 } from "../src/api/client";
 
 describe("web API client", () => {
@@ -133,6 +135,26 @@ describe("web API client", () => {
 
     await expect(syncApiFootballFixtures()).resolves.toEqual({ synced: true, imported: 72 });
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/sync/api-football/fixtures", {
+      method: "POST"
+    });
+  });
+
+  it("requests a prediction for a public match", async () => {
+    const result = {
+      matchId: "match-1",
+      status: "scheduled",
+      message: "Prediction scheduled for two hours before kickoff",
+      scheduledFor: "2026-06-12T17:00:00.000Z"
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(requestMatchPrediction("match-1")).resolves.toEqual(result);
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/matches/match-1/prediction-request", {
       method: "POST"
     });
   });
@@ -278,6 +300,49 @@ describe("web API client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:4000/api/admin/prompt-templates");
     expect(fetchMock).toHaveBeenNthCalledWith(3, "http://127.0.0.1:4000/api/admin/prompt-templates", {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "保守预测",
+        description: "偏重不败概率",
+        fullPrompt: "请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+        promptSummary: "保守预测",
+        scope: "match_prediction",
+        enabled: true,
+        isDefault: true
+      })
+    });
+  });
+
+  it("updates an existing prompt template", async () => {
+    const promptTemplate = {
+      id: "prompt-1",
+      name: "保守预测",
+      description: "偏重不败概率",
+      fullPrompt: "请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+      promptSummary: "保守预测",
+      scope: "match_prediction",
+      enabled: true,
+      isDefault: true
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(promptTemplate), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(updateAdminPromptTemplate("prompt-1", {
+      name: "保守预测",
+      description: "偏重不败概率",
+      fullPrompt: "请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+      promptSummary: "保守预测",
+      scope: "match_prediction",
+      enabled: true,
+      isDefault: true
+    })).resolves.toEqual(promptTemplate);
+
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/prompt-templates/prompt-1", {
+      method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name: "保守预测",

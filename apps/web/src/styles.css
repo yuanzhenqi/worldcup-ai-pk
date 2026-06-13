@@ -403,6 +403,24 @@ a {
   padding: 8px 10px;
 }
 
+.prediction-feedback {
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.prediction-feedback.info {
+  background: #e4f3ee;
+  color: #1d6f5b;
+}
+
+.prediction-feedback.error {
+  background: #f8e6df;
+  color: #b64225;
+}
+
 .folded-fixtures {
   border-top: 1px solid #d8dee4;
   display: grid;

@@ -3,6 +3,7 @@ import type {
   AiModelConfigDto,
   AiProviderConfigDto,
   MatchDto,
+  PredictionRequestResponseDto,
   PromptTemplateConfigDto,
   TeamDisplayNameDto
 } from "@worldcup-ai-pk/shared";
@@ -98,6 +99,16 @@ export async function getPublicMatches(): Promise<MatchDto[]> {
   }
   const body = (await response.json()) as { matches: MatchDto[] };
   return body.matches;
+}
+
+export async function requestMatchPrediction(matchId: string): Promise<PredictionRequestResponseDto> {
+  const response = await request(`${apiBaseUrl}/api/public/matches/${matchId}/prediction-request`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(`Public prediction request failed with status ${response.status}`);
+  }
+  return (await response.json()) as PredictionRequestResponseDto;
 }
 
 export async function getAdminApiFootballSettings(): Promise<ApiFootballSettingsStatus> {
@@ -217,6 +228,20 @@ export async function saveAdminPromptTemplate(input: SavePromptTemplateRequest):
   });
   if (!response.ok) {
     throw new Error(`Admin prompt template save failed with status ${response.status}`);
+  }
+  return (await response.json()) as PromptTemplateConfigDto;
+}
+
+export async function updateAdminPromptTemplate(id: string, input: SavePromptTemplateRequest): Promise<PromptTemplateConfigDto> {
+  const response = await request(`${apiBaseUrl}/api/admin/prompt-templates/${id}`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) {
+    throw new Error(`Admin prompt template update failed with status ${response.status}`);
   }
   return (await response.json()) as PromptTemplateConfigDto;
 }
