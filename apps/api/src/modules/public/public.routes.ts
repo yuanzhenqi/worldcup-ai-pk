@@ -91,7 +91,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       matchId: match.id,
       status: plan.status,
       message: plan.message,
-      scheduledFor
+      scheduledFor,
+      context: null
     };
 
     return response;
