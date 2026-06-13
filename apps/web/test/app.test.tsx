@@ -14,6 +14,7 @@ vi.mock("../src/pages/LeaderboardPage", () => ({
 
 vi.mock("../src/api/client", () => ({
   getMatchContext: vi.fn(),
+  getPredictionRunStatus: vi.fn(),
   getPublicMatches: vi.fn(),
   listAdminPromptTemplates: vi.fn(),
   refreshMatchContext: vi.fn(),

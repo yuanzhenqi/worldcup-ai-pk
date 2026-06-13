@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { MatchDto, PredictionRequestInputDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
 import {
   getMatchContext,
+  getPredictionRunStatus,
   getPublicMatches,
   listAdminPromptTemplates,
   refreshMatchContext,
@@ -105,6 +106,7 @@ export function App() {
         onLoadMatchContext={getMatchContext}
         onRefreshMatchContext={refreshMatchContext}
         onRequestPrediction={handleRequestPrediction}
+        onLoadPredictionRunStatus={getPredictionRunStatus}
       />
       <LeaderboardPage rows={[]} />
       <AdminPage />

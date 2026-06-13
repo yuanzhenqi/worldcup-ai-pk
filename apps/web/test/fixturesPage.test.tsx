@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { MatchDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
+import type { MatchDto, PredictionRunStatusDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FixturesPage } from "../src/pages/FixturesPage";
 
@@ -277,5 +277,80 @@ describe("FixturesPage", () => {
       usePlayerLineupInjuries: true
     });
     expect(await screen.findByText("历史交锋 2 场")).toBeInTheDocument();
+  });
+
+  it("polls prediction run status while models are still running", async () => {
+    const match = buildMatch({
+      id: "scheduled-1",
+      kickoffAt: "2026-06-13T12:00:00.000Z",
+      status: "scheduled",
+      homeDisplayNameZh: "美国",
+      homeName: "USA",
+      awayDisplayNameZh: "巴拉圭",
+      awayName: "Paraguay"
+    });
+    const onRequestPrediction = vi.fn().mockResolvedValue({
+      matchId: "scheduled-1",
+      status: "running",
+      message: "模型预测进行中",
+      scheduledFor: null,
+      context: null,
+      runId: "run-1",
+      predictionsCount: 0,
+      logs: [
+        {
+          level: "info",
+          message: "开始调用模型：GPT-4o mini",
+          modelDisplayName: "GPT-4o mini",
+          createdAt: "2026-06-13T08:00:00.000Z"
+        }
+      ],
+      predictions: []
+    });
+    let resolveRunStatus: (value: PredictionRunStatusDto) => void;
+    const runStatusPromise = new Promise<PredictionRunStatusDto>((resolve) => {
+      resolveRunStatus = resolve;
+    });
+    const onLoadPredictionRunStatus = vi.fn().mockReturnValue(runStatusPromise);
+    const completedStatus: PredictionRunStatusDto = {
+      runId: "run-1",
+      matchId: "scheduled-1",
+      status: "completed",
+      message: "已完成 1 个模型预测",
+      predictionsCount: 1,
+      logs: [
+        {
+          level: "info",
+          message: "开始调用模型：GPT-4o mini",
+          modelDisplayName: "GPT-4o mini",
+          createdAt: "2026-06-13T08:00:00.000Z"
+        },
+        {
+          level: "info",
+          message: "模型预测完成：GPT-4o mini",
+          modelDisplayName: "GPT-4o mini",
+          createdAt: "2026-06-13T08:00:01.000Z"
+        }
+      ],
+      predictions: []
+    };
+
+    render(
+      <FixturesPage
+        matches={[match]}
+        onRequestPrediction={onRequestPrediction}
+        onLoadPredictionRunStatus={onLoadPredictionRunStatus}
+        predictionPollIntervalMs={1}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "预测" }));
+    await userEvent.click(screen.getByRole("button", { name: "开始预测" }));
+
+    expect(await screen.findByText("预测执行中")).toBeInTheDocument();
+    expect(screen.getByText("GPT-4o mini：开始调用模型：GPT-4o mini")).toBeInTheDocument();
+    resolveRunStatus!(completedStatus);
+    expect(await screen.findByText("已完成 1 个模型预测")).toBeInTheDocument();
+    expect(onLoadPredictionRunStatus).toHaveBeenCalledWith("run-1");
   });
 });

@@ -80,6 +80,19 @@ describe("public prediction request API", () => {
     vi.restoreAllMocks();
   });
 
+  async function waitForRunStatus(app: ReturnType<typeof buildApp>, runId: string, expectedStatus: string) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const response = await app.inject({ method: "GET", url: `/api/public/prediction-runs/${runId}` });
+      const body = response.json();
+      if (body.status === expectedStatus) {
+        return body;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const response = await app.inject({ method: "GET", url: `/api/public/prediction-runs/${runId}` });
+    return response.json();
+  }
+
   it("runs a manual prediction request immediately and reports missing models", async () => {
     const { db, databasePath } = createTestDatabase();
     insertMatch(db, {
@@ -182,6 +195,20 @@ describe("public prediction request API", () => {
     expect(response.statusCode).toBe(200);
     expect(body).toMatchObject({
       matchId: "match-1",
+      status: "running",
+      runId: expect.any(String),
+      predictionsCount: 0,
+      logs: [
+        expect.objectContaining({ level: "info", message: "预测请求已创建" }),
+        expect.objectContaining({ level: "info", message: "开始调用模型：GPT-4o mini", modelDisplayName: "GPT-4o mini" })
+      ]
+    });
+
+    const completedRun = await waitForRunStatus(app, body.runId, "completed");
+    const statusResponse = await app.inject({ method: "GET", url: `/api/public/prediction-runs/${body.runId}` });
+    expect(statusResponse.headers["cache-control"]).toBe("no-store");
+    expect(completedRun).toMatchObject({
+      matchId: "match-1",
       status: "completed",
       predictionsCount: 1,
       logs: [
@@ -190,6 +217,7 @@ describe("public prediction request API", () => {
         expect.objectContaining({ level: "info", message: "模型预测完成：GPT-4o mini", modelDisplayName: "GPT-4o mini" })
       ]
     });
+    expect(completedRun.predictions).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledWith("https://openrouter.ai/api/v1/chat/completions", expect.objectContaining({ method: "POST" }));
 
     await app.close();

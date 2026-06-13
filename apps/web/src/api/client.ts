@@ -7,6 +7,7 @@ import type {
   PredictionDataOptionsDto,
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
+  PredictionRunStatusDto,
   PromptTemplateConfigDto,
   TeamDisplayNameDto
 } from "@worldcup-ai-pk/shared";
@@ -23,6 +24,7 @@ interface ApiRequestInit {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  cache?: RequestCache;
 }
 
 function request(url: string, init?: ApiRequestInit): Promise<ApiResponse> {
@@ -149,6 +151,16 @@ export async function requestMatchPrediction(matchId: string, input: PredictionR
     throw new Error(`Public prediction request failed with status ${response.status}`);
   }
   return (await response.json()) as PredictionRequestResponseDto;
+}
+
+export async function getPredictionRunStatus(runId: string): Promise<PredictionRunStatusDto> {
+  const response = await request(`${apiBaseUrl}/api/public/prediction-runs/${runId}`, {
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new Error(`Public prediction run status request failed with status ${response.status}`);
+  }
+  return (await response.json()) as PredictionRunStatusDto;
 }
 
 export async function getAdminApiFootballSettings(): Promise<ApiFootballSettingsStatus> {

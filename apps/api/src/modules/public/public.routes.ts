@@ -6,7 +6,7 @@ import type { MatchStatus, PredictionDataOptionsDto, PredictionRequestInputDto, 
 import { getFixtureContextSummary, refreshFixtureContext } from "../context/fixtureContext.service";
 import { FootballService } from "../football/football.service";
 import { listMatches } from "../matches/match.repository";
-import { executeManualPredictionRequest } from "../predictions/predictionExecutor.service";
+import { executeManualPredictionRequest, getPredictionRunStatus, markPredictionRunFailed } from "../predictions/predictionExecutor.service";
 import { planPredictionRequest } from "../predictions/prediction.service";
 import { getApiFootballKey } from "../settings/settings.repository";
 
@@ -62,6 +62,15 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
   app.get("/matches", async () => ({
     matches: listMatches(options.db)
   }));
+
+  app.get<{ Params: { runId: string } }>("/prediction-runs/:runId", async (request, reply) => {
+    const status = getPredictionRunStatus(options.db, request.params.runId);
+    if (!status) {
+      return reply.code(404).send({ error: "Prediction run not found" });
+    }
+    reply.header("cache-control", "no-store");
+    return status;
+  });
 
   app.get<{ Params: { matchId: string } }>("/matches/:matchId/context", async (request, reply) => {
     const match = options.db.prepare("SELECT id FROM matches WHERE id = ?").get(request.params.matchId) as { id: string } | undefined;
@@ -284,7 +293,7 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
           .run(runId, match.id, requestedAt, null, null, "running", null);
       })();
 
-    const execution = await executeManualPredictionRequest({
+    const executionPromise = executeManualPredictionRequest({
       db: options.db,
       match,
       requestId,
@@ -293,17 +302,22 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       context,
       now
     });
+    void executionPromise.catch((error) => {
+      const message = error instanceof Error ? error.message : "Prediction run failed";
+      markPredictionRunFailed(options.db, { requestId, runId, matchId: match.id, message });
+    });
+    const runStatus = getPredictionRunStatus(options.db, runId);
 
     const response: PredictionRequestResponseDto = {
       matchId: match.id,
-      status: execution.status,
-      message: execution.message,
+      status: runStatus?.status ?? "running",
+      message: runStatus?.message ?? "模型预测进行中",
       scheduledFor,
       context,
       runId,
-      predictionsCount: execution.predictionsCount,
-      logs: execution.logs,
-      predictions: execution.predictions
+      predictionsCount: runStatus?.predictionsCount ?? 0,
+      logs: runStatus?.logs ?? [],
+      predictions: runStatus?.predictions ?? []
     };
 
     return response;

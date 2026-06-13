@@ -8,6 +8,7 @@ import type {
   PredictionRequestResponseDto,
   PredictionRunLogDto,
   PredictionRunPredictionDto,
+  PredictionRunStatusDto,
   PromptTemplateConfigDto
 } from "@worldcup-ai-pk/shared";
 import { MatchContextDrawer } from "../components/MatchContextDrawer";
@@ -20,6 +21,8 @@ interface FixturesPageProps {
   onLoadMatchContext?: (matchId: string) => Promise<FixtureContextSummaryDto>;
   onRefreshMatchContext?: (matchId: string, dataOptions: PredictionDataOptionsDto) => Promise<FixtureContextSummaryDto>;
   onRequestPrediction?: (match: MatchDto, input: PredictionRequestInputDto) => Promise<PredictionRequestResponseDto>;
+  onLoadPredictionRunStatus?: (runId: string) => Promise<PredictionRunStatusDto>;
+  predictionPollIntervalMs?: number;
 }
 
 type FixtureTab = Extract<MatchStatus, "scheduled" | "live" | "finished">;
@@ -62,7 +65,7 @@ function getScoreText(match: MatchDto): string {
   return `${match.homeScore} - ${match.awayScore}`;
 }
 
-function getPredictionFeedback(response: PredictionRequestResponseDto): PredictionFeedback {
+function getPredictionFeedback(response: PredictionRequestResponseDto | PredictionRunStatusDto): PredictionFeedback {
   switch (response.status) {
     case "scheduled":
       return { message: "预测已排程", tone: "info", logs: response.logs, predictions: response.predictions };
@@ -116,6 +119,10 @@ function addDays(date: Date, days: number): Date {
   const nextDate = new Date(date);
   nextDate.setDate(nextDate.getDate() + days);
   return nextDate;
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function getUpcomingDateKeys(now = new Date()): Set<string> {
@@ -269,7 +276,9 @@ export function FixturesPage({
   promptTemplates = [],
   onLoadMatchContext,
   onRefreshMatchContext,
-  onRequestPrediction
+  onRequestPrediction,
+  onLoadPredictionRunStatus,
+  predictionPollIntervalMs = 1500
 }: FixturesPageProps) {
   const [activeStatus, setActiveStatus] = useState<FixtureTab>("scheduled");
   const [searchText, setSearchText] = useState("");
@@ -324,6 +333,21 @@ export function FixturesPage({
         setContextByMatchId((currentContexts) => ({ ...currentContexts, [match.id]: response.context as FixtureContextSummaryDto }));
       }
       setActivePredictionMatch(null);
+
+      if (response.status === "running" && response.runId && onLoadPredictionRunStatus) {
+        let latestStatus: PredictionRunStatusDto | null = null;
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          await wait(predictionPollIntervalMs);
+          latestStatus = await onLoadPredictionRunStatus(response.runId);
+          setPredictionFeedbackByMatchId((currentFeedback) => ({
+            ...currentFeedback,
+            [match.id]: getPredictionFeedback(latestStatus as PredictionRunStatusDto)
+          }));
+          if (latestStatus.status !== "running") {
+            break;
+          }
+        }
+      }
     } catch {
       setPredictionFeedbackByMatchId((currentFeedback) => ({
         ...currentFeedback,

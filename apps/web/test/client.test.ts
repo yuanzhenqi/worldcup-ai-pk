@@ -21,6 +21,7 @@ import {
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
   requestMatchPrediction,
+  getPredictionRunStatus,
   syncApiFootballFixtures,
   testAdminAiModel,
   updateAdminPromptTemplate
@@ -191,6 +192,36 @@ describe("web API client", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
+    });
+  });
+
+  it("loads a prediction run status for polling", async () => {
+    const status = {
+      runId: "run-1",
+      matchId: "match-1",
+      status: "running",
+      message: "模型预测进行中",
+      predictionsCount: 0,
+      logs: [
+        {
+          level: "info",
+          message: "开始调用模型：GPT-4o mini",
+          modelDisplayName: "GPT-4o mini",
+          createdAt: "2026-06-13T08:00:00.000Z"
+        }
+      ],
+      predictions: []
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(status), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(getPredictionRunStatus("run-1")).resolves.toEqual(status);
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/prediction-runs/run-1", {
+      cache: "no-store"
     });
   });
 

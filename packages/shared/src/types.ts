@@ -139,6 +139,16 @@ export interface PredictionRunPredictionDto {
   analysisReport: string;
 }
 
+export interface PredictionRunStatusDto {
+  runId: string;
+  matchId: string;
+  status: "running" | "completed" | "failed";
+  message: string;
+  predictionsCount: number;
+  logs: PredictionRunLogDto[];
+  predictions: PredictionRunPredictionDto[];
+}
+
 export interface PredictionRequestResponseDto {
   matchId: string;
   status: "scheduled" | "running" | "completed" | "failed" | "rejected" | "rate_limited";

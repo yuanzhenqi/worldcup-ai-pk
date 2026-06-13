@@ -6,7 +6,8 @@ import type {
   PredictionRequestResponseDto,
   PredictionResult,
   PredictionRunLogDto,
-  PredictionRunPredictionDto
+  PredictionRunPredictionDto,
+  PredictionRunStatusDto
 } from "@worldcup-ai-pk/shared";
 import { runOpenAiCompatiblePrediction } from "../ai/openAiCompatibleClient";
 
@@ -61,6 +62,34 @@ interface ExecutePredictionInput {
 
 interface ExecutionLog extends PredictionRunLogDto {
   modelId: string | null;
+}
+
+interface PredictionRunStatusRow {
+  id: string;
+  match_id: string;
+  status: "running" | "completed" | "failed";
+  failure_reason: string | null;
+}
+
+interface PredictionRunLogRow {
+  level: "info" | "error";
+  message: string;
+  model_display_name: string | null;
+  created_at: string;
+}
+
+interface PredictionRunPredictionRow {
+  id: string;
+  model_display_name: string;
+  predicted_result: PredictionResult;
+  predicted_home_score: number;
+  predicted_away_score: number;
+  confidence: number;
+  short_reason: string;
+  analysis_report: string;
+  key_factors_json: string;
+  odds_interpretation: string;
+  risk_points_json: string;
 }
 
 function listEnabledModels(db: Database): EnabledModelRow[] {
@@ -313,6 +342,119 @@ function insertParsedPrediction(db: Database, input: {
     1,
     input.now.toISOString()
   );
+}
+
+function parseStringArrayJson(value: string): string[] {
+  const parsed = JSON.parse(value);
+  return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? parsed : [];
+}
+
+export function getPredictionRunStatus(db: Database, runId: string): PredictionRunStatusDto | null {
+  const run = db
+    .prepare(
+      `
+        SELECT id, match_id, status, failure_reason
+        FROM prediction_runs
+        WHERE id = ?
+      `
+    )
+    .get(runId) as PredictionRunStatusRow | undefined;
+
+  if (!run) {
+    return null;
+  }
+
+  const logs = db
+    .prepare(
+      `
+        SELECT
+          prediction_run_logs.level,
+          prediction_run_logs.message,
+          ai_models.display_name AS model_display_name,
+          prediction_run_logs.created_at
+        FROM prediction_run_logs
+        LEFT JOIN ai_models ON ai_models.id = prediction_run_logs.model_id
+        WHERE prediction_run_logs.prediction_run_id = ?
+        ORDER BY prediction_run_logs.created_at ASC
+      `
+    )
+    .all(runId) as PredictionRunLogRow[];
+  const predictions = db
+    .prepare(
+      `
+        SELECT
+          ai_predictions.id,
+          ai_models.display_name AS model_display_name,
+          ai_predictions.predicted_result,
+          ai_predictions.predicted_home_score,
+          ai_predictions.predicted_away_score,
+          ai_predictions.confidence,
+          ai_predictions.short_reason,
+          ai_predictions.analysis_report,
+          ai_predictions.key_factors_json,
+          ai_predictions.odds_interpretation,
+          ai_predictions.risk_points_json
+        FROM ai_predictions
+        INNER JOIN ai_models ON ai_models.id = ai_predictions.model_id
+        WHERE ai_predictions.prediction_run_id = ?
+          AND ai_predictions.parse_status = 'parsed'
+        ORDER BY ai_predictions.created_at ASC
+      `
+    )
+    .all(runId) as PredictionRunPredictionRow[];
+  const predictionsCount = predictions.length;
+  const message =
+    run.status === "running"
+      ? "模型预测进行中"
+      : predictionsCount > 0
+        ? `已完成 ${predictionsCount} 个模型预测`
+        : run.failure_reason ?? "所有模型预测失败";
+
+  return {
+    runId: run.id,
+    matchId: run.match_id,
+    status: run.status,
+    message,
+    predictionsCount,
+    logs: logs.map((log) => ({
+      level: log.level,
+      message: log.message,
+      modelDisplayName: log.model_display_name,
+      createdAt: log.created_at
+    })),
+    predictions: predictions.map((prediction) => ({
+      id: prediction.id,
+      modelDisplayName: prediction.model_display_name,
+      predictedResult: prediction.predicted_result,
+      predictedHomeScore: prediction.predicted_home_score,
+      predictedAwayScore: prediction.predicted_away_score,
+      confidence: prediction.confidence,
+      shortReason: prediction.short_reason,
+      keyFactors: parseStringArrayJson(prediction.key_factors_json),
+      oddsInterpretation: prediction.odds_interpretation,
+      riskPoints: parseStringArrayJson(prediction.risk_points_json),
+      analysisReport: prediction.analysis_report
+    }))
+  };
+}
+
+export function markPredictionRunFailed(db: Database, input: { requestId: string; runId: string; matchId: string; message: string; now?: Date }): void {
+  const now = input.now ?? new Date();
+  db.prepare(
+    `
+      INSERT INTO prediction_run_logs (
+        id,
+        prediction_run_id,
+        match_id,
+        model_id,
+        level,
+        message,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(randomUUID(), input.runId, input.matchId, null, "error", input.message, now.toISOString());
+  db.prepare("UPDATE prediction_runs SET finished_at = ?, status = ?, failure_reason = ? WHERE id = ?").run(now.toISOString(), "failed", input.message, input.runId);
+  db.prepare("UPDATE prediction_requests SET status = ? WHERE id = ?").run("failed", input.requestId);
 }
 
 export async function executeManualPredictionRequest(input: ExecutePredictionInput): Promise<Pick<PredictionRequestResponseDto, "status" | "message" | "predictionsCount" | "logs" | "predictions">> {
