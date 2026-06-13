@@ -46,11 +46,28 @@ function countByStatus(matches: MatchDto[], status: FixtureTab): number {
 }
 
 function getDateKey(match: MatchDto): string {
-  return new Date(match.kickoffAt).toISOString().slice(0, 10);
+  return getLocalDateKey(new Date(match.kickoffAt));
 }
 
 function getDateLabel(match: MatchDto): string {
   return dateFormatter.format(new Date(match.kickoffAt));
+}
+
+function getLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, days: number): Date {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function getUpcomingDateKeys(now = new Date()): Set<string> {
+  return new Set([0, 1, 2].map((offset) => getLocalDateKey(addDays(now, offset))));
 }
 
 function includesSearchText(match: MatchDto, searchText: string): boolean {
@@ -81,10 +98,66 @@ function groupMatchesByDate(matches: MatchDto[]): Array<{ key: string; label: st
   return Array.from(groups.values());
 }
 
+function MatchCard({ match }: { match: MatchDto }) {
+  return (
+    <article className={`match-card status-${match.status}`}>
+      <div className="match-time-block">
+        <time>{timeFormatter.format(new Date(match.kickoffAt))}</time>
+        <span>{match.venue ?? "场馆待同步"}</span>
+      </div>
+      <div className="match-main">
+        <div className="team-line">
+          {match.homeTeam.logoUrl ? <img alt="" src={match.homeTeam.logoUrl} /> : <span className="team-logo-fallback" />}
+          <strong>{match.homeTeam.displayNameZh}</strong>
+          <small>{match.homeTeam.name}</small>
+        </div>
+        <div className="team-line">
+          {match.awayTeam.logoUrl ? <img alt="" src={match.awayTeam.logoUrl} /> : <span className="team-logo-fallback" />}
+          <strong>{match.awayTeam.displayNameZh}</strong>
+          <small>{match.awayTeam.name}</small>
+        </div>
+      </div>
+      <div className="match-meta">
+        <span>{getStageLabelZh(match.stage)}</span>
+        <span>{match.statusLabelZh}</span>
+      </div>
+      <div className="match-action">
+        {match.status === "finished" || match.status === "live" ? <strong className="score-pill">{getScoreText(match)}</strong> : null}
+        {match.status === "scheduled" ? (
+          <button disabled={!match.canRequestPrediction} type="button">
+            请求预测
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function FixtureDateGroups({ groups }: { groups: Array<{ key: string; label: string; matches: MatchDto[] }> }) {
+  return (
+    <div className="fixture-date-groups">
+      {groups.map((group) => (
+        <section className="fixture-date-group" key={group.key}>
+          <header>
+            <h3>{group.label}</h3>
+            <span>{group.matches.length} 场</span>
+          </header>
+          <div className="match-card-list">
+            {group.matches.map((match) => (
+              <MatchCard key={match.id} match={match} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function FixturesPage({ matches }: FixturesPageProps) {
   const [activeStatus, setActiveStatus] = useState<FixtureTab>("scheduled");
   const [searchText, setSearchText] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
+  const [scheduledFoldOpen, setScheduledFoldOpen] = useState(false);
 
   const stages = useMemo(() => Array.from(new Set(matches.map((match) => match.stage))).sort(), [matches]);
   const filteredMatches = useMemo(
@@ -96,7 +169,17 @@ export function FixturesPage({ matches }: FixturesPageProps) {
       }),
     [activeStatus, matches, searchText, stageFilter]
   );
-  const dateGroups = useMemo(() => groupMatchesByDate(filteredMatches), [filteredMatches]);
+  const scheduledDateKeys = useMemo(() => getUpcomingDateKeys(), []);
+  const primaryMatches = useMemo(
+    () => (activeStatus === "scheduled" ? filteredMatches.filter((match) => scheduledDateKeys.has(getDateKey(match))) : filteredMatches),
+    [activeStatus, filteredMatches, scheduledDateKeys]
+  );
+  const foldedMatches = useMemo(
+    () => (activeStatus === "scheduled" ? filteredMatches.filter((match) => !scheduledDateKeys.has(getDateKey(match))) : []),
+    [activeStatus, filteredMatches, scheduledDateKeys]
+  );
+  const dateGroups = useMemo(() => groupMatchesByDate(primaryMatches), [primaryMatches]);
+  const foldedDateGroups = useMemo(() => groupMatchesByDate(foldedMatches), [foldedMatches]);
   const latestSyncHint = matches.length > 0 ? `${matches.length} 场比赛已载入` : "等待同步赛程数据";
 
   return (
@@ -167,52 +250,18 @@ export function FixturesPage({ matches }: FixturesPageProps) {
       </div>
 
       {matches.length === 0 ? <p className="empty-state">暂无赛程数据。配置 API-Football key 并同步后会显示在这里。</p> : null}
-      {matches.length > 0 && dateGroups.length === 0 ? <p className="empty-state">当前筛选下暂无比赛。</p> : null}
+      {matches.length > 0 && dateGroups.length === 0 && foldedMatches.length === 0 ? <p className="empty-state">当前筛选下暂无比赛。</p> : null}
 
-      <div className="fixture-date-groups">
-        {dateGroups.map((group) => (
-          <section className="fixture-date-group" key={group.key}>
-            <header>
-              <h3>{group.label}</h3>
-              <span>{group.matches.length} 场</span>
-            </header>
-            <div className="match-card-list">
-              {group.matches.map((match) => (
-                <article className={`match-card status-${match.status}`} key={match.id}>
-                  <div className="match-time-block">
-                    <time>{timeFormatter.format(new Date(match.kickoffAt))}</time>
-                    <span>{match.venue ?? "场馆待同步"}</span>
-                  </div>
-                  <div className="match-main">
-                    <div className="team-line">
-                      {match.homeTeam.logoUrl ? <img alt="" src={match.homeTeam.logoUrl} /> : <span className="team-logo-fallback" />}
-                      <strong>{match.homeTeam.displayNameZh}</strong>
-                      <small>{match.homeTeam.name}</small>
-                    </div>
-                    <div className="team-line">
-                      {match.awayTeam.logoUrl ? <img alt="" src={match.awayTeam.logoUrl} /> : <span className="team-logo-fallback" />}
-                      <strong>{match.awayTeam.displayNameZh}</strong>
-                      <small>{match.awayTeam.name}</small>
-                    </div>
-                  </div>
-                  <div className="match-meta">
-                    <span>{getStageLabelZh(match.stage)}</span>
-                    <span>{match.statusLabelZh}</span>
-                  </div>
-                  <div className="match-action">
-                    {match.status === "finished" || match.status === "live" ? <strong className="score-pill">{getScoreText(match)}</strong> : null}
-                    {match.status === "scheduled" ? (
-                      <button disabled={!match.canRequestPrediction} type="button">
-                        请求预测
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+      <FixtureDateGroups groups={dateGroups} />
+
+      {activeStatus === "scheduled" && foldedMatches.length > 0 ? (
+        <section className="folded-fixtures">
+          <button type="button" onClick={() => setScheduledFoldOpen((isOpen) => !isOpen)}>
+            {`其余 ${foldedMatches.length} 场未开始比赛`}
+          </button>
+          {scheduledFoldOpen ? <FixtureDateGroups groups={foldedDateGroups} /> : null}
+        </section>
+      ) : null}
     </section>
   );
 }
