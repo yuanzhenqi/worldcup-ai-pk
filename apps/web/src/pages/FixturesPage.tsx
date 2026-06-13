@@ -32,6 +32,15 @@ function getScoreText(match: MatchDto): string {
   return `${match.homeScore} - ${match.awayScore}`;
 }
 
+function getStageLabelZh(stage: string): string {
+  const groupStageMatch = /^Group Stage - (\d+)$/.exec(stage);
+  if (groupStageMatch) {
+    return `小组赛第 ${groupStageMatch[1]} 轮`;
+  }
+
+  return stage;
+}
+
 function countByStatus(matches: MatchDto[], status: FixtureTab): number {
   return matches.filter((match) => match.status === status).length;
 }
@@ -150,7 +159,7 @@ export function FixturesPage({ matches }: FixturesPageProps) {
             <option value="all">全部轮次</option>
             {stages.map((stage) => (
               <option key={stage} value={stage}>
-                {stage}
+                {getStageLabelZh(stage)}
               </option>
             ))}
           </select>
@@ -187,7 +196,7 @@ export function FixturesPage({ matches }: FixturesPageProps) {
                     </div>
                   </div>
                   <div className="match-meta">
-                    <span>{match.stage}</span>
+                    <span>{getStageLabelZh(match.stage)}</span>
                     <span>{match.statusLabelZh}</span>
                   </div>
                   <div className="match-action">

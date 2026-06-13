@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { MatchDto, MatchStatus } from "@worldcup-ai-pk/shared";
+import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
 
 interface MatchRow {
   id: string;
@@ -11,10 +12,12 @@ interface MatchRow {
   home_team_id: string;
   home_team_name: string;
   home_team_display_name_zh: string | null;
+  home_team_display_name_source: string | null;
   home_team_logo_url: string | null;
   away_team_id: string;
   away_team_name: string;
   away_team_display_name_zh: string | null;
+  away_team_display_name_source: string | null;
   away_team_logo_url: string | null;
   home_score: number | null;
   away_score: number | null;
@@ -37,6 +40,11 @@ function getStatusLabelZh(status: MatchStatus): string {
 }
 
 function toMatchDto(row: MatchRow): MatchDto {
+  const homeTeamDisplayNameZh =
+    row.home_team_display_name_source === "admin" ? row.home_team_display_name_zh : worldCupTeamNamesZh[row.home_team_id] ?? row.home_team_display_name_zh;
+  const awayTeamDisplayNameZh =
+    row.away_team_display_name_source === "admin" ? row.away_team_display_name_zh : worldCupTeamNamesZh[row.away_team_id] ?? row.away_team_display_name_zh;
+
   return {
     id: row.id,
     apiFootballFixtureId: row.api_football_fixture_id,
@@ -48,13 +56,13 @@ function toMatchDto(row: MatchRow): MatchDto {
     homeTeam: {
       id: row.home_team_id,
       name: row.home_team_name,
-      displayNameZh: row.home_team_display_name_zh ?? row.home_team_name,
+      displayNameZh: homeTeamDisplayNameZh ?? row.home_team_name,
       logoUrl: row.home_team_logo_url
     },
     awayTeam: {
       id: row.away_team_id,
       name: row.away_team_name,
-      displayNameZh: row.away_team_display_name_zh ?? row.away_team_name,
+      displayNameZh: awayTeamDisplayNameZh ?? row.away_team_name,
       logoUrl: row.away_team_logo_url
     },
     homeScore: row.home_score,
@@ -78,10 +86,12 @@ export function listMatches(db: Database): MatchDto[] {
           matches.home_team_id,
           matches.home_team_name,
           home_display.display_name_zh AS home_team_display_name_zh,
+          home_display.source AS home_team_display_name_source,
           matches.home_team_logo_url,
           matches.away_team_id,
           matches.away_team_name,
           away_display.display_name_zh AS away_team_display_name_zh,
+          away_display.source AS away_team_display_name_source,
           matches.away_team_logo_url,
           matches.home_score,
           matches.away_score,

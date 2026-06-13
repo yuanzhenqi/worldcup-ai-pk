@@ -18,12 +18,14 @@ export interface UpsertTeamDisplayNameInput {
 }
 
 function toDto(row: TeamDisplayNameRow): TeamDisplayNameDto {
+  const seedName = worldCupTeamNamesZh[row.api_football_team_id];
+
   return {
     apiFootballTeamId: row.api_football_team_id,
     originalName: row.original_name,
-    displayNameZh: row.display_name_zh,
+    displayNameZh: row.source === "admin" ? row.display_name_zh : seedName ?? row.display_name_zh,
     logoUrl: row.logo_url,
-    source: row.source
+    source: row.source === "admin" ? row.source : seedName ? "seed" : row.source
   };
 }
 
@@ -57,17 +59,27 @@ export function upsertTeamDisplayName(db: Database, input: UpsertTeamDisplayName
 }
 
 export function listTeamDisplayNames(db: Database, query: string): TeamDisplayNameDto[] {
-  const normalizedQuery = `%${query.trim()}%`;
   const rows = db.prepare(
     `
       SELECT api_football_team_id, original_name, display_name_zh, logo_url, source
       FROM team_display_names
-      WHERE ? = '%%' OR original_name LIKE ? OR display_name_zh LIKE ?
       ORDER BY CAST(api_football_team_id AS INTEGER) ASC
     `
-  ).all(normalizedQuery, normalizedQuery, normalizedQuery) as TeamDisplayNameRow[];
+  ).all() as TeamDisplayNameRow[];
 
-  return rows.map(toDto);
+  const teams = rows.map(toDto);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) {
+    return teams;
+  }
+
+  return teams.filter((team) => {
+    return (
+      team.apiFootballTeamId.includes(normalizedQuery) ||
+      team.originalName.toLocaleLowerCase().includes(normalizedQuery) ||
+      team.displayNameZh.toLocaleLowerCase().includes(normalizedQuery)
+    );
+  });
 }
 
 export function updateTeamDisplayName(db: Database, apiFootballTeamId: string, displayNameZh: string, now = new Date()): TeamDisplayNameDto {

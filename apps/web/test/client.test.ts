@@ -3,6 +3,7 @@ import {
   captureApiFootballFixturesRaw,
   getAdminApiFootballSettings,
   getAdminSummary,
+  getPublicHealth,
   listAdminAiModels,
   listAdminAiProviders,
   listAdminPromptTemplates,
@@ -18,6 +19,45 @@ import {
 describe("web API client", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("falls back to XMLHttpRequest when fetch is unavailable", async () => {
+    let latestRequest: FakeXMLHttpRequest | null = null;
+
+    class FakeXMLHttpRequest {
+      method = "";
+      url = "";
+      requestBody: string | undefined;
+      responseText = JSON.stringify({ ok: true, service: "worldcup-ai-pk-api" });
+      status = 200;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      open(method: string, url: string) {
+        this.method = method;
+        this.url = url;
+        latestRequest = this;
+      }
+
+      setRequestHeader() {
+        return undefined;
+      }
+
+      send(body?: string) {
+        this.requestBody = body;
+        this.onload?.();
+      }
+    }
+
+    vi.stubGlobal("fetch", undefined);
+    vi.stubGlobal("XMLHttpRequest", FakeXMLHttpRequest);
+
+    await expect(getPublicHealth()).resolves.toEqual({ ok: true, service: "worldcup-ai-pk-api" });
+    expect(latestRequest).toMatchObject({
+      method: "GET",
+      url: "http://127.0.0.1:4000/api/public/health"
+    });
   });
 
   it("loads API-Football configuration status", async () => {

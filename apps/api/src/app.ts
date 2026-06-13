@@ -11,6 +11,8 @@ export interface BuildAppOptions {
   logger?: boolean;
 }
 
+const localViteOrigins = [/^http:\/\/127\.0\.0\.1:517\d$/, /^http:\/\/localhost:517\d$/];
+
 export function buildApp(options: BuildAppOptions = {}) {
   const env = loadEnv();
   const app = Fastify({ logger: options.logger ?? true });
@@ -18,7 +20,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   applySchema(db);
 
   app.register(cors, {
-    origin: env.PUBLIC_WEB_ORIGIN
+    origin: [env.PUBLIC_WEB_ORIGIN, ...localViteOrigins]
   });
 
   app.addHook("onClose", async () => {

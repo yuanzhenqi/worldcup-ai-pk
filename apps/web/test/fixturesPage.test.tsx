@@ -43,6 +43,7 @@ describe("FixturesPage", () => {
     );
 
     expect(screen.getByText("加拿大")).toBeInTheDocument();
+    expect(screen.getAllByText("小组赛第 1 轮").length).toBeGreaterThan(0);
     expect(screen.queryByText("墨西哥")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "已结束" }));

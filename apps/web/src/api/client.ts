@@ -9,6 +9,45 @@ import type {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:4000";
 
+interface ApiResponse {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+}
+
+interface ApiRequestInit {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+function request(url: string, init?: ApiRequestInit): Promise<ApiResponse> {
+  if (typeof globalThis.fetch === "function") {
+    return init ? globalThis.fetch(url, init) : globalThis.fetch(url);
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init?.method ?? "GET", url);
+
+    Object.entries(init?.headers ?? {}).forEach(([key, value]) => {
+      xhr.setRequestHeader(key, value);
+    });
+
+    xhr.onload = () => {
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        json: async () => JSON.parse(xhr.responseText)
+      });
+    };
+    xhr.onerror = () => {
+      reject(new Error(`API request failed with status ${xhr.status}`));
+    };
+    xhr.send(init?.body);
+  });
+}
+
 export interface ApiFootballSettingsStatus {
   configured: boolean;
 }
@@ -45,7 +84,7 @@ export interface SavePromptTemplateRequest {
 }
 
 export async function getPublicHealth(): Promise<{ ok: boolean; service: string }> {
-  const response = await fetch(`${apiBaseUrl}/api/public/health`);
+  const response = await request(`${apiBaseUrl}/api/public/health`);
   if (!response.ok) {
     throw new Error(`Public API health request failed with status ${response.status}`);
   }
@@ -53,7 +92,7 @@ export async function getPublicHealth(): Promise<{ ok: boolean; service: string 
 }
 
 export async function getPublicMatches(): Promise<MatchDto[]> {
-  const response = await fetch(`${apiBaseUrl}/api/public/matches`);
+  const response = await request(`${apiBaseUrl}/api/public/matches`);
   if (!response.ok) {
     throw new Error(`Public matches request failed with status ${response.status}`);
   }
@@ -62,7 +101,7 @@ export async function getPublicMatches(): Promise<MatchDto[]> {
 }
 
 export async function getAdminApiFootballSettings(): Promise<ApiFootballSettingsStatus> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/settings/api-football`);
+  const response = await request(`${apiBaseUrl}/api/admin/settings/api-football`);
   if (!response.ok) {
     throw new Error(`Admin API-Football settings request failed with status ${response.status}`);
   }
@@ -70,7 +109,7 @@ export async function getAdminApiFootballSettings(): Promise<ApiFootballSettings
 }
 
 export async function saveAdminApiFootballKey(apiKey: string): Promise<ApiFootballSettingsStatus> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/settings/api-football`, {
+  const response = await request(`${apiBaseUrl}/api/admin/settings/api-football`, {
     method: "PUT",
     headers: {
       "content-type": "application/json"
@@ -84,7 +123,7 @@ export async function saveAdminApiFootballKey(apiKey: string): Promise<ApiFootba
 }
 
 export async function captureApiFootballFixturesRaw(): Promise<RawFixturesCaptureResult> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/sync/api-football/fixtures/raw`, {
+  const response = await request(`${apiBaseUrl}/api/admin/sync/api-football/fixtures/raw`, {
     method: "POST"
   });
   if (!response.ok) {
@@ -95,7 +134,7 @@ export async function captureApiFootballFixturesRaw(): Promise<RawFixturesCaptur
 }
 
 export async function getAdminSummary(): Promise<AdminSummaryDto> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/summary`);
+  const response = await request(`${apiBaseUrl}/api/admin/summary`);
   if (!response.ok) {
     throw new Error(`Admin summary request failed with status ${response.status}`);
   }
@@ -103,7 +142,7 @@ export async function getAdminSummary(): Promise<AdminSummaryDto> {
 }
 
 export async function syncApiFootballFixtures(): Promise<{ synced: boolean; imported: number }> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/sync/api-football/fixtures`, {
+  const response = await request(`${apiBaseUrl}/api/admin/sync/api-football/fixtures`, {
     method: "POST"
   });
   if (!response.ok) {
@@ -114,7 +153,7 @@ export async function syncApiFootballFixtures(): Promise<{ synced: boolean; impo
 }
 
 export async function listAdminAiProviders(): Promise<AiProviderConfigDto[]> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/ai-providers`);
+  const response = await request(`${apiBaseUrl}/api/admin/ai-providers`);
   if (!response.ok) {
     throw new Error(`Admin AI providers request failed with status ${response.status}`);
   }
@@ -123,7 +162,7 @@ export async function listAdminAiProviders(): Promise<AiProviderConfigDto[]> {
 }
 
 export async function saveAdminAiProvider(input: SaveAiProviderRequest): Promise<AiProviderConfigDto> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/ai-providers`, {
+  const response = await request(`${apiBaseUrl}/api/admin/ai-providers`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -137,7 +176,7 @@ export async function saveAdminAiProvider(input: SaveAiProviderRequest): Promise
 }
 
 export async function listAdminAiModels(): Promise<AiModelConfigDto[]> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/ai-models`);
+  const response = await request(`${apiBaseUrl}/api/admin/ai-models`);
   if (!response.ok) {
     throw new Error(`Admin AI models request failed with status ${response.status}`);
   }
@@ -146,7 +185,7 @@ export async function listAdminAiModels(): Promise<AiModelConfigDto[]> {
 }
 
 export async function saveAdminAiModel(input: SaveAiModelRequest): Promise<AiModelConfigDto> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/ai-models`, {
+  const response = await request(`${apiBaseUrl}/api/admin/ai-models`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -160,7 +199,7 @@ export async function saveAdminAiModel(input: SaveAiModelRequest): Promise<AiMod
 }
 
 export async function listAdminPromptTemplates(): Promise<PromptTemplateConfigDto[]> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/prompt-templates`);
+  const response = await request(`${apiBaseUrl}/api/admin/prompt-templates`);
   if (!response.ok) {
     throw new Error(`Admin prompt templates request failed with status ${response.status}`);
   }
@@ -169,7 +208,7 @@ export async function listAdminPromptTemplates(): Promise<PromptTemplateConfigDt
 }
 
 export async function saveAdminPromptTemplate(input: SavePromptTemplateRequest): Promise<PromptTemplateConfigDto> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/prompt-templates`, {
+  const response = await request(`${apiBaseUrl}/api/admin/prompt-templates`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -188,7 +227,7 @@ export async function listAdminTeamDisplayNames(query = ""): Promise<TeamDisplay
     searchParams.set("q", query.trim());
   }
   const queryString = searchParams.toString();
-  const response = await fetch(`${apiBaseUrl}/api/admin/team-display-names${queryString ? `?${queryString}` : ""}`);
+  const response = await request(`${apiBaseUrl}/api/admin/team-display-names${queryString ? `?${queryString}` : ""}`);
   if (!response.ok) {
     throw new Error(`Admin team display names request failed with status ${response.status}`);
   }
@@ -197,7 +236,7 @@ export async function listAdminTeamDisplayNames(query = ""): Promise<TeamDisplay
 }
 
 export async function saveAdminTeamDisplayName(apiFootballTeamId: string, displayNameZh: string): Promise<TeamDisplayNameDto> {
-  const response = await fetch(`${apiBaseUrl}/api/admin/team-display-names/${apiFootballTeamId}`, {
+  const response = await request(`${apiBaseUrl}/api/admin/team-display-names/${apiFootballTeamId}`, {
     method: "PUT",
     headers: {
       "content-type": "application/json"

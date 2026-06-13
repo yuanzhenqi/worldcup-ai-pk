@@ -88,4 +88,34 @@ describe("team display names", () => {
 
     db.close();
   });
+
+  it("applies built-in Chinese names to existing API-Football rows", () => {
+    const { db } = createTestDatabase();
+
+    db.prepare(
+      `
+        INSERT INTO team_display_names (
+          api_football_team_id,
+          original_name,
+          display_name_zh,
+          logo_url,
+          source,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run("6", "Brazil", "Brazil", null, "api-football", "2026-06-12T10:00:00.000Z", "2026-06-12T10:00:00.000Z");
+
+    expect(listTeamDisplayNames(db, "巴西")).toEqual([
+      {
+        apiFootballTeamId: "6",
+        originalName: "Brazil",
+        displayNameZh: "巴西",
+        logoUrl: null,
+        source: "seed"
+      }
+    ]);
+
+    db.close();
+  });
 });

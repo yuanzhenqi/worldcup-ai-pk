@@ -108,4 +108,94 @@ describe("public matches API", () => {
 
     await app.close();
   });
+
+  it("uses built-in Chinese team names for API-Football sourced rows", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO matches (
+          id,
+          api_football_fixture_id,
+          stage,
+          kickoff_at,
+          status,
+          venue,
+          home_team_id,
+          home_team_name,
+          home_team_logo_url,
+          away_team_id,
+          away_team_name,
+          away_team_logo_url,
+          home_score,
+          away_score,
+          last_synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "match-2",
+      1002,
+      "Group Stage",
+      "2026-06-13T19:00:00.000Z",
+      "scheduled",
+      "SoFi Stadium",
+      "6",
+      "Brazil",
+      null,
+      "31",
+      "Morocco",
+      null,
+      null,
+      null,
+      "2026-06-12T10:00:00.000Z"
+    );
+    db.prepare(
+      `
+        INSERT INTO team_display_names (
+          api_football_team_id,
+          original_name,
+          display_name_zh,
+          logo_url,
+          source,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "6",
+      "Brazil",
+      "Brazil",
+      null,
+      "api-football",
+      "2026-06-12T10:00:00.000Z",
+      "2026-06-12T10:00:00.000Z",
+      "31",
+      "Morocco",
+      "Morocco",
+      null,
+      "api-football",
+      "2026-06-12T10:00:00.000Z",
+      "2026-06-12T10:00:00.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "GET", url: "/api/public/matches" });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.matches[0]).toMatchObject({
+      homeTeam: {
+        id: "6",
+        name: "Brazil",
+        displayNameZh: "巴西"
+      },
+      awayTeam: {
+        id: "31",
+        name: "Morocco",
+        displayNameZh: "摩洛哥"
+      }
+    });
+
+    await app.close();
+  });
 });
