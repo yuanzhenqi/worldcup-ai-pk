@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PredictionRequestInputDto } from "@worldcup-ai-pk/shared";
 import {
   captureApiFootballFixturesRaw,
   getAdminApiFootballSettings,
   getAdminSummary,
+  getMatchContext,
   getPublicHealth,
   listAdminAiModels,
   listAdminAiProviders,
   listAdminPromptTemplates,
   listAdminTeamDisplayNames,
+  refreshMatchContext,
   saveAdminAiModel,
   saveAdminAiProvider,
   saveAdminApiFootballKey,
@@ -144,7 +147,21 @@ describe("web API client", () => {
       matchId: "match-1",
       status: "scheduled",
       message: "Prediction scheduled for two hours before kickoff",
-      scheduledFor: "2026-06-12T17:00:00.000Z"
+      scheduledFor: "2026-06-12T17:00:00.000Z",
+      context: null
+    };
+    const input: PredictionRequestInputDto = {
+      taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
+      dataOptions: {
+        useOdds: true,
+        useApiFootballPrediction: true,
+        useHeadToHead: true,
+        usePlayerLineupInjuries: true
+      },
+      promptTemplateId: "prompt-1",
+      customPrompt: "偏重上半场节奏。",
+      outputStyle: "detailed",
+      refreshContext: true
     };
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(result), {
@@ -153,9 +170,57 @@ describe("web API client", () => {
       })
     );
 
-    await expect(requestMatchPrediction("match-1")).resolves.toEqual(result);
+    await expect(requestMatchPrediction("match-1", input)).resolves.toEqual(result);
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/matches/match-1/prediction-request", {
-      method: "POST"
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+  });
+
+  it("loads public match context", async () => {
+    const context = {
+      matchId: "match-1",
+      completeness: "base_only",
+      createdAt: null,
+      domains: []
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(context), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(getMatchContext("match-1")).resolves.toEqual(context);
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/matches/match-1/context");
+  });
+
+  it("refreshes public match context", async () => {
+    const context = {
+      matchId: "match-1",
+      completeness: "partial",
+      createdAt: "2026-06-13T08:00:00.000Z",
+      domains: []
+    };
+    const dataOptions = {
+      useOdds: true,
+      useApiFootballPrediction: true,
+      useHeadToHead: true,
+      usePlayerLineupInjuries: true
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(context), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(refreshMatchContext("match-1", dataOptions)).resolves.toEqual(context);
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/public/matches/match-1/context/refresh", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataOptions })
     });
   });
 

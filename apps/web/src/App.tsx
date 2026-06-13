@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
-import type { MatchDto } from "@worldcup-ai-pk/shared";
-import { getPublicMatches, requestMatchPrediction, syncApiFootballFixtures } from "./api/client";
+import type { MatchDto, PredictionRequestInputDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
+import {
+  getMatchContext,
+  getPublicMatches,
+  listAdminPromptTemplates,
+  refreshMatchContext,
+  requestMatchPrediction,
+  syncApiFootballFixtures
+} from "./api/client";
 import { AdminPage } from "./pages/AdminPage";
 import { FixturesPage } from "./pages/FixturesPage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
@@ -8,10 +15,26 @@ import "./styles.css";
 
 export function App() {
   const [matches, setMatches] = useState<MatchDto[]>([]);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplateConfigDto[]>([]);
   const [matchesStatus, setMatchesStatus] = useState<"loading" | "loaded" | "failed">("loading");
 
   useEffect(() => {
     let cancelled = false;
+
+    async function loadInitialData() {
+      try {
+        const [nextMatches, nextPromptTemplates] = await Promise.all([getPublicMatches(), listAdminPromptTemplates()]);
+        if (!cancelled) {
+          setMatches(nextMatches);
+          setPromptTemplates(nextPromptTemplates);
+          setMatchesStatus("loaded");
+        }
+      } catch {
+        if (!cancelled) {
+          setMatchesStatus("failed");
+        }
+      }
+    }
 
     async function loadMatches() {
       try {
@@ -36,7 +59,7 @@ export function App() {
       await loadMatches();
     }
 
-    void loadMatches();
+    void loadInitialData();
     const refreshInterval = window.setInterval(() => {
       void syncAndLoadMatches();
     }, 60_000);
@@ -47,8 +70,8 @@ export function App() {
     };
   }, []);
 
-  async function handleRequestPrediction(match: MatchDto) {
-    const response = await requestMatchPrediction(match.id);
+  async function handleRequestPrediction(match: MatchDto, input: PredictionRequestInputDto) {
+    const response = await requestMatchPrediction(match.id, input);
     try {
       setMatches(await getPublicMatches());
     } catch {
@@ -76,7 +99,13 @@ export function App() {
       </section>
       {matchesStatus === "loading" ? <p className="status-line">正在加载赛程...</p> : null}
       {matchesStatus === "failed" ? <p className="status-line error">赛程加载失败，请确认 API 服务正在运行。</p> : null}
-      <FixturesPage matches={matches} onRequestPrediction={handleRequestPrediction} />
+      <FixturesPage
+        matches={matches}
+        promptTemplates={promptTemplates}
+        onLoadMatchContext={getMatchContext}
+        onRefreshMatchContext={refreshMatchContext}
+        onRequestPrediction={handleRequestPrediction}
+      />
       <LeaderboardPage rows={[]} />
       <AdminPage />
     </main>

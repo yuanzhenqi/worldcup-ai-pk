@@ -2,7 +2,10 @@ import type {
   AdminSummaryDto,
   AiModelConfigDto,
   AiProviderConfigDto,
+  FixtureContextSummaryDto,
   MatchDto,
+  PredictionDataOptionsDto,
+  PredictionRequestInputDto,
   PredictionRequestResponseDto,
   PromptTemplateConfigDto,
   TeamDisplayNameDto
@@ -101,9 +104,31 @@ export async function getPublicMatches(): Promise<MatchDto[]> {
   return body.matches;
 }
 
-export async function requestMatchPrediction(matchId: string): Promise<PredictionRequestResponseDto> {
+export async function getMatchContext(matchId: string): Promise<FixtureContextSummaryDto> {
+  const response = await request(`${apiBaseUrl}/api/public/matches/${matchId}/context`);
+  if (!response.ok) {
+    throw new Error(`Public match context request failed with status ${response.status}`);
+  }
+  return (await response.json()) as FixtureContextSummaryDto;
+}
+
+export async function refreshMatchContext(matchId: string, dataOptions: PredictionDataOptionsDto): Promise<FixtureContextSummaryDto> {
+  const response = await request(`${apiBaseUrl}/api/public/matches/${matchId}/context/refresh`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ dataOptions })
+  });
+  if (!response.ok) {
+    throw new Error(`Public match context refresh failed with status ${response.status}`);
+  }
+  return (await response.json()) as FixtureContextSummaryDto;
+}
+
+export async function requestMatchPrediction(matchId: string, input: PredictionRequestInputDto): Promise<PredictionRequestResponseDto> {
   const response = await request(`${apiBaseUrl}/api/public/matches/${matchId}/prediction-request`, {
-    method: "POST"
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
   });
   if (!response.ok) {
     throw new Error(`Public prediction request failed with status ${response.status}`);

@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { MatchDto } from "@worldcup-ai-pk/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
-import { getPublicMatches, syncApiFootballFixtures } from "../src/api/client";
+import { getPublicMatches, listAdminPromptTemplates, syncApiFootballFixtures } from "../src/api/client";
 
 vi.mock("../src/pages/AdminPage", () => ({
   AdminPage: () => null
@@ -13,7 +13,10 @@ vi.mock("../src/pages/LeaderboardPage", () => ({
 }));
 
 vi.mock("../src/api/client", () => ({
+  getMatchContext: vi.fn(),
   getPublicMatches: vi.fn(),
+  listAdminPromptTemplates: vi.fn(),
+  refreshMatchContext: vi.fn(),
   requestMatchPrediction: vi.fn(),
   syncApiFootballFixtures: vi.fn()
 }));
@@ -50,6 +53,7 @@ describe("App", () => {
     vi.mocked(getPublicMatches)
       .mockResolvedValueOnce([buildMatch({ status: "scheduled", homeScore: null, awayScore: null })])
       .mockResolvedValueOnce([buildMatch({ status: "live", homeScore: 1, awayScore: 1 })]);
+    vi.mocked(listAdminPromptTemplates).mockResolvedValue([]);
     vi.mocked(syncApiFootballFixtures).mockResolvedValue({ synced: true, imported: 1 });
 
     render(<App />);
@@ -68,6 +72,7 @@ describe("App", () => {
 
     expect(syncApiFootballFixtures).toHaveBeenCalledTimes(1);
     expect(getPublicMatches).toHaveBeenCalledTimes(2);
+    expect(listAdminPromptTemplates).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "进行中" }));
     expect(screen.getByText("1 - 1")).toBeInTheDocument();

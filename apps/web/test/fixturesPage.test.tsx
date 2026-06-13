@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { MatchDto } from "@worldcup-ai-pk/shared";
+import type { MatchDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FixturesPage } from "../src/pages/FixturesPage";
 
@@ -157,11 +157,24 @@ describe("FixturesPage", () => {
   });
 
   it("requests a prediction from a scheduled match card", async () => {
+    const promptTemplates: PromptTemplateConfigDto[] = [
+      {
+        id: "prompt-1",
+        name: "综合赛前报告",
+        description: "综合分析",
+        fullPrompt: "prediction_context",
+        promptSummary: "综合分析",
+        scope: "match_prediction",
+        enabled: true,
+        isDefault: true
+      }
+    ];
     const onRequestPrediction = vi.fn().mockResolvedValue({
       matchId: "scheduled-1",
       status: "scheduled",
       message: "Prediction scheduled for two hours before kickoff",
-      scheduledFor: "2026-06-13T10:00:00.000Z"
+      scheduledFor: "2026-06-13T10:00:00.000Z",
+      context: null
     });
     const match = buildMatch({
       id: "scheduled-1",
@@ -173,11 +186,24 @@ describe("FixturesPage", () => {
       awayName: "Paraguay"
     });
 
-    render(<FixturesPage matches={[match]} onRequestPrediction={onRequestPrediction} />);
+    render(<FixturesPage matches={[match]} promptTemplates={promptTemplates} onRequestPrediction={onRequestPrediction} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "请求预测" }));
+    await userEvent.click(screen.getByRole("button", { name: "预测" }));
+    await userEvent.click(screen.getByRole("button", { name: "开始预测" }));
 
-    expect(onRequestPrediction).toHaveBeenCalledWith(match);
+    expect(onRequestPrediction).toHaveBeenCalledWith(match, {
+      taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
+      dataOptions: {
+        useOdds: true,
+        useApiFootballPrediction: true,
+        useHeadToHead: true,
+        usePlayerLineupInjuries: true
+      },
+      promptTemplateId: "prompt-1",
+      customPrompt: "",
+      outputStyle: "concise",
+      refreshContext: true
+    });
     expect(await screen.findByText("预测已排程")).toBeInTheDocument();
   });
 });

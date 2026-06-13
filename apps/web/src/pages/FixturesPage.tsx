@@ -1,9 +1,22 @@
 import { useMemo, useState } from "react";
-import type { MatchDto, MatchStatus, PredictionRequestResponseDto } from "@worldcup-ai-pk/shared";
+import type {
+  FixtureContextSummaryDto,
+  MatchDto,
+  MatchStatus,
+  PredictionDataOptionsDto,
+  PredictionRequestInputDto,
+  PredictionRequestResponseDto,
+  PromptTemplateConfigDto
+} from "@worldcup-ai-pk/shared";
+import { MatchContextDrawer } from "../components/MatchContextDrawer";
+import { PredictionRequestDrawer } from "../components/PredictionRequestDrawer";
 
 interface FixturesPageProps {
   matches: MatchDto[];
-  onRequestPrediction?: (match: MatchDto) => Promise<PredictionRequestResponseDto>;
+  promptTemplates?: PromptTemplateConfigDto[];
+  onLoadMatchContext?: (matchId: string) => Promise<FixtureContextSummaryDto>;
+  onRefreshMatchContext?: (matchId: string, dataOptions: PredictionDataOptionsDto) => Promise<FixtureContextSummaryDto>;
+  onRequestPrediction?: (match: MatchDto, input: PredictionRequestInputDto) => Promise<PredictionRequestResponseDto>;
 }
 
 type FixtureTab = Extract<MatchStatus, "scheduled" | "live" | "finished">;
@@ -17,6 +30,13 @@ const statusTabs: Array<{ status: FixtureTab; label: string }> = [
   { status: "live", label: "进行中" },
   { status: "finished", label: "已结束" }
 ];
+
+const defaultContextDataOptions: PredictionDataOptionsDto = {
+  useOdds: true,
+  useApiFootballPrediction: true,
+  useHeadToHead: true,
+  usePlayerLineupInjuries: true
+};
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
   month: "long",
@@ -120,12 +140,14 @@ function MatchCard({
   match,
   feedback,
   isRequesting,
-  onRequestPrediction
+  onOpenPrediction,
+  onOpenContext
 }: {
   match: MatchDto;
   feedback?: PredictionFeedback;
   isRequesting: boolean;
-  onRequestPrediction?: (match: MatchDto) => Promise<void>;
+  onOpenPrediction: (match: MatchDto) => void;
+  onOpenContext: (match: MatchDto) => void;
 }) {
   return (
     <article className={`match-card status-${match.status}`}>
@@ -152,10 +174,13 @@ function MatchCard({
       <div className="match-action">
         {match.status === "finished" || match.status === "live" ? <strong className="score-pill">{getScoreText(match)}</strong> : null}
         {match.status === "scheduled" ? (
-          <button disabled={!match.canRequestPrediction || isRequesting || !onRequestPrediction} type="button" onClick={() => onRequestPrediction?.(match)}>
-            {isRequesting ? "请求中" : "请求预测"}
+          <button disabled={!match.canRequestPrediction || isRequesting} type="button" onClick={() => onOpenPrediction(match)}>
+            {isRequesting ? "请求中" : "预测"}
           </button>
         ) : null}
+        <button type="button" className="secondary-action" onClick={() => onOpenContext(match)}>
+          数据
+        </button>
         {feedback ? <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span> : null}
       </div>
     </article>
@@ -166,12 +191,14 @@ function FixtureDateGroups({
   groups,
   predictionFeedbackByMatchId,
   requestingMatchIds,
-  onRequestPrediction
+  onOpenPrediction,
+  onOpenContext
 }: {
   groups: Array<{ key: string; label: string; matches: MatchDto[] }>;
   predictionFeedbackByMatchId: Record<string, PredictionFeedback>;
   requestingMatchIds: Set<string>;
-  onRequestPrediction?: (match: MatchDto) => Promise<void>;
+  onOpenPrediction: (match: MatchDto) => void;
+  onOpenContext: (match: MatchDto) => void;
 }) {
   return (
     <div className="fixture-date-groups">
@@ -188,7 +215,8 @@ function FixtureDateGroups({
                 match={match}
                 feedback={predictionFeedbackByMatchId[match.id]}
                 isRequesting={requestingMatchIds.has(match.id)}
-                onRequestPrediction={onRequestPrediction}
+                onOpenPrediction={onOpenPrediction}
+                onOpenContext={onOpenContext}
               />
             ))}
           </div>
@@ -198,13 +226,23 @@ function FixtureDateGroups({
   );
 }
 
-export function FixturesPage({ matches, onRequestPrediction }: FixturesPageProps) {
+export function FixturesPage({
+  matches,
+  promptTemplates = [],
+  onLoadMatchContext,
+  onRefreshMatchContext,
+  onRequestPrediction
+}: FixturesPageProps) {
   const [activeStatus, setActiveStatus] = useState<FixtureTab>("scheduled");
   const [searchText, setSearchText] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [scheduledFoldOpen, setScheduledFoldOpen] = useState(false);
   const [predictionFeedbackByMatchId, setPredictionFeedbackByMatchId] = useState<Record<string, PredictionFeedback>>({});
   const [requestingMatchIds, setRequestingMatchIds] = useState<Set<string>>(() => new Set());
+  const [activePredictionMatch, setActivePredictionMatch] = useState<MatchDto | null>(null);
+  const [activeContextMatch, setActiveContextMatch] = useState<MatchDto | null>(null);
+  const [contextByMatchId, setContextByMatchId] = useState<Record<string, FixtureContextSummaryDto>>({});
+  const [contextLoadingMatchIds, setContextLoadingMatchIds] = useState<Set<string>>(() => new Set());
 
   const stages = useMemo(() => Array.from(new Set(matches.map((match) => match.stage))).sort(), [matches]);
   const filteredMatches = useMemo(
@@ -229,19 +267,24 @@ export function FixturesPage({ matches, onRequestPrediction }: FixturesPageProps
   const foldedDateGroups = useMemo(() => groupMatchesByDate(foldedMatches), [foldedMatches]);
   const latestSyncHint = matches.length > 0 ? `${matches.length} 场比赛已载入` : "等待同步赛程数据";
 
-  async function handleRequestPrediction(match: MatchDto) {
-    if (!onRequestPrediction) {
+  async function handlePredictionSubmit(input: PredictionRequestInputDto) {
+    if (!onRequestPrediction || !activePredictionMatch) {
       return;
     }
 
+    const match = activePredictionMatch;
     setRequestingMatchIds((currentIds) => new Set(currentIds).add(match.id));
 
     try {
-      const response = await onRequestPrediction(match);
+      const response = await onRequestPrediction(match, input);
       setPredictionFeedbackByMatchId((currentFeedback) => ({
         ...currentFeedback,
         [match.id]: getPredictionFeedback(response)
       }));
+      if (response.context) {
+        setContextByMatchId((currentContexts) => ({ ...currentContexts, [match.id]: response.context as FixtureContextSummaryDto }));
+      }
+      setActivePredictionMatch(null);
     } catch {
       setPredictionFeedbackByMatchId((currentFeedback) => ({
         ...currentFeedback,
@@ -252,6 +295,48 @@ export function FixturesPage({ matches, onRequestPrediction }: FixturesPageProps
       }));
     } finally {
       setRequestingMatchIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(match.id);
+        return nextIds;
+      });
+    }
+  }
+
+  async function loadContext(match: MatchDto) {
+    if (!onLoadMatchContext) {
+      return;
+    }
+
+    setContextLoadingMatchIds((currentIds) => new Set(currentIds).add(match.id));
+    try {
+      const context = await onLoadMatchContext(match.id);
+      setContextByMatchId((currentContexts) => ({ ...currentContexts, [match.id]: context }));
+    } finally {
+      setContextLoadingMatchIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(match.id);
+        return nextIds;
+      });
+    }
+  }
+
+  function handleOpenContext(match: MatchDto) {
+    setActiveContextMatch(match);
+    void loadContext(match);
+  }
+
+  async function handleRefreshContext() {
+    if (!activeContextMatch || !onRefreshMatchContext) {
+      return;
+    }
+
+    const match = activeContextMatch;
+    setContextLoadingMatchIds((currentIds) => new Set(currentIds).add(match.id));
+    try {
+      const context = await onRefreshMatchContext(match.id, defaultContextDataOptions);
+      setContextByMatchId((currentContexts) => ({ ...currentContexts, [match.id]: context }));
+    } finally {
+      setContextLoadingMatchIds((currentIds) => {
         const nextIds = new Set(currentIds);
         nextIds.delete(match.id);
         return nextIds;
@@ -333,7 +418,8 @@ export function FixturesPage({ matches, onRequestPrediction }: FixturesPageProps
         groups={dateGroups}
         predictionFeedbackByMatchId={predictionFeedbackByMatchId}
         requestingMatchIds={requestingMatchIds}
-        onRequestPrediction={handleRequestPrediction}
+        onOpenPrediction={setActivePredictionMatch}
+        onOpenContext={handleOpenContext}
       />
 
       {activeStatus === "scheduled" && foldedMatches.length > 0 ? (
@@ -346,11 +432,29 @@ export function FixturesPage({ matches, onRequestPrediction }: FixturesPageProps
               groups={foldedDateGroups}
               predictionFeedbackByMatchId={predictionFeedbackByMatchId}
               requestingMatchIds={requestingMatchIds}
-              onRequestPrediction={handleRequestPrediction}
+              onOpenPrediction={setActivePredictionMatch}
+              onOpenContext={handleOpenContext}
             />
           ) : null}
         </section>
       ) : null}
+
+      <PredictionRequestDrawer
+        open={Boolean(activePredictionMatch)}
+        match={activePredictionMatch}
+        promptTemplates={promptTemplates}
+        submitting={activePredictionMatch ? requestingMatchIds.has(activePredictionMatch.id) : false}
+        onClose={() => setActivePredictionMatch(null)}
+        onSubmit={handlePredictionSubmit}
+      />
+      <MatchContextDrawer
+        open={Boolean(activeContextMatch)}
+        match={activeContextMatch}
+        context={activeContextMatch ? contextByMatchId[activeContextMatch.id] ?? null : null}
+        loading={activeContextMatch ? contextLoadingMatchIds.has(activeContextMatch.id) : false}
+        onClose={() => setActiveContextMatch(null)}
+        onRefresh={handleRefreshContext}
+      />
     </section>
   );
 }
