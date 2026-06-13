@@ -3,6 +3,9 @@ import type { AdminSummaryDto, AiModelConfigDto, AiProviderConfigDto, PromptTemp
 import {
   type AdminContextCacheLogDto,
   captureApiFootballFixturesRaw,
+  deleteAdminAiModel,
+  deleteAdminAiProvider,
+  deleteAdminPromptTemplate,
   getAdminApiFootballSettings,
   getAdminSummary,
   listAdminAiModels,
@@ -16,6 +19,7 @@ import {
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
   syncApiFootballFixtures,
+  testAdminAiModel,
   updateAdminPromptTemplate
 } from "../api/client";
 
@@ -170,12 +174,32 @@ export function AdminPage() {
     setStatusText("模型供应商已保存");
   }
 
+  async function handleDeleteProvider(provider: AiProviderConfigDto) {
+    await deleteAdminAiProvider(provider.id);
+    const [nextProviders, nextModels] = await Promise.all([listAdminAiProviders(), listAdminAiModels()]);
+    setProviders(nextProviders);
+    setModels(nextModels);
+    setStatusText("模型供应商已删除");
+  }
+
   async function handleSaveModel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await saveAdminAiModel(modelForm);
     setModelForm(initialModelForm);
     setModels(await listAdminAiModels());
     setStatusText("模型配置已保存");
+  }
+
+  async function handleTestModel(model: AiModelConfigDto) {
+    setStatusText(`正在测试模型：${model.displayName}`);
+    const result = await testAdminAiModel(model.id);
+    setStatusText(`${result.message}，耗时 ${result.latencyMs}ms`);
+  }
+
+  async function handleDeleteModel(model: AiModelConfigDto) {
+    await deleteAdminAiModel(model.id);
+    setModels(await listAdminAiModels());
+    setStatusText("模型已删除");
   }
 
   async function handleSavePrompt(event: FormEvent<HTMLFormElement>) {
@@ -189,6 +213,16 @@ export function AdminPage() {
     setEditingPromptTemplateId(null);
     setPromptTemplates(await listAdminPromptTemplates());
     setStatusText(editingPromptTemplateId ? "提示词模板已更新" : "提示词模板已保存");
+  }
+
+  async function handleDeletePromptTemplate(template: PromptTemplateConfigDto) {
+    await deleteAdminPromptTemplate(template.id);
+    if (editingPromptTemplateId === template.id) {
+      setPromptForm(initialPromptForm);
+      setEditingPromptTemplateId(null);
+    }
+    setPromptTemplates(await listAdminPromptTemplates());
+    setStatusText("提示词模板已删除");
   }
 
   function handleEditPromptTemplate(template: PromptTemplateConfigDto) {
@@ -332,6 +366,7 @@ export function AdminPage() {
                     <th>内部名</th>
                     <th>Base URL</th>
                     <th>状态</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -341,6 +376,11 @@ export function AdminPage() {
                       <td>{provider.name}</td>
                       <td>{provider.baseUrl}</td>
                       <td>{provider.enabled ? "启用" : "停用"} · {provider.apiKeyConfigured ? "key 已配置" : "key 未配置"}</td>
+                      <td>
+                        <button type="button" onClick={() => handleDeleteProvider(provider)} aria-label={`删除 ${provider.displayName}`}>
+                          删除
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -418,6 +458,7 @@ export function AdminPage() {
                     <th>模型标识</th>
                     <th>供应商</th>
                     <th>状态</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -427,6 +468,14 @@ export function AdminPage() {
                       <td>{model.modelName}</td>
                       <td>{providers.find((provider) => provider.id === model.providerId)?.displayName ?? model.providerId}</td>
                       <td>{model.enabled ? "启用" : "停用"}</td>
+                      <td>
+                        <button type="button" onClick={() => handleTestModel(model)} aria-label={`测试 ${model.displayName}`}>
+                          测试
+                        </button>
+                        <button type="button" onClick={() => handleDeleteModel(model)} aria-label={`删除 ${model.displayName}`}>
+                          删除
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -494,6 +543,9 @@ export function AdminPage() {
                       <td>
                         <button type="button" onClick={() => handleEditPromptTemplate(template)} aria-label={`编辑 ${template.name}`}>
                           编辑
+                        </button>
+                        <button type="button" onClick={() => handleDeletePromptTemplate(template)} aria-label={`删除 ${template.name}`}>
+                          删除
                         </button>
                       </td>
                     </tr>

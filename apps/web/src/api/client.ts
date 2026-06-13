@@ -95,6 +95,13 @@ export interface AdminContextCacheLogDto {
   syncedAt: string;
 }
 
+export interface AdminAiModelTestResult {
+  ok: boolean;
+  status: number;
+  message: string;
+  latencyMs: number;
+}
+
 export async function getPublicHealth(): Promise<{ ok: boolean; service: string }> {
   const response = await request(`${apiBaseUrl}/api/public/health`);
   if (!response.ok) {
@@ -228,6 +235,16 @@ export async function saveAdminAiProvider(input: SaveAiProviderRequest): Promise
   return (await response.json()) as AiProviderConfigDto;
 }
 
+export async function deleteAdminAiProvider(id: string): Promise<{ deleted: boolean }> {
+  const response = await request(`${apiBaseUrl}/api/admin/ai-providers/${id}`, {
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    throw new Error(`Admin AI provider delete failed with status ${response.status}`);
+  }
+  return (await response.json()) as { deleted: boolean };
+}
+
 export async function listAdminAiModels(): Promise<AiModelConfigDto[]> {
   const response = await request(`${apiBaseUrl}/api/admin/ai-models`);
   if (!response.ok) {
@@ -249,6 +266,26 @@ export async function saveAdminAiModel(input: SaveAiModelRequest): Promise<AiMod
     throw new Error(`Admin AI model save failed with status ${response.status}`);
   }
   return (await response.json()) as AiModelConfigDto;
+}
+
+export async function testAdminAiModel(id: string): Promise<AdminAiModelTestResult> {
+  const response = await request(`${apiBaseUrl}/api/admin/ai-models/${id}/test`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(`Admin AI model test failed with status ${response.status}`);
+  }
+  return (await response.json()) as AdminAiModelTestResult;
+}
+
+export async function deleteAdminAiModel(id: string): Promise<{ deleted: boolean }> {
+  const response = await request(`${apiBaseUrl}/api/admin/ai-models/${id}`, {
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    throw new Error(`Admin AI model delete failed with status ${response.status}`);
+  }
+  return (await response.json()) as { deleted: boolean };
 }
 
 export async function listAdminPromptTemplates(): Promise<PromptTemplateConfigDto[]> {
@@ -286,6 +323,16 @@ export async function updateAdminPromptTemplate(id: string, input: SavePromptTem
     throw new Error(`Admin prompt template update failed with status ${response.status}`);
   }
   return (await response.json()) as PromptTemplateConfigDto;
+}
+
+export async function deleteAdminPromptTemplate(id: string): Promise<{ deleted: boolean }> {
+  const response = await request(`${apiBaseUrl}/api/admin/prompt-templates/${id}`, {
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    throw new Error(`Admin prompt template delete failed with status ${response.status}`);
+  }
+  return (await response.json()) as { deleted: boolean };
 }
 
 export async function listAdminTeamDisplayNames(query = ""): Promise<TeamDisplayNameDto[]> {

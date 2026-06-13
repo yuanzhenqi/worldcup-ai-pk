@@ -1,9 +1,24 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminPage } from "../src/pages/AdminPage";
-import { listAdminContextCacheLogs, updateAdminPromptTemplate } from "../src/api/client";
+import { deleteAdminAiModel, deleteAdminAiProvider, deleteAdminPromptTemplate, listAdminContextCacheLogs, testAdminAiModel, updateAdminPromptTemplate } from "../src/api/client";
 
-const { promptTemplate } = vi.hoisted(() => ({
+const { model, promptTemplate, provider } = vi.hoisted(() => ({
+  provider: {
+    id: "provider-1",
+    name: "openrouter",
+    displayName: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    enabled: true,
+    apiKeyConfigured: true
+  },
+  model: {
+    id: "model-1",
+    providerId: "provider-1",
+    modelName: "openai/gpt-4o-mini",
+    displayName: "GPT-4o mini",
+    enabled: true
+  },
   promptTemplate: {
   id: "prompt-1",
   name: "稳健胜平负预测",
@@ -19,8 +34,8 @@ const { promptTemplate } = vi.hoisted(() => ({
 vi.mock("../src/api/client", () => ({
   getAdminApiFootballSettings: vi.fn().mockResolvedValue({ configured: true }),
   getAdminSummary: vi.fn().mockResolvedValue({ matchCount: 72, scheduledCount: 70, liveCount: 0, finishedCount: 2, latestSyncLog: null }),
-  listAdminAiProviders: vi.fn().mockResolvedValue([]),
-  listAdminAiModels: vi.fn().mockResolvedValue([]),
+  listAdminAiProviders: vi.fn().mockResolvedValue([provider]),
+  listAdminAiModels: vi.fn().mockResolvedValue([model]),
   listAdminContextCacheLogs: vi.fn().mockResolvedValue([
     {
       matchId: "match-1",
@@ -36,6 +51,10 @@ vi.mock("../src/api/client", () => ({
   syncApiFootballFixtures: vi.fn(),
   saveAdminAiProvider: vi.fn(),
   saveAdminAiModel: vi.fn(),
+  testAdminAiModel: vi.fn().mockResolvedValue({ ok: true, status: 200, message: "模型测试成功", latencyMs: 128 }),
+  deleteAdminAiProvider: vi.fn().mockResolvedValue({ deleted: true }),
+  deleteAdminAiModel: vi.fn().mockResolvedValue({ deleted: true }),
+  deleteAdminPromptTemplate: vi.fn().mockResolvedValue({ deleted: true }),
   saveAdminPromptTemplate: vi.fn(),
   updateAdminPromptTemplate: vi.fn().mockResolvedValue(promptTemplate),
   saveAdminTeamDisplayName: vi.fn()
@@ -67,6 +86,26 @@ describe("AdminPage", () => {
     expect(screen.getByText("odds")).toBeInTheDocument();
     expect(screen.getByText("cached")).toBeInTheDocument();
     expect(screen.getByText("2026/6/13 16:00:00")).toBeInTheDocument();
+  });
+
+  it("tests and deletes providers models and prompt templates", async () => {
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模型列表" }));
+    fireEvent.click(await screen.findByRole("button", { name: "测试 GPT-4o mini" }));
+    expect(testAdminAiModel).toHaveBeenCalledWith("model-1");
+    expect(await screen.findByText("模型测试成功，耗时 128ms")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "删除 GPT-4o mini" }));
+    expect(deleteAdminAiModel).toHaveBeenCalledWith("model-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "模型供应商" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除 OpenRouter" }));
+    expect(deleteAdminAiProvider).toHaveBeenCalledWith("provider-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "提示词模板" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除 稳健胜平负预测" }));
+    expect(deleteAdminPromptTemplate).toHaveBeenCalledWith("prompt-1");
   });
 
   it("loads a prompt template into the form and saves it through update", async () => {

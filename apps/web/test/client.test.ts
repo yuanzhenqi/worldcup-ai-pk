@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PredictionRequestInputDto } from "@worldcup-ai-pk/shared";
 import {
   captureApiFootballFixturesRaw,
+  deleteAdminAiModel,
+  deleteAdminAiProvider,
+  deleteAdminPromptTemplate,
   getAdminApiFootballSettings,
   getAdminSummary,
   getMatchContext,
@@ -19,6 +22,7 @@ import {
   saveAdminTeamDisplayName,
   requestMatchPrediction,
   syncApiFootballFixtures,
+  testAdminAiModel,
   updateAdminPromptTemplate
 } from "../src/api/client";
 
@@ -307,6 +311,59 @@ describe("web API client", () => {
         displayName: "DeepSeek Chat",
         enabled: true
       })
+    });
+  });
+
+  it("tests and deletes admin AI model configuration", async () => {
+    const testResult = {
+      ok: true,
+      status: 200,
+      message: "模型测试成功",
+      latencyMs: 128
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(testResult), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ deleted: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ deleted: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ deleted: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      );
+
+    await expect(testAdminAiModel("model-1")).resolves.toEqual(testResult);
+    await expect(deleteAdminAiModel("model-1")).resolves.toEqual({ deleted: true });
+    await expect(deleteAdminAiProvider("provider-1")).resolves.toEqual({ deleted: true });
+    await expect(deleteAdminPromptTemplate("prompt-1")).resolves.toEqual({ deleted: true });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:4000/api/admin/ai-models/model-1/test", {
+      method: "POST"
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:4000/api/admin/ai-models/model-1", {
+      method: "DELETE"
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "http://127.0.0.1:4000/api/admin/ai-providers/provider-1", {
+      method: "DELETE"
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "http://127.0.0.1:4000/api/admin/prompt-templates/prompt-1", {
+      method: "DELETE"
     });
   });
 
