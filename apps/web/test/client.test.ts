@@ -8,6 +8,7 @@ import {
   getPublicHealth,
   listAdminAiModels,
   listAdminAiProviders,
+  listAdminContextCacheLogs,
   listAdminPromptTemplates,
   listAdminTeamDisplayNames,
   refreshMatchContext,
@@ -376,6 +377,27 @@ describe("web API client", () => {
         isDefault: true
       })
     });
+  });
+
+  it("loads admin context cache logs", async () => {
+    const logs = [
+      {
+        matchId: "match-1",
+        domain: "odds",
+        status: "cached",
+        error: null,
+        syncedAt: "2026-06-13T08:00:00.000Z"
+      }
+    ];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ logs }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(listAdminContextCacheLogs()).resolves.toEqual(logs);
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:4000/api/admin/context-cache");
   });
 
   it("updates an existing prompt template", async () => {

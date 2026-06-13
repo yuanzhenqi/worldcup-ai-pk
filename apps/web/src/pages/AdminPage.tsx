@@ -1,11 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import type { AdminSummaryDto, AiModelConfigDto, AiProviderConfigDto, PromptTemplateConfigDto, TeamDisplayNameDto } from "@worldcup-ai-pk/shared";
 import {
+  type AdminContextCacheLogDto,
   captureApiFootballFixturesRaw,
   getAdminApiFootballSettings,
   getAdminSummary,
   listAdminAiModels,
   listAdminAiProviders,
+  listAdminContextCacheLogs,
   listAdminPromptTemplates,
   listAdminTeamDisplayNames,
   saveAdminAiModel,
@@ -17,10 +19,11 @@ import {
   updateAdminPromptTemplate
 } from "../api/client";
 
-type AdminModule = "data-source" | "providers" | "models" | "prompts" | "teams";
+type AdminModule = "data-source" | "context-cache" | "providers" | "models" | "prompts" | "teams";
 
 const adminModules: Array<{ id: AdminModule; label: string }> = [
   { id: "data-source", label: "数据源配置" },
+  { id: "context-cache", label: "数据缓存" },
   { id: "providers", label: "模型供应商" },
   { id: "models", label: "模型列表" },
   { id: "prompts", label: "提示词模板" },
@@ -62,6 +65,7 @@ export function AdminPage() {
   const [providers, setProviders] = useState<AiProviderConfigDto[]>([]);
   const [models, setModels] = useState<AiModelConfigDto[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateConfigDto[]>([]);
+  const [contextCacheLogs, setContextCacheLogs] = useState<AdminContextCacheLogDto[]>([]);
   const [teams, setTeams] = useState<TeamDisplayNameDto[]>([]);
   const [teamSearch, setTeamSearch] = useState("");
   const [teamEdits, setTeamEdits] = useState<Record<string, string>>({});
@@ -78,12 +82,13 @@ export function AdminPage() {
   }
 
   async function loadAdminData() {
-    const [settings, nextSummary, nextProviders, nextModels, nextPromptTemplates, nextTeams] = await Promise.all([
+    const [settings, nextSummary, nextProviders, nextModels, nextPromptTemplates, nextContextCacheLogs, nextTeams] = await Promise.all([
       getAdminApiFootballSettings(),
       getAdminSummary(),
       listAdminAiProviders(),
       listAdminAiModels(),
       listAdminPromptTemplates(),
+      listAdminContextCacheLogs(),
       listAdminTeamDisplayNames("")
     ]);
 
@@ -92,6 +97,7 @@ export function AdminPage() {
     setProviders(nextProviders);
     setModels(nextModels);
     setPromptTemplates(nextPromptTemplates);
+    setContextCacheLogs(nextContextCacheLogs);
     setTeams(nextTeams);
     setTeamEdits(Object.fromEntries(nextTeams.map((team) => [team.apiFootballTeamId, team.displayNameZh])));
     setStatusText(settings.configured ? "API-Football key 已配置" : "API-Football key 未配置");
@@ -335,6 +341,37 @@ export function AdminPage() {
                       <td>{provider.name}</td>
                       <td>{provider.baseUrl}</td>
                       <td>{provider.enabled ? "启用" : "停用"} · {provider.apiKeyConfigured ? "key 已配置" : "key 未配置"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : null}
+
+          {activeModule === "context-cache" ? (
+            <>
+              <header>
+                <h3>{selectedModule?.label}</h3>
+                <span>{contextCacheLogs.length} 条同步记录</span>
+              </header>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>比赛</th>
+                    <th>数据域</th>
+                    <th>状态</th>
+                    <th>错误</th>
+                    <th>同步时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contextCacheLogs.map((log) => (
+                    <tr key={`${log.matchId}-${log.domain}-${log.syncedAt}`}>
+                      <td>{log.matchId}</td>
+                      <td>{log.domain}</td>
+                      <td>{log.status}</td>
+                      <td>{log.error ?? "无"}</td>
+                      <td>{new Date(log.syncedAt).toLocaleString("zh-CN")}</td>
                     </tr>
                   ))}
                 </tbody>

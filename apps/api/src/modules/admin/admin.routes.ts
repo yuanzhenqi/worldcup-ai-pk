@@ -11,6 +11,7 @@ import {
   getAdminSummary,
   listAiModels,
   listAiProviders,
+  listContextCacheLogs,
   listPromptTemplates,
   updateAiModel,
   updateAiProvider,
@@ -101,6 +102,10 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
   }));
 
   app.get("/summary", async () => getAdminSummary(options.db));
+
+  app.get("/context-cache", async () => ({
+    logs: listContextCacheLogs(options.db)
+  }));
 
   app.get("/settings/api-football", async () => ({
     configured: hasApiFootballKey(options.db)

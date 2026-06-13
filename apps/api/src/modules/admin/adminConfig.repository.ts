@@ -69,6 +69,14 @@ interface SyncLogRow {
   created_at: string;
 }
 
+interface ContextCacheLogRow {
+  match_id: string;
+  domain: string;
+  status: string;
+  error: string | null;
+  synced_at: string;
+}
+
 function toProviderDto(row: AiProviderRow): AiProviderConfigDto {
   return {
     id: row.id,
@@ -190,6 +198,27 @@ export function getAdminSummary(db: Database): AdminSummaryDto {
         }
       : null
   };
+}
+
+export function listContextCacheLogs(db: Database) {
+  const rows = db
+    .prepare(
+      `
+        SELECT match_id, domain, status, error, synced_at
+        FROM fixture_data_sync_logs
+        ORDER BY synced_at DESC
+        LIMIT 100
+      `
+    )
+    .all() as ContextCacheLogRow[];
+
+  return rows.map((row) => ({
+    matchId: row.match_id,
+    domain: row.domain,
+    status: row.status,
+    error: row.error,
+    syncedAt: row.synced_at
+  }));
 }
 
 export function listAiProviders(db: Database): AiProviderConfigDto[] {

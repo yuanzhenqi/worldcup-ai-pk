@@ -68,6 +68,72 @@ describe("admin config API", () => {
     await app.close();
   });
 
+  it("returns fixture context sync status for admin cache module", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO matches (
+          id,
+          api_football_fixture_id,
+          stage,
+          kickoff_at,
+          status,
+          venue,
+          home_team_id,
+          home_team_name,
+          home_team_logo_url,
+          away_team_id,
+          away_team_name,
+          away_team_logo_url,
+          home_score,
+          away_score,
+          last_synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "match-1",
+      1001,
+      "Group Stage",
+      "2026-06-13T19:00:00.000Z",
+      "scheduled",
+      null,
+      "home-1",
+      "Home",
+      null,
+      "away-1",
+      "Away",
+      null,
+      null,
+      null,
+      "2026-06-13T07:00:00.000Z"
+    );
+    db.prepare(
+      `
+        INSERT INTO fixture_data_sync_logs (id, match_id, domain, status, error, synced_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `
+    ).run("log-1", "match-1", "odds", "cached", null, "2026-06-13T08:00:00.000Z");
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "GET", url: "/api/admin/context-cache", remoteAddress: "127.0.0.1" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      logs: [
+        {
+          matchId: "match-1",
+          domain: "odds",
+          status: "cached",
+          error: null,
+          syncedAt: "2026-06-13T08:00:00.000Z"
+        }
+      ]
+    });
+
+    await app.close();
+  });
+
   it("saves OpenAI-compatible providers without returning API keys", async () => {
     const { db, databasePath } = createTestDatabase();
     db.close();

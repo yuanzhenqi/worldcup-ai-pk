@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminPage } from "../src/pages/AdminPage";
-import { updateAdminPromptTemplate } from "../src/api/client";
+import { listAdminContextCacheLogs, updateAdminPromptTemplate } from "../src/api/client";
 
 const { promptTemplate } = vi.hoisted(() => ({
   promptTemplate: {
@@ -21,6 +21,15 @@ vi.mock("../src/api/client", () => ({
   getAdminSummary: vi.fn().mockResolvedValue({ matchCount: 72, scheduledCount: 70, liveCount: 0, finishedCount: 2, latestSyncLog: null }),
   listAdminAiProviders: vi.fn().mockResolvedValue([]),
   listAdminAiModels: vi.fn().mockResolvedValue([]),
+  listAdminContextCacheLogs: vi.fn().mockResolvedValue([
+    {
+      matchId: "match-1",
+      domain: "odds",
+      status: "cached",
+      error: null,
+      syncedAt: "2026-06-13T08:00:00.000Z"
+    }
+  ]),
   listAdminPromptTemplates: vi.fn().mockResolvedValue([promptTemplate]),
   listAdminTeamDisplayNames: vi.fn().mockResolvedValue([]),
   saveAdminApiFootballKey: vi.fn(),
@@ -45,6 +54,19 @@ describe("AdminPage", () => {
     expect(screen.getByText("模型供应商")).toBeInTheDocument();
     expect(screen.getByText("提示词模板")).toBeInTheDocument();
     expect(screen.getByText("球队中文名")).toBeInTheDocument();
+    expect(screen.getByText("数据缓存")).toBeInTheDocument();
+  });
+
+  it("renders context cache sync logs", async () => {
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "数据缓存" }));
+
+    expect(listAdminContextCacheLogs).toHaveBeenCalled();
+    expect(screen.getByText("match-1")).toBeInTheDocument();
+    expect(screen.getByText("odds")).toBeInTheDocument();
+    expect(screen.getByText("cached")).toBeInTheDocument();
+    expect(screen.getByText("2026/6/13 16:00:00")).toBeInTheDocument();
   });
 
   it("loads a prompt template into the form and saves it through update", async () => {

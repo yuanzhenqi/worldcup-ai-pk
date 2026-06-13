@@ -87,6 +87,14 @@ export interface SavePromptTemplateRequest {
   isDefault: boolean;
 }
 
+export interface AdminContextCacheLogDto {
+  matchId: string;
+  domain: string;
+  status: string;
+  error: string | null;
+  syncedAt: string;
+}
+
 export async function getPublicHealth(): Promise<{ ok: boolean; service: string }> {
   const response = await request(`${apiBaseUrl}/api/public/health`);
   if (!response.ok) {
@@ -186,6 +194,15 @@ export async function syncApiFootballFixtures(): Promise<{ synced: boolean; impo
     throw new Error(body?.error ?? `API-Football fixtures sync failed with status ${response.status}`);
   }
   return (await response.json()) as { synced: boolean; imported: number };
+}
+
+export async function listAdminContextCacheLogs(): Promise<AdminContextCacheLogDto[]> {
+  const response = await request(`${apiBaseUrl}/api/admin/context-cache`);
+  if (!response.ok) {
+    throw new Error(`Admin context cache request failed with status ${response.status}`);
+  }
+  const body = (await response.json()) as { logs: AdminContextCacheLogDto[] };
+  return body.logs;
 }
 
 export async function listAdminAiProviders(): Promise<AiProviderConfigDto[]> {
