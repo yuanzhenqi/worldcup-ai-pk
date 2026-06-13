@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { createTestDatabase } from "./support/testDatabase";
 
-const builtInPromptTemplateNames = ["稳健胜平负预测", "比分预测", "爆冷风险评估", "数据权重型预测"];
+const builtInPromptTemplateNames = [
+  "稳健胜平负预测",
+  "比分预测",
+  "赔率驱动预测",
+  "球员阵容影响",
+  "历史交锋模型",
+  "爆冷风险评估",
+  "综合赛前报告"
+];
 
 describe("admin config API", () => {
   it("returns admin summary counts", async () => {
@@ -180,7 +188,7 @@ describe("admin config API", () => {
 
     const list = await app.inject({ method: "GET", url: "/api/admin/prompt-templates", remoteAddress: "127.0.0.1" });
     const templates = list.json().promptTemplates as Array<{ isDefault: boolean }>;
-    expect(templates).toHaveLength(6);
+    expect(templates).toHaveLength(9);
     expect(templates.filter((template) => template.isDefault)).toHaveLength(1);
 
     await app.close();
@@ -206,6 +214,8 @@ describe("admin config API", () => {
     expect(templates.every((template) => template.enabled)).toBe(true);
     expect(templates.filter((template) => template.isDefault).map((template) => template.name)).toEqual(["稳健胜平负预测"]);
     expect(templates.every((template) => template.fullPrompt.includes("{{homeTeam}}") && template.fullPrompt.includes("{{awayTeam}}"))).toBe(true);
+    expect(templates.every((template) => template.fullPrompt.includes("prediction_context"))).toBe(true);
+    expect(templates.every((template) => template.fullPrompt.includes("不得编造"))).toBe(true);
 
     await app.close();
   });
