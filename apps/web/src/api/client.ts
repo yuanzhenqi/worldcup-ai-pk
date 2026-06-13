@@ -7,6 +7,7 @@ import type {
   PredictionDataOptionsDto,
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
+  PredictionRunHistoryDto,
   PredictionRunStatusDto,
   PromptTemplateConfigDto,
   TeamDisplayNameDto
@@ -161,6 +162,16 @@ export async function getPredictionRunStatus(runId: string): Promise<PredictionR
     throw new Error(`Public prediction run status request failed with status ${response.status}`);
   }
   return (await response.json()) as PredictionRunStatusDto;
+}
+
+export async function getMatchPredictionHistory(matchId: string): Promise<PredictionRunHistoryDto> {
+  const response = await request(`${apiBaseUrl}/api/public/matches/${matchId}/prediction-runs`, {
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new Error(`Public match prediction history request failed with status ${response.status}`);
+  }
+  return (await response.json()) as PredictionRunHistoryDto;
 }
 
 export async function getAdminApiFootballSettings(): Promise<ApiFootballSettingsStatus> {

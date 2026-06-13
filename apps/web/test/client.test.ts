@@ -8,6 +8,7 @@ import {
   getAdminApiFootballSettings,
   getAdminSummary,
   getMatchContext,
+  getMatchPredictionHistory,
   getPublicHealth,
   listAdminAiModels,
   listAdminAiProviders,
@@ -221,6 +222,34 @@ describe("web API client", () => {
 
     await expect(getPredictionRunStatus("run-1")).resolves.toEqual(status);
     expect(fetchMock).toHaveBeenCalledWith("/api/public/prediction-runs/run-1", {
+      cache: "no-store"
+    });
+  });
+
+  it("loads historical prediction runs for a match", async () => {
+    const history = {
+      matchId: "match-1",
+      runs: [
+        {
+          runId: "run-1",
+          matchId: "match-1",
+          status: "completed",
+          message: "已完成 1 个模型预测",
+          predictionsCount: 1,
+          logs: [],
+          predictions: []
+        }
+      ]
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(history), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(getMatchPredictionHistory("match-1")).resolves.toEqual(history);
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/matches/match-1/prediction-runs", {
       cache: "no-store"
     });
   });

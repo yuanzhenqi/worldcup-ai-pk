@@ -244,6 +244,124 @@ describe("public prediction request API", () => {
     verifyDb.close();
   });
 
+  it("lists historical prediction runs for a public match", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, {
+      id: "match-1",
+      kickoffAt: "2099-06-12T19:00:00.000Z",
+      status: "scheduled"
+    });
+    insertAiConfig(db);
+    db.prepare(
+      `
+        INSERT INTO prediction_runs (id, match_id, scheduled_at, started_at, finished_at, status, failure_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "run-1",
+      "match-1",
+      "2026-06-13T08:00:00.000Z",
+      "2026-06-13T08:00:00.000Z",
+      "2026-06-13T08:00:03.000Z",
+      "completed",
+      null
+    );
+    db.prepare(
+      `
+        INSERT INTO prediction_run_logs (id, prediction_run_id, match_id, model_id, level, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run("log-1", "run-1", "match-1", "model-1", "info", "模型预测完成：GPT-4o mini", "2026-06-13T08:00:03.000Z");
+    db.prepare(
+      `
+        INSERT INTO ai_predictions (
+          id,
+          prediction_run_id,
+          match_id,
+          model_id,
+          prompt_template_id,
+          predicted_result,
+          predicted_home_score,
+          predicted_away_score,
+          confidence,
+          short_reason,
+          analysis_report,
+          key_factors_json,
+          odds_interpretation,
+          risk_points_json,
+          raw_response,
+          parse_status,
+          eligible_for_scoring,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "prediction-1",
+      "run-1",
+      "match-1",
+      "model-1",
+      "prompt-1",
+      "home",
+      2,
+      1,
+      0.72,
+      "主队更稳定。",
+      "详细分析报告正文。",
+      JSON.stringify(["赔率", "主场"]),
+      "主胜赔率更低。",
+      JSON.stringify(["客队反击"]),
+      "{}",
+      "parsed",
+      1,
+      "2026-06-13T08:00:03.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "GET", url: "/api/public/matches/match-1/prediction-runs" });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(body).toMatchObject({
+      matchId: "match-1",
+      runs: [
+        {
+          runId: "run-1",
+          matchId: "match-1",
+          status: "completed",
+          message: "已完成 1 个模型预测",
+          predictionsCount: 1,
+          logs: [
+            {
+              level: "info",
+              message: "模型预测完成：GPT-4o mini",
+              modelDisplayName: "GPT-4o mini",
+              createdAt: "2026-06-13T08:00:03.000Z"
+            }
+          ],
+          predictions: [
+            {
+              id: "prediction-1",
+              modelDisplayName: "GPT-4o mini",
+              predictedResult: "home",
+              predictedHomeScore: 2,
+              predictedAwayScore: 1,
+              confidence: 0.72,
+              shortReason: "主队更稳定。",
+              keyFactors: ["赔率", "主场"],
+              oddsInterpretation: "主胜赔率更低。",
+              riskPoints: ["客队反击"],
+              analysisReport: "详细分析报告正文。"
+            }
+          ]
+        }
+      ]
+    });
+
+    await app.close();
+  });
+
   it("rejects a prediction request after kickoff", async () => {
     const { db, databasePath } = createTestDatabase();
     insertMatch(db, {

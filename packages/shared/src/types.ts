@@ -149,6 +149,11 @@ export interface PredictionRunStatusDto {
   predictions: PredictionRunPredictionDto[];
 }
 
+export interface PredictionRunHistoryDto {
+  matchId: string;
+  runs: PredictionRunStatusDto[];
+}
+
 export interface PredictionRequestResponseDto {
   matchId: string;
   status: "scheduled" | "running" | "completed" | "failed" | "rejected" | "rate_limited";

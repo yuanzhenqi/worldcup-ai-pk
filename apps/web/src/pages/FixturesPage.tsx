@@ -6,6 +6,7 @@ import type {
   PredictionDataOptionsDto,
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
+  PredictionRunHistoryDto,
   PredictionRunLogDto,
   PredictionRunPredictionDto,
   PredictionRunStatusDto,
@@ -22,6 +23,7 @@ interface FixturesPageProps {
   onRefreshMatchContext?: (matchId: string, dataOptions: PredictionDataOptionsDto) => Promise<FixtureContextSummaryDto>;
   onRequestPrediction?: (match: MatchDto, input: PredictionRequestInputDto) => Promise<PredictionRequestResponseDto>;
   onLoadPredictionRunStatus?: (runId: string) => Promise<PredictionRunStatusDto>;
+  onLoadPredictionHistory?: (matchId: string) => Promise<PredictionRunHistoryDto>;
   predictionPollIntervalMs?: number;
 }
 
@@ -31,6 +33,13 @@ type PredictionFeedback = {
   tone: "info" | "error";
   logs: PredictionRunLogDto[];
   predictions: PredictionRunPredictionDto[];
+};
+
+type PredictionHistoryState = {
+  match: MatchDto;
+  loading: boolean;
+  error: string | null;
+  runs: PredictionRunStatusDto[];
 };
 
 const statusTabs: Array<{ status: FixtureTab; label: string }> = [
@@ -163,6 +172,7 @@ function MatchCard({
   isRequesting,
   onOpenPrediction,
   onOpenContext,
+  onOpenHistory,
   onOpenReport
 }: {
   match: MatchDto;
@@ -170,8 +180,11 @@ function MatchCard({
   isRequesting: boolean;
   onOpenPrediction: (match: MatchDto) => void;
   onOpenContext: (match: MatchDto) => void;
+  onOpenHistory?: (match: MatchDto) => void;
   onOpenReport: (feedback: PredictionFeedback) => void;
 }) {
+  const hasHistory = match.hasAiPrediction || Boolean(feedback?.predictions.length);
+
   return (
     <article className={`match-card status-${match.status}`}>
       <div className="match-time-block">
@@ -204,6 +217,11 @@ function MatchCard({
         <button type="button" className="secondary-action" onClick={() => onOpenContext(match)}>
           数据
         </button>
+        {hasHistory && onOpenHistory ? (
+          <button type="button" className="secondary-action" onClick={() => onOpenHistory(match)}>
+            历史
+          </button>
+        ) : null}
         {feedback ? (
           <div className="prediction-feedback-block">
             <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span>
@@ -235,6 +253,7 @@ function FixtureDateGroups({
   requestingMatchIds,
   onOpenPrediction,
   onOpenContext,
+  onOpenHistory,
   onOpenReport
 }: {
   groups: Array<{ key: string; label: string; matches: MatchDto[] }>;
@@ -242,6 +261,7 @@ function FixtureDateGroups({
   requestingMatchIds: Set<string>;
   onOpenPrediction: (match: MatchDto) => void;
   onOpenContext: (match: MatchDto) => void;
+  onOpenHistory?: (match: MatchDto) => void;
   onOpenReport: (feedback: PredictionFeedback) => void;
 }) {
   return (
@@ -261,6 +281,7 @@ function FixtureDateGroups({
                 isRequesting={requestingMatchIds.has(match.id)}
                 onOpenPrediction={onOpenPrediction}
                 onOpenContext={onOpenContext}
+                onOpenHistory={onOpenHistory}
                 onOpenReport={onOpenReport}
               />
             ))}
@@ -278,6 +299,7 @@ export function FixturesPage({
   onRefreshMatchContext,
   onRequestPrediction,
   onLoadPredictionRunStatus,
+  onLoadPredictionHistory,
   predictionPollIntervalMs = 1500
 }: FixturesPageProps) {
   const [activeStatus, setActiveStatus] = useState<FixtureTab>("scheduled");
@@ -288,6 +310,7 @@ export function FixturesPage({
   const [requestingMatchIds, setRequestingMatchIds] = useState<Set<string>>(() => new Set());
   const [activePredictionMatch, setActivePredictionMatch] = useState<MatchDto | null>(null);
   const [activePredictionReport, setActivePredictionReport] = useState<PredictionRunPredictionDto[] | null>(null);
+  const [activePredictionHistory, setActivePredictionHistory] = useState<PredictionHistoryState | null>(null);
   const [activeContextMatch, setActiveContextMatch] = useState<MatchDto | null>(null);
   const [contextByMatchId, setContextByMatchId] = useState<Record<string, FixtureContextSummaryDto>>({});
   const [contextLoadingMatchIds, setContextLoadingMatchIds] = useState<Set<string>>(() => new Set());
@@ -412,6 +435,20 @@ export function FixturesPage({
     }
   }
 
+  async function handleOpenPredictionHistory(match: MatchDto) {
+    if (!onLoadPredictionHistory) {
+      return;
+    }
+
+    setActivePredictionHistory({ match, loading: true, error: null, runs: [] });
+    try {
+      const history = await onLoadPredictionHistory(match.id);
+      setActivePredictionHistory({ match, loading: false, error: null, runs: history.runs });
+    } catch {
+      setActivePredictionHistory({ match, loading: false, error: "历史记录加载失败，请稍后重试", runs: [] });
+    }
+  }
+
   return (
     <section id="fixtures" className="page-section fixtures-console">
       <div className="fixtures-heading">
@@ -488,6 +525,7 @@ export function FixturesPage({
         requestingMatchIds={requestingMatchIds}
         onOpenPrediction={setActivePredictionMatch}
         onOpenContext={handleOpenContext}
+        onOpenHistory={onLoadPredictionHistory ? handleOpenPredictionHistory : undefined}
         onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions)}
       />
 
@@ -503,6 +541,7 @@ export function FixturesPage({
               requestingMatchIds={requestingMatchIds}
               onOpenPrediction={setActivePredictionMatch}
               onOpenContext={handleOpenContext}
+              onOpenHistory={onLoadPredictionHistory ? handleOpenPredictionHistory : undefined}
               onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions)}
             />
           ) : null}
@@ -524,6 +563,45 @@ export function FixturesPage({
         loading={activeContextMatch ? contextLoadingMatchIds.has(activeContextMatch.id) : false}
         onClose={() => setActiveContextMatch(null)}
       />
+      <BottomDrawer open={Boolean(activePredictionHistory)} title="历史预测记录" onClose={() => setActivePredictionHistory(null)}>
+        {activePredictionHistory ? (
+          <div className="prediction-history-list">
+            <p>
+              {activePredictionHistory.match.homeTeam.displayNameZh} vs {activePredictionHistory.match.awayTeam.displayNameZh}
+            </p>
+            {activePredictionHistory.loading ? <p className="status-line">正在加载历史记录...</p> : null}
+            {activePredictionHistory.error ? <p className="status-line error">{activePredictionHistory.error}</p> : null}
+            {!activePredictionHistory.loading && !activePredictionHistory.error && activePredictionHistory.runs.length === 0 ? (
+              <p className="empty-state">暂无历史预测记录</p>
+            ) : null}
+            {!activePredictionHistory.loading && !activePredictionHistory.error
+              ? activePredictionHistory.runs.map((run) => (
+                  <article className="prediction-history-card" key={run.runId}>
+                    <header>
+                      <h3>{run.message}</h3>
+                      <strong>{run.predictionsCount} 个模型结果</strong>
+                    </header>
+                    {run.logs.length > 0 ? (
+                      <ol className="prediction-log-list" aria-label="历史预测执行日志">
+                        {run.logs.map((log) => (
+                          <li className={log.level} key={`${run.runId}-${log.createdAt}-${log.message}`}>
+                            {log.modelDisplayName ? `${log.modelDisplayName}：` : ""}
+                            {log.message}
+                          </li>
+                        ))}
+                      </ol>
+                    ) : null}
+                    {run.predictions.length > 0 ? (
+                      <button type="button" className="secondary-action" onClick={() => setActivePredictionReport(run.predictions)}>
+                        查看报告
+                      </button>
+                    ) : null}
+                  </article>
+                ))
+              : null}
+          </div>
+        ) : null}
+      </BottomDrawer>
       <BottomDrawer open={Boolean(activePredictionReport)} title="预测分析报告" onClose={() => setActivePredictionReport(null)}>
         {activePredictionReport ? (
           <div className="prediction-report-list">

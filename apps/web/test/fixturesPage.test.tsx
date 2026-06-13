@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { MatchDto, PredictionRunStatusDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
+import type { MatchDto, PredictionRunHistoryDto, PredictionRunStatusDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FixturesPage } from "../src/pages/FixturesPage";
 
@@ -243,6 +243,69 @@ describe("FixturesPage", () => {
     expect(screen.getByText("GPT-4o mini")).toBeInTheDocument();
     expect(screen.getByText("2 - 1")).toBeInTheDocument();
     expect(screen.getByText("详细分析报告正文。")).toBeInTheDocument();
+  });
+
+  it("opens historical prediction runs from a match card", async () => {
+    const match = {
+      ...buildMatch({
+        id: "scheduled-1",
+        kickoffAt: "2026-06-13T12:00:00.000Z",
+        status: "scheduled",
+        homeDisplayNameZh: "美国",
+        homeName: "USA",
+        awayDisplayNameZh: "巴拉圭",
+        awayName: "Paraguay"
+      }),
+      hasAiPrediction: true
+    };
+    const history: PredictionRunHistoryDto = {
+      matchId: "scheduled-1",
+      runs: [
+        {
+          runId: "run-1",
+          matchId: "scheduled-1",
+          status: "completed",
+          message: "已完成 1 个模型预测",
+          predictionsCount: 1,
+          logs: [
+            {
+              level: "info",
+              message: "模型预测完成：GPT-4o mini",
+              modelDisplayName: "GPT-4o mini",
+              createdAt: "2026-06-13T08:00:01.000Z"
+            }
+          ],
+          predictions: [
+            {
+              id: "prediction-1",
+              modelDisplayName: "GPT-4o mini",
+              predictedResult: "home",
+              predictedHomeScore: 2,
+              predictedAwayScore: 1,
+              confidence: 0.72,
+              shortReason: "主队更稳定。",
+              keyFactors: ["赔率", "主场"],
+              oddsInterpretation: "主胜赔率更低。",
+              riskPoints: ["客队反击"],
+              analysisReport: "历史详细分析报告正文。"
+            }
+          ]
+        }
+      ]
+    };
+    const onLoadPredictionHistory = vi.fn().mockResolvedValue(history);
+
+    render(<FixturesPage matches={[match]} onLoadPredictionHistory={onLoadPredictionHistory} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "历史" }));
+
+    expect(onLoadPredictionHistory).toHaveBeenCalledWith("scheduled-1");
+    expect(await screen.findByText("历史预测记录")).toBeInTheDocument();
+    expect(screen.getByText("已完成 1 个模型预测")).toBeInTheDocument();
+    expect(screen.getByText("GPT-4o mini：模型预测完成：GPT-4o mini")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "查看报告" }));
+    expect(screen.getByText("历史详细分析报告正文。")).toBeInTheDocument();
   });
 
   it("refreshes match context automatically when opening the data card", async () => {

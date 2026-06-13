@@ -5,6 +5,7 @@ import type {
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
   PredictionResult,
+  PredictionRunHistoryDto,
   PredictionRunLogDto,
   PredictionRunPredictionDto,
   PredictionRunStatusDto
@@ -435,6 +436,27 @@ export function getPredictionRunStatus(db: Database, runId: string): PredictionR
       riskPoints: parseStringArrayJson(prediction.risk_points_json),
       analysisReport: prediction.analysis_report
     }))
+  };
+}
+
+export function listPredictionRunHistory(db: Database, matchId: string): PredictionRunHistoryDto {
+  const rows = db
+    .prepare(
+      `
+        SELECT id
+        FROM prediction_runs
+        WHERE match_id = ?
+          AND status IN ('running', 'completed', 'failed')
+        ORDER BY scheduled_at DESC
+      `
+    )
+    .all(matchId) as Array<{ id: string }>;
+
+  return {
+    matchId,
+    runs: rows
+      .map((row) => getPredictionRunStatus(db, row.id))
+      .filter((run): run is PredictionRunStatusDto => run !== null)
   };
 }
 

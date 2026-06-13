@@ -6,7 +6,7 @@ import type { MatchStatus, PredictionDataOptionsDto, PredictionRequestInputDto, 
 import { getFixtureContextSummary, refreshFixtureContext } from "../context/fixtureContext.service";
 import { FootballService } from "../football/football.service";
 import { listMatches } from "../matches/match.repository";
-import { executeManualPredictionRequest, getPredictionRunStatus, markPredictionRunFailed } from "../predictions/predictionExecutor.service";
+import { executeManualPredictionRequest, getPredictionRunStatus, listPredictionRunHistory, markPredictionRunFailed } from "../predictions/predictionExecutor.service";
 import { planPredictionRequest } from "../predictions/prediction.service";
 import { getApiFootballKey } from "../settings/settings.repository";
 
@@ -70,6 +70,17 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
     }
     reply.header("cache-control", "no-store");
     return status;
+  });
+
+  app.get<{ Params: { matchId: string } }>("/matches/:matchId/prediction-runs", async (request, reply) => {
+    const match = options.db.prepare("SELECT id FROM matches WHERE id = ?").get(request.params.matchId) as { id: string } | undefined;
+
+    if (!match) {
+      return reply.code(404).send({ error: "Match not found" });
+    }
+
+    reply.header("cache-control", "no-store");
+    return listPredictionRunHistory(options.db, match.id);
   });
 
   app.get<{ Params: { matchId: string } }>("/matches/:matchId/context", async (request, reply) => {
