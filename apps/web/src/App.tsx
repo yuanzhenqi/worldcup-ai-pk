@@ -101,8 +101,8 @@ export function App() {
         </nav>
       </header>
       <section className="intro">
-        <h2>赛程、赔率与 AI 预测对比</h2>
-        <p>公开页面展示比赛信息、赔率摘要、AI 预测和模型排行榜。后台仅本机访问。</p>
+        <h2>2026 世界杯 AI 预测竞技场</h2>
+        <p>多模型同场预测，赛后真实结算，用排行榜看谁更懂比赛。</p>
       </section>
       {matchesStatus === "loading" ? <p className="status-line">正在加载赛程...</p> : null}
       {matchesStatus === "failed" ? <p className="status-line error">赛程加载失败，请确认 API 服务正在运行。</p> : null}
