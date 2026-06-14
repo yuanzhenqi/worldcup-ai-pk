@@ -78,6 +78,8 @@ describe("LeaderboardPage", () => {
     await user.click(within(settledSection).getByRole("button", { name: "胜平负榜" }));
     expect(within(settledSection).getByRole("button", { name: "胜平负榜" })).toHaveAttribute("aria-pressed", "true");
     expect(within(settledSection).getAllByTestId("settled-rank-card")[0]).toHaveTextContent("Overall-M1");
+    expect(within(settledSection).getAllByTestId("settled-rank-card")[1]).toHaveTextContent("Score-M2");
+    expect(within(settledSection).getAllByTestId("settled-rank-card")[2]).toHaveTextContent("Result-M3");
     expect(within(settledSection).getByText("胜平负命中率")).toBeInTheDocument();
 
     await user.click(within(settledSection).getByRole("button", { name: "比分榜" }));
