@@ -136,9 +136,9 @@ describe("public prediction request API", () => {
     expect(JSON.parse(requestInputRow.data_options_json)).toEqual({
       useOdds: false,
       useApiFootballPrediction: false,
-      useHeadToHead: true,
-      usePlayerLineupInjuries: true,
-      useDongqiudiIntel: true,
+      useHeadToHead: false,
+      usePlayerLineupInjuries: false,
+      useDongqiudiIntel: false,
       useSporttery: true
     });
     expect(verifyDb.prepare("SELECT match_id, status FROM prediction_runs").all()).toEqual([

@@ -15,6 +15,7 @@ import { SportteryClient } from "../football/sportteryClient";
 import { getSportteryMappingByFixtureId } from "../football/sportteryMapping.repository";
 import { getApiFootballKey, isDongqiudiEnabled, isSportteryEnabled } from "../settings/settings.repository";
 import { settleFinishedMatchPredictions } from "../predictions/predictionSettlement.service";
+import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
 
 export interface PublicRoutesOptions {
   db: Database;
@@ -47,9 +48,9 @@ const defaultPredictionRequestInput: PredictionRequestInputDto = {
   dataOptions: {
     useOdds: false,
     useApiFootballPrediction: false,
-    useHeadToHead: true,
-    usePlayerLineupInjuries: true,
-    useDongqiudiIntel: true,
+    useHeadToHead: false,
+    usePlayerLineupInjuries: false,
+    useDongqiudiIntel: false,
     useSporttery: true
   },
   promptTemplateId: null,
@@ -61,6 +62,10 @@ const defaultPredictionRequestInput: PredictionRequestInputDto = {
 function parsePredictionRequestBody(body: unknown): PredictionRequestInputDto {
   const parsed = predictionRequestSchema.safeParse(body);
   return parsed.success ? parsed.data : defaultPredictionRequestInput;
+}
+
+function resolveDisplayNameZh(input: { teamId: string; originalName: string; displayNameZh: string | null; displayNameSource: string | null }): string {
+  return input.displayNameSource === "admin" ? input.displayNameZh ?? input.originalName : worldCupTeamNamesZh[input.teamId] ?? input.displayNameZh ?? input.originalName;
 }
 
 export async function registerPublicRoutes(app: FastifyInstance, options: PublicRoutesOptions): Promise<void> {
@@ -115,8 +120,39 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
     }
 
     const match = options.db
-      .prepare("SELECT id, api_football_fixture_id, home_team_id, away_team_id FROM matches WHERE id = ?")
-      .get(request.params.matchId) as { id: string; api_football_fixture_id: number; home_team_id: string; away_team_id: string } | undefined;
+      .prepare(
+        `
+          SELECT
+            matches.id,
+            matches.api_football_fixture_id,
+            matches.home_team_id,
+            matches.home_team_name,
+            home_display.display_name_zh AS home_team_display_name_zh,
+            home_display.source AS home_team_display_name_source,
+            matches.away_team_id,
+            matches.away_team_name,
+            away_display.display_name_zh AS away_team_display_name_zh,
+            away_display.source AS away_team_display_name_source
+          FROM matches
+          LEFT JOIN team_display_names AS home_display ON home_display.api_football_team_id = matches.home_team_id
+          LEFT JOIN team_display_names AS away_display ON away_display.api_football_team_id = matches.away_team_id
+          WHERE matches.id = ?
+        `
+      )
+      .get(request.params.matchId) as
+      | {
+          id: string;
+          api_football_fixture_id: number;
+          home_team_id: string;
+          home_team_name: string;
+          home_team_display_name_zh: string | null;
+          home_team_display_name_source: string | null;
+          away_team_id: string;
+          away_team_name: string;
+          away_team_display_name_zh: string | null;
+          away_team_display_name_source: string | null;
+        }
+      | undefined;
 
     if (!match) {
       return reply.code(404).send({ error: "Match not found" });
@@ -130,7 +166,19 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       matchId: match.id,
       apiFootballFixtureId: match.api_football_fixture_id,
       homeTeamId: match.home_team_id,
+      homeTeamName: resolveDisplayNameZh({
+        teamId: match.home_team_id,
+        originalName: match.home_team_name,
+        displayNameZh: match.home_team_display_name_zh,
+        displayNameSource: match.home_team_display_name_source
+      }),
       awayTeamId: match.away_team_id,
+      awayTeamName: resolveDisplayNameZh({
+        teamId: match.away_team_id,
+        originalName: match.away_team_name,
+        displayNameZh: match.away_team_display_name_zh,
+        displayNameSource: match.away_team_display_name_source
+      }),
       footballService,
       dongqiudiClient: isDongqiudiEnabled(options.db) ? new DongqiudiClient() : null,
       dongqiudiMatchId: getDongqiudiMappingByFixtureId(options.db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,
@@ -154,9 +202,15 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
             home_team_id,
             away_team_id,
             home_team_name,
-            away_team_name
+            home_display.display_name_zh AS home_team_display_name_zh,
+            home_display.source AS home_team_display_name_source,
+            away_team_name,
+            away_display.display_name_zh AS away_team_display_name_zh,
+            away_display.source AS away_team_display_name_source
           FROM matches
-          WHERE id = ?
+          LEFT JOIN team_display_names AS home_display ON home_display.api_football_team_id = matches.home_team_id
+          LEFT JOIN team_display_names AS away_display ON away_display.api_football_team_id = matches.away_team_id
+          WHERE matches.id = ?
         `
       )
       .get(request.params.matchId) as
@@ -170,7 +224,11 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
           home_team_id: string;
           away_team_id: string;
           home_team_name: string;
+          home_team_display_name_zh: string | null;
+          home_team_display_name_source: string | null;
           away_team_name: string;
+          away_team_display_name_zh: string | null;
+          away_team_display_name_source: string | null;
         }
       | undefined;
 
@@ -189,7 +247,19 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
         matchId: match.id,
         apiFootballFixtureId: match.api_football_fixture_id,
         homeTeamId: match.home_team_id,
+        homeTeamName: resolveDisplayNameZh({
+          teamId: match.home_team_id,
+          originalName: match.home_team_name,
+          displayNameZh: match.home_team_display_name_zh,
+          displayNameSource: match.home_team_display_name_source
+        }),
         awayTeamId: match.away_team_id,
+        awayTeamName: resolveDisplayNameZh({
+          teamId: match.away_team_id,
+          originalName: match.away_team_name,
+          displayNameZh: match.away_team_display_name_zh,
+          displayNameSource: match.away_team_display_name_source
+        }),
         footballService,
         dongqiudiClient: isDongqiudiEnabled(options.db) ? new DongqiudiClient() : null,
         dongqiudiMatchId: getDongqiudiMappingByFixtureId(options.db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,

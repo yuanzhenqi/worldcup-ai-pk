@@ -411,4 +411,113 @@ describe("fixture context API", () => {
 
     await app.close();
   });
+
+  it("auto maps and refreshes sporttery context for an exact World Cup team match", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertContextApiMatch(db);
+    saveSportteryEnabled(db, true);
+    db.close();
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: {
+              matchInfoList: [
+                {
+                  subMatchList: [
+                    {
+                      leagueAbbName: "世界杯",
+                      leagueAllName: "世界杯",
+                      homeTeamAbbName: "Home",
+                      awayTeamAbbName: "Away",
+                      matchId: 2040170,
+                      oddsList: [{ poolCode: "HHAD", h: "1.68", d: "4.85", a: "3.05", goalLine: "-3.00" }]
+                    }
+                  ]
+                }
+              ]
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ value: {} }), { status: 200, headers: { "content-type": "application/json" } })));
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/public/matches/match-1/context/refresh",
+      payload: {
+        dataOptions: {
+          useOdds: false,
+          useApiFootballPrediction: false,
+          useHeadToHead: false,
+          usePlayerLineupInjuries: false,
+          useDongqiudiIntel: false,
+          useSporttery: true
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().domains).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          domain: "sporttery",
+          status: "cached",
+          summary: expect.stringContaining("让球胜平负 主1.68/平4.85/客3.05")
+        })
+      ])
+    );
+
+    await app.close();
+  });
+
+  it("returns unavailable sporttery context when the match is not covered", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertContextApiMatch(db);
+    saveSportteryEnabled(db, true);
+    db.close();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          value: {
+            matchInfoList: [
+              {
+                subMatchList: [{ leagueAbbName: "世界杯", leagueAllName: "世界杯", homeTeamAbbName: "德国", awayTeamAbbName: "库拉索", matchId: 2040170 }]
+              }
+            ]
+          }
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/public/matches/match-1/context/refresh",
+      payload: {
+        dataOptions: {
+          useOdds: false,
+          useApiFootballPrediction: false,
+          useHeadToHead: false,
+          usePlayerLineupInjuries: false,
+          useDongqiudiIntel: false,
+          useSporttery: true
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().domains).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ domain: "sporttery", status: "unavailable", summary: "体彩暂未覆盖该场比赛" })
+      ])
+    );
+
+    await app.close();
+  });
 });

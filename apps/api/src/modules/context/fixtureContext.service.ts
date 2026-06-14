@@ -6,6 +6,7 @@ import { parseDongqiudiIntelSummary } from "./dongqiudiContextParsers";
 import type { DongqiudiClient } from "../football/dongqiudiClient";
 import { extractOddsForMatch, parseSportterySummary } from "./sportteryContextParsers";
 import type { SportteryClient } from "../football/sportteryClient";
+import { ensureSportteryMappingForFixture } from "../football/sportteryMapping.repository";
 import { getLatestFixtureContextSummary, saveFixtureContextSnapshot, writeFixtureDataSyncLog } from "./fixtureContext.repository";
 
 interface RefreshFixtureContextInput {
@@ -13,7 +14,9 @@ interface RefreshFixtureContextInput {
   matchId: string;
   apiFootballFixtureId: number;
   homeTeamId: string;
+  homeTeamName: string;
   awayTeamId: string;
+  awayTeamName: string;
   footballService: FootballService | null;
   dongqiudiClient: DongqiudiClient | null;
   dongqiudiMatchId: number | null;
@@ -165,21 +168,36 @@ export async function refreshFixtureContext(input: RefreshFixtureContextInput): 
     domains.push(notRequestedSummary("dongqiudi_intel"));
   }
 
-  if (input.dataOptions.useSporttery && input.sportteryClient && input.sportteryMatchId) {
+  if (input.dataOptions.useSporttery && input.sportteryClient) {
     try {
-      const [matchList, history, tables, result, feature, injuries] = await Promise.all([
-        input.sportteryClient.getMatchList(),
-        input.sportteryClient.getResultHistory(input.sportteryMatchId),
-        input.sportteryClient.getMatchTables(input.sportteryMatchId),
-        input.sportteryClient.getMatchResult(input.sportteryMatchId),
-        input.sportteryClient.getMatchFeature(input.sportteryMatchId),
-        input.sportteryClient.getInjurySuspension(input.sportteryMatchId)
-      ]);
-      const odds = extractOddsForMatch(matchList, input.sportteryMatchId);
-      const parsed = parseSportterySummary({ odds, history, tables, result, feature, injuries });
-      raw.sporttery = parsed.raw;
-      domains.push({ domain: "sporttery", status: parsed.status, summary: parsed.summary, lastSyncedAt: now.toISOString(), error: null });
-      writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "sporttery", status: parsed.status, error: null, now });
+      const matchList = await input.sportteryClient.getMatchList();
+      const ensuredMapping = input.sportteryMatchId
+        ? { sportteryMatchId: input.sportteryMatchId }
+        : ensureSportteryMappingForFixture(input.db, {
+            apiFootballFixtureId: input.apiFootballFixtureId,
+            homeTeamName: input.homeTeamName,
+            awayTeamName: input.awayTeamName,
+            sportteryMatchList: matchList,
+            now
+          });
+
+      if (!ensuredMapping) {
+        domains.push({ domain: "sporttery", status: "unavailable", summary: "体彩暂未覆盖该场比赛", lastSyncedAt: now.toISOString(), error: null });
+        writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "sporttery", status: "unavailable", error: null, now });
+      } else {
+        const [history, tables, result, feature, injuries] = await Promise.all([
+          input.sportteryClient.getResultHistory(ensuredMapping.sportteryMatchId),
+          input.sportteryClient.getMatchTables(ensuredMapping.sportteryMatchId),
+          input.sportteryClient.getMatchResult(ensuredMapping.sportteryMatchId),
+          input.sportteryClient.getMatchFeature(ensuredMapping.sportteryMatchId),
+          input.sportteryClient.getInjurySuspension(ensuredMapping.sportteryMatchId)
+        ]);
+        const odds = extractOddsForMatch(matchList, ensuredMapping.sportteryMatchId);
+        const parsed = parseSportterySummary({ odds, history, tables, result, feature, injuries });
+        raw.sporttery = parsed.raw;
+        domains.push({ domain: "sporttery", status: parsed.status, summary: parsed.summary, lastSyncedAt: now.toISOString(), error: null });
+        writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "sporttery", status: parsed.status, error: null, now });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Sporttery refresh failed";
       domains.push({ domain: "sporttery", status: "refresh_failed", summary: "未获取体彩数据", lastSyncedAt: now.toISOString(), error: message });
