@@ -45,14 +45,16 @@ a {
 }
 
 .intro {
-  margin: 40px auto;
-  max-width: 960px;
+  margin: 44px auto 34px;
+  max-width: 1120px;
   padding: 0 24px;
 }
 
 .intro h2 {
-  font-size: 32px;
+  color: #172026;
+  font-size: 36px;
   letter-spacing: 0;
+  line-height: 1.12;
   margin: 0 0 12px;
 }
 
@@ -61,11 +63,12 @@ a {
   font-size: 17px;
   line-height: 1.7;
   margin: 0;
+  max-width: 680px;
 }
 
 .page-section {
   margin: 32px auto;
-  max-width: 960px;
+  max-width: 1120px;
   padding: 0 24px;
 }
 
