@@ -274,8 +274,8 @@ describe("FixturesPage", () => {
           runId: "run-1",
           matchId: "scheduled-1",
           status: "completed",
-          message: "已完成 1 个模型预测",
-          predictionsCount: 1,
+          message: "已完成 2 个模型预测",
+          predictionsCount: 2,
           logs: [
             {
               level: "info",
@@ -297,6 +297,19 @@ describe("FixturesPage", () => {
               oddsInterpretation: "主胜赔率更低。",
               riskPoints: ["客队反击"],
               analysisReport: "历史详细分析报告正文。"
+            },
+            {
+              id: "prediction-2",
+              modelDisplayName: "Claude Sonnet",
+              predictedResult: "draw",
+              predictedHomeScore: 1,
+              predictedAwayScore: 1,
+              confidence: 0.64,
+              shortReason: "双方中场消耗接近。",
+              keyFactors: ["控球", "体能"],
+              oddsInterpretation: "市场背景仅作记录。",
+              riskPoints: ["定位球"],
+              analysisReport: "第二个模型的详细报告正文。"
             }
           ]
         }
@@ -310,11 +323,23 @@ describe("FixturesPage", () => {
 
     expect(onLoadPredictionHistory).toHaveBeenCalledWith("scheduled-1");
     expect(await screen.findByText("历史预测记录")).toBeInTheDocument();
-    expect(screen.getByText("已完成 1 个模型预测")).toBeInTheDocument();
-    expect(screen.getByText("GPT-4o mini：模型预测完成：GPT-4o mini")).toBeInTheDocument();
+    expect(screen.getByText("已完成 2 个模型预测")).toBeInTheDocument();
+    expect(screen.getByText("综合观点：主胜")).toBeInTheDocument();
+    expect(screen.getByText("参考比分：2-1")).toBeInTheDocument();
+    expect(screen.getByText("主胜 1 / 平 1 / 客胜 0")).toBeInTheDocument();
+    expect(screen.getByText("成功 2 / 失败 0")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "AI 模型" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "胜负手" })).toBeInTheDocument();
+    expect(screen.getByText("GPT-4o mini")).toBeInTheDocument();
+    expect(screen.getByText("Claude Sonnet")).toBeInTheDocument();
+    expect(screen.getByText("主队更稳定。")).toBeInTheDocument();
+    expect(screen.getByText("双方中场消耗接近。")).toBeInTheDocument();
+    expect(screen.queryByText("GPT-4o mini：模型预测完成：GPT-4o mini")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "查看报告" }));
+    const modelReportButtons = screen.getAllByRole("button", { name: "查看" });
+    await userEvent.click(modelReportButtons[0]);
     expect(screen.getByText("历史详细分析报告正文。")).toBeInTheDocument();
+    expect(screen.queryByText("第二个模型的详细报告正文。")).not.toBeInTheDocument();
   });
 
   it("refreshes match context automatically when opening the data card", async () => {

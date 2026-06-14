@@ -379,7 +379,7 @@ export function FixturesPage({
   const [predictionFeedbackByMatchId, setPredictionFeedbackByMatchId] = useState<Record<string, PredictionFeedback>>({});
   const [requestingMatchIds, setRequestingMatchIds] = useState<Set<string>>(() => new Set());
   const [activePredictionMatch, setActivePredictionMatch] = useState<MatchDto | null>(null);
-  const [activePredictionReport, setActivePredictionReport] = useState<PredictionRunPredictionDto[] | null>(null);
+  const [activePredictionReport, setActivePredictionReport] = useState<PredictionRunPredictionDto | null>(null);
   const [activePredictionHistory, setActivePredictionHistory] = useState<PredictionHistoryState | null>(null);
   const [activeContextMatch, setActiveContextMatch] = useState<MatchDto | null>(null);
   const [contextByMatchId, setContextByMatchId] = useState<Record<string, FixtureContextSummaryDto>>({});
@@ -596,7 +596,7 @@ export function FixturesPage({
         onOpenPrediction={setActivePredictionMatch}
         onOpenContext={handleOpenContext}
         onOpenHistory={onLoadPredictionHistory ? handleOpenPredictionHistory : undefined}
-        onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions)}
+        onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions[0] ?? null)}
       />
 
       {activeStatus === "scheduled" && foldedMatches.length > 0 ? (
@@ -612,7 +612,7 @@ export function FixturesPage({
               onOpenPrediction={setActivePredictionMatch}
               onOpenContext={handleOpenContext}
               onOpenHistory={onLoadPredictionHistory ? handleOpenPredictionHistory : undefined}
-              onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions)}
+              onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions[0] ?? null)}
             />
           ) : null}
         </section>
@@ -645,29 +645,62 @@ export function FixturesPage({
               <p className="empty-state">暂无历史预测记录</p>
             ) : null}
             {!activePredictionHistory.loading && !activePredictionHistory.error
-              ? activePredictionHistory.runs.map((run) => (
-                  <article className="prediction-history-card" key={run.runId}>
-                    <header>
-                      <h3>{run.message}</h3>
-                      <strong>{run.predictionsCount} 个模型结果</strong>
-                    </header>
-                    {run.logs.length > 0 ? (
-                      <ol className="prediction-log-list" aria-label="历史预测执行日志">
-                        {run.logs.map((log) => (
-                          <li className={log.level} key={`${run.runId}-${log.createdAt}-${log.message}`}>
-                            {log.modelDisplayName ? `${log.modelDisplayName}：` : ""}
-                            {log.message}
-                          </li>
-                        ))}
-                      </ol>
-                    ) : null}
-                    {run.predictions.length > 0 ? (
-                      <button type="button" className="secondary-action" onClick={() => setActivePredictionReport(run.predictions)}>
-                        查看报告
-                      </button>
-                    ) : null}
-                  </article>
-                ))
+              ? activePredictionHistory.runs.map((run) => {
+                  const failedPredictionCount = run.logs.filter((log) => log.level === "error").length;
+                  const consensus = buildPredictionConsensus(run.predictions, failedPredictionCount);
+
+                  return (
+                    <article className="prediction-history-card" key={run.runId}>
+                      <header>
+                        <div>
+                          <h3>{run.message}</h3>
+                          <span>{run.status === "running" ? "执行中" : run.status === "failed" ? "执行失败" : "已完成"}</span>
+                        </div>
+                        <strong>{run.predictionsCount} 个模型结果</strong>
+                      </header>
+                      <div className="prediction-consensus-summary history-summary">
+                        <span>{`综合观点：${consensus.topResultText}`}</span>
+                        <span>{`参考比分：${consensus.topScore}`}</span>
+                        <span>{consensus.resultDistributionText}</span>
+                        <span>{`成功 ${consensus.successCount} / 失败 ${consensus.failedCount}`}</span>
+                      </div>
+                      {run.predictions.length > 0 ? (
+                        <div className="table-scroll prediction-summary-table history-prediction-table">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>AI 模型</th>
+                                <th>胜平负</th>
+                                <th>比分</th>
+                                <th>信心</th>
+                                <th>胜负手</th>
+                                <th>报告</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {run.predictions.map((prediction) => (
+                                <tr key={prediction.id}>
+                                  <td>{prediction.modelDisplayName}</td>
+                                  <td>{getPredictionResultText(prediction)}</td>
+                                  <td>{formatPredictionScore(prediction)}</td>
+                                  <td>{`${Math.round(prediction.confidence * 100)}%`}</td>
+                                  <td>{prediction.shortReason || prediction.analysisReport.slice(0, 80) || "未给出"}</td>
+                                  <td>
+                                    <button type="button" className="table-action" onClick={() => setActivePredictionReport(prediction)}>
+                                      查看
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="muted">本次预测还没有可展示的模型结果。</p>
+                      )}
+                    </article>
+                  );
+                })
               : null}
           </div>
         ) : null}
@@ -675,36 +708,34 @@ export function FixturesPage({
       <BottomDrawer open={Boolean(activePredictionReport)} title="预测分析报告" onClose={() => setActivePredictionReport(null)}>
         {activePredictionReport ? (
           <div className="prediction-report-list">
-            {activePredictionReport.map((prediction) => (
-              <article className="prediction-report-card" key={prediction.id}>
-                <header>
-                  <h3>{prediction.modelDisplayName}</h3>
-                  <strong>
-                    {prediction.predictedHomeScore} - {prediction.predictedAwayScore}
-                  </strong>
-                </header>
-                <p>置信度：{prediction.confidence}</p>
-                <p>{prediction.shortReason}</p>
-                <p>市场背景：{prediction.oddsInterpretation}</p>
-                <div>
-                  <span>关键因素</span>
-                  <ul>
-                    {prediction.keyFactors.map((factor) => (
-                      <li key={factor}>{factor}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <span>风险点</span>
-                  <ul>
-                    {prediction.riskPoints.map((riskPoint) => (
-                      <li key={riskPoint}>{riskPoint}</li>
-                    ))}
-                  </ul>
-                </div>
-                <p>{prediction.analysisReport}</p>
-              </article>
-            ))}
+            <article className="prediction-report-card" key={activePredictionReport.id}>
+              <header>
+                <h3>{activePredictionReport.modelDisplayName}</h3>
+                <strong>
+                  {activePredictionReport.predictedHomeScore} - {activePredictionReport.predictedAwayScore}
+                </strong>
+              </header>
+              <p>置信度：{activePredictionReport.confidence}</p>
+              <p>{activePredictionReport.shortReason}</p>
+              <p>市场背景：{activePredictionReport.oddsInterpretation}</p>
+              <div>
+                <span>关键因素</span>
+                <ul>
+                  {activePredictionReport.keyFactors.map((factor) => (
+                    <li key={factor}>{factor}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <span>风险点</span>
+                <ul>
+                  {activePredictionReport.riskPoints.map((riskPoint) => (
+                    <li key={riskPoint}>{riskPoint}</li>
+                  ))}
+                </ul>
+              </div>
+              <p>{activePredictionReport.analysisReport}</p>
+            </article>
           </div>
         ) : null}
       </BottomDrawer>

@@ -515,6 +515,65 @@ a {
   min-width: 620px;
 }
 
+.prediction-history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.prediction-history-list > p {
+  color: #4d5b63;
+  font-size: 14px;
+  margin: 0;
+}
+
+.prediction-history-card {
+  border: 1px solid #d7e0e3;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.prediction-history-card header {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.prediction-history-card h3,
+.prediction-history-card p {
+  margin: 0;
+}
+
+.prediction-history-card header span,
+.muted {
+  color: #64737a;
+  font-size: 12px;
+}
+
+.history-summary {
+  justify-content: flex-start;
+}
+
+.history-prediction-table th,
+.history-prediction-table td {
+  vertical-align: top;
+}
+
+.table-action {
+  background: #173f35;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
 .leaderboard-grid {
   display: grid;
   gap: 14px;
