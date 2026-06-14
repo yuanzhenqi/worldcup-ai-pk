@@ -39,7 +39,7 @@ describe("FixturesPage", () => {
   });
 
   it("defaults to scheduled fixtures and can switch to finished fixtures", async () => {
-    render(
+    const { container } = render(
       <FixturesPage
         matches={[
           {
@@ -79,6 +79,9 @@ describe("FixturesPage", () => {
     expect(screen.getByText("加拿大")).toBeInTheDocument();
     expect(screen.getAllByText("小组赛第 1 轮").length).toBeGreaterThan(0);
     expect(screen.queryByText("墨西哥")).not.toBeInTheDocument();
+    expect(container.querySelector(".match-card-shell")).toBeInTheDocument();
+    expect(container.querySelector(".match-status-block")).toBeInTheDocument();
+    expect(container.querySelector(".match-action-stack")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "已结束" }));
     expect(screen.getByText("墨西哥")).toBeInTheDocument();
