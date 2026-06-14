@@ -138,6 +138,75 @@ describe("admin config API", () => {
     await app.close();
   });
 
+  it("saves sporttery settings and fixture mappings", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const initialSettingsResponse = await app.inject({
+      method: "GET",
+      url: "/api/admin/settings/sporttery",
+      remoteAddress: "127.0.0.1"
+    });
+    expect(initialSettingsResponse.statusCode).toBe(200);
+    expect(initialSettingsResponse.json()).toEqual({ enabled: false });
+
+    const settingsResponse = await app.inject({
+      method: "PUT",
+      url: "/api/admin/settings/sporttery",
+      remoteAddress: "127.0.0.1",
+      payload: { enabled: true }
+    });
+    expect(settingsResponse.statusCode).toBe(200);
+    expect(settingsResponse.json()).toEqual({ enabled: true });
+
+    const mappingResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/sporttery-mappings",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        apiFootballFixtureId: 1001,
+        sportteryMatchId: 2001
+      }
+    });
+    expect(mappingResponse.statusCode).toBe(200);
+    expect(mappingResponse.json()).toMatchObject({
+      apiFootballFixtureId: 1001,
+      sportteryMatchId: 2001
+    });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/api/admin/sporttery-mappings",
+      remoteAddress: "127.0.0.1"
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json().mappings).toEqual([
+      expect.objectContaining({
+        apiFootballFixtureId: 1001,
+        sportteryMatchId: 2001
+      })
+    ]);
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: "/api/admin/sporttery-mappings/1001",
+      remoteAddress: "127.0.0.1"
+    });
+    expect(deleteResponse.statusCode).toBe(200);
+    expect(deleteResponse.json()).toEqual({ deleted: true });
+
+    const afterDeleteListResponse = await app.inject({
+      method: "GET",
+      url: "/api/admin/sporttery-mappings",
+      remoteAddress: "127.0.0.1"
+    });
+    expect(afterDeleteListResponse.statusCode).toBe(200);
+    expect(afterDeleteListResponse.json().mappings).toEqual([]);
+
+    await app.close();
+  });
+
   it("saves OpenAI-compatible providers without returning API keys", async () => {
     const { db, databasePath } = createTestDatabase();
     db.close();
