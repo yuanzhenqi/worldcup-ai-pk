@@ -88,8 +88,46 @@ describe("schema migration on app startup", () => {
       db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("fixture_data_sync_logs")
     ).toMatchObject({ name: "fixture_data_sync_logs" });
     expect(
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("fixture_sporttery_mappings")
+    ).toMatchObject({ name: "fixture_sporttery_mappings" });
+    expect(
       db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("prediction_run_logs")
     ).toMatchObject({ name: "prediction_run_logs" });
+
+    const fixtureContextSnapshotColumns = db.prepare("PRAGMA table_info(fixture_context_snapshots)").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
+    expect(
+      fixtureContextSnapshotColumns.map((column) => ({
+        name: column.name,
+        type: column.type,
+        notnull: column.notnull
+      }))
+    ).toEqual(
+      expect.arrayContaining([{ name: "sporttery_summary_json", type: "TEXT", notnull: 1 }])
+    );
+
+    const sportteryMappingColumns = db.prepare("PRAGMA table_info(fixture_sporttery_mappings)").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      pk: number;
+    }>;
+    expect(
+      sportteryMappingColumns.map((column) => ({
+        name: column.name,
+        type: column.type,
+        notnull: column.notnull,
+        pk: column.pk
+      }))
+    ).toEqual([
+      { name: "api_football_fixture_id", type: "INTEGER", notnull: 0, pk: 1 },
+      { name: "sporttery_match_id", type: "INTEGER", notnull: 1, pk: 0 },
+      { name: "created_at", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "updated_at", type: "TEXT", notnull: 1, pk: 0 }
+    ]);
 
     const predictionRequestColumns = db.prepare("PRAGMA table_info(prediction_requests)").all() as Array<{ name: string }>;
     expect(predictionRequestColumns.map((column) => column.name)).toEqual(
