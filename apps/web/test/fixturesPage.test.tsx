@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MatchDto, PredictionRunHistoryDto, PredictionRunStatusDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -327,24 +327,88 @@ describe("FixturesPage", () => {
 
     expect(onLoadPredictionHistory).toHaveBeenCalledWith("scheduled-1");
     expect(await screen.findByText("历史预测记录")).toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "历史预测记录" })).toHaveClass("bottom-drawer-wide");
-    expect(screen.getByText("已完成 2 个模型预测")).toBeInTheDocument();
-    expect(screen.getByText("综合观点：主胜")).toBeInTheDocument();
-    expect(screen.getByText("参考比分：2-1")).toBeInTheDocument();
-    expect(screen.getByText("主胜 1 / 平 1 / 客胜 0")).toBeInTheDocument();
-    expect(screen.getByText("成功 2 / 失败 0")).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "AI 模型" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "胜负手" })).toBeInTheDocument();
-    expect(screen.getByText("GPT-4o mini")).toBeInTheDocument();
-    expect(screen.getByText("Claude Sonnet")).toBeInTheDocument();
-    expect(screen.getByText("主队更稳定。")).toBeInTheDocument();
-    expect(screen.getByText("双方中场消耗接近。")).toBeInTheDocument();
+    const historyDialog = screen.getByRole("dialog", { name: "历史预测记录" });
+    const historyDialogScreen = within(historyDialog);
+    expect(historyDialog).toHaveClass("bottom-drawer-wide");
+    expect(historyDialogScreen.getByText("已完成 2 个模型预测")).toBeInTheDocument();
+    expect(historyDialogScreen.getByText("综合观点：主胜")).toBeInTheDocument();
+    expect(historyDialogScreen.getByText("参考比分：2-1")).toBeInTheDocument();
+    expect(historyDialogScreen.getByText("主胜 1 / 平 1 / 客胜 0")).toBeInTheDocument();
+    expect(historyDialogScreen.getByText("成功 2 / 失败 0")).toBeInTheDocument();
+    expect(historyDialogScreen.getByRole("columnheader", { name: "AI 模型" })).toBeInTheDocument();
+    expect(historyDialogScreen.getByRole("columnheader", { name: "胜负手" })).toBeInTheDocument();
+    expect(historyDialogScreen.getByText("GPT-4o mini")).toBeInTheDocument();
+    expect(historyDialogScreen.getByText("Claude Sonnet")).toBeInTheDocument();
+    expect(historyDialogScreen.getByText("主队更稳定。")).toBeInTheDocument();
+    expect(historyDialogScreen.getByText("双方中场消耗接近。")).toBeInTheDocument();
     expect(screen.queryByText("GPT-4o mini：模型预测完成：GPT-4o mini")).not.toBeInTheDocument();
 
-    const modelReportButtons = screen.getAllByRole("button", { name: "查看" });
+    const modelReportButtons = historyDialogScreen.getAllByRole("button", { name: "查看" });
     await userEvent.click(modelReportButtons[0]);
     expect(screen.getByText("历史详细分析报告正文。")).toBeInTheDocument();
     expect(screen.queryByText("第二个模型的详细报告正文。")).not.toBeInTheDocument();
+  });
+
+  it("shows latest historical prediction summary on the match card", async () => {
+    const match = {
+      ...buildMatch({
+        id: "scheduled-1",
+        kickoffAt: "2026-06-14T12:00:00.000Z",
+        status: "scheduled",
+        homeDisplayNameZh: "美国",
+        homeName: "USA",
+        awayDisplayNameZh: "巴拉圭",
+        awayName: "Paraguay"
+      }),
+      hasAiPrediction: true
+    };
+    const onLoadPredictionHistory = vi.fn().mockResolvedValue({
+      matchId: "scheduled-1",
+      runs: [
+        {
+          runId: "run-1",
+          matchId: "scheduled-1",
+          status: "completed",
+          message: "已完成 2 个模型预测",
+          predictionsCount: 2,
+          logs: [],
+          predictions: [
+            {
+              id: "prediction-1",
+              modelDisplayName: "GPT-4o mini",
+              predictedResult: "home",
+              predictedHomeScore: 2,
+              predictedAwayScore: 1,
+              confidence: 0.72,
+              shortReason: "主队更稳定。",
+              keyFactors: [],
+              oddsInterpretation: "官方指数仅作背景。",
+              riskPoints: [],
+              analysisReport: "报告一"
+            },
+            {
+              id: "prediction-2",
+              modelDisplayName: "Claude Sonnet",
+              predictedResult: "home",
+              predictedHomeScore: 2,
+              predictedAwayScore: 0,
+              confidence: 0.64,
+              shortReason: "边路优势明显。",
+              keyFactors: [],
+              oddsInterpretation: "官方指数仅作背景。",
+              riskPoints: [],
+              analysisReport: "报告二"
+            }
+          ]
+        }
+      ]
+    });
+
+    render(<FixturesPage matches={[match]} onLoadPredictionHistory={onLoadPredictionHistory} />);
+
+    expect(await screen.findByText("综合观点：主胜")).toBeInTheDocument();
+    expect(screen.getByText("参考比分：2-1")).toBeInTheDocument();
+    expect(screen.getByText("主胜 2 / 平 0 / 客胜 0")).toBeInTheDocument();
   });
 
   it("refreshes match context automatically when opening the data card", async () => {

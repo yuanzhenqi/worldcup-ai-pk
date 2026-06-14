@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   FixtureContextSummaryDto,
   MatchDto,
@@ -379,6 +379,7 @@ export function FixturesPage({
   const [scheduledFoldOpen, setScheduledFoldOpen] = useState(false);
   const [predictionFeedbackByMatchId, setPredictionFeedbackByMatchId] = useState<Record<string, PredictionFeedback>>({});
   const [requestingMatchIds, setRequestingMatchIds] = useState<Set<string>>(() => new Set());
+  const [loadedHistoryMatchIds, setLoadedHistoryMatchIds] = useState<Set<string>>(() => new Set());
   const [activePredictionMatch, setActivePredictionMatch] = useState<MatchDto | null>(null);
   const [activePredictionReport, setActivePredictionReport] = useState<PredictionRunPredictionDto | null>(null);
   const [activePredictionHistory, setActivePredictionHistory] = useState<PredictionHistoryState | null>(null);
@@ -408,6 +409,47 @@ export function FixturesPage({
   const dateGroups = useMemo(() => groupMatchesByDate(primaryMatches), [primaryMatches]);
   const foldedDateGroups = useMemo(() => groupMatchesByDate(foldedMatches), [foldedMatches]);
   const latestSyncHint = matches.length > 0 ? `${matches.length} 场比赛已载入` : "等待同步赛程数据";
+
+  useEffect(() => {
+    if (!onLoadPredictionHistory) {
+      return;
+    }
+
+    const matchesToLoad = matches.filter((match) => match.hasAiPrediction && !loadedHistoryMatchIds.has(match.id));
+    if (matchesToLoad.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    for (const match of matchesToLoad) {
+      void onLoadPredictionHistory(match.id)
+        .then((history) => {
+          if (cancelled) {
+            return;
+          }
+          const latestRun = history.runs.find((run) => run.predictions.length > 0);
+          if (!latestRun) {
+            return;
+          }
+          setPredictionFeedbackByMatchId((currentFeedback) => ({
+            ...currentFeedback,
+            [match.id]: getPredictionFeedback(latestRun)
+          }));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (cancelled) {
+            return;
+          }
+          setLoadedHistoryMatchIds((currentIds) => new Set(currentIds).add(match.id));
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadedHistoryMatchIds, matches, onLoadPredictionHistory]);
 
   async function handlePredictionSubmit(input: PredictionRequestInputDto) {
     if (!onRequestPrediction || !activePredictionMatch) {
