@@ -207,6 +207,71 @@ describe("admin config API", () => {
     await app.close();
   });
 
+  it("syncs sporttery mappings from exact World Cup team names", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO matches (
+          id,
+          api_football_fixture_id,
+          stage,
+          kickoff_at,
+          status,
+          venue,
+          home_team_id,
+          home_team_name,
+          home_team_logo_url,
+          away_team_id,
+          away_team_name,
+          away_team_logo_url,
+          home_score,
+          away_score,
+          last_synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "match-1",
+      1001,
+      "Group Stage",
+      "2026-06-14T17:00:00.000Z",
+      "scheduled",
+      null,
+      "home-1",
+      "德国",
+      null,
+      "away-1",
+      "库拉索",
+      null,
+      null,
+      null,
+      "2026-06-13T08:00:00.000Z"
+    );
+    db.close();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          value: {
+            matchInfoList: [
+              {
+                subMatchList: [{ leagueAbbName: "世界杯", leagueAllName: "世界杯", homeTeamAbbName: "德国", awayTeamAbbName: "库拉索", matchId: 2040170 }]
+              }
+            ]
+          }
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "POST", url: "/api/admin/sporttery-mappings/sync", remoteAddress: "127.0.0.1" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ matched: 1, unmatched: 0, totalSportteryMatches: 1 });
+
+    await app.close();
+  });
+
   it("saves OpenAI-compatible providers without returning API keys", async () => {
     const { db, databasePath } = createTestDatabase();
     db.close();

@@ -26,7 +26,14 @@ import { writeSystemLog } from "../logs/log.service";
 import { DongqiudiClient } from "../football/dongqiudiClient";
 import { deleteDongqiudiMapping, getDongqiudiMappingByFixtureId, listDongqiudiMappings, upsertDongqiudiMapping } from "../football/dongqiudiMapping.repository";
 import { SportteryClient } from "../football/sportteryClient";
-import { deleteSportteryMapping, getSportteryMappingByFixtureId, listSportteryMappings, upsertSportteryMapping } from "../football/sportteryMapping.repository";
+import {
+  deleteSportteryMapping,
+  getSportteryMappingByFixtureId,
+  listSportteryMappings,
+  syncSportteryMappingsForMatches,
+  upsertSportteryMapping
+} from "../football/sportteryMapping.repository";
+import { listMatches } from "../matches/match.repository";
 import { getApiFootballKey, hasApiFootballKey, isDongqiudiEnabled, isSportteryEnabled, saveApiFootballKey, saveDongqiudiEnabled, saveSportteryEnabled } from "../settings/settings.repository";
 import { listTeamDisplayNames, updateTeamDisplayName } from "../teams/teamDisplayName.repository";
 import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
@@ -212,6 +219,21 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
       return reply.code(400).send({ error: "Invalid sporttery mapping payload" });
     }
     return upsertSportteryMapping(options.db, parsed.data.apiFootballFixtureId, parsed.data.sportteryMatchId);
+  });
+
+  app.post("/sporttery-mappings/sync", async () => {
+    const sportteryClient = new SportteryClient();
+    const matchList = await sportteryClient.getMatchList();
+    const matches = listMatches(options.db);
+
+    return syncSportteryMappingsForMatches(options.db, {
+      matches: matches.map((match) => ({
+        apiFootballFixtureId: match.apiFootballFixtureId,
+        homeTeamName: match.homeTeam.displayNameZh,
+        awayTeamName: match.awayTeam.displayNameZh
+      })),
+      sportteryMatchList: matchList
+    });
   });
 
   app.delete("/sporttery-mappings/:apiFootballFixtureId", async (request) => {
