@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { extractOddsForMatch, parseSportterySummary } from "../src/modules/context/sportteryContextParsers";
 import { SportteryClient } from "../src/modules/football/sportteryClient";
+import { ensureSportteryMappingForFixture, syncSportteryMappingsForMatches } from "../src/modules/football/sportteryMapping.repository";
+import { createTestDatabase } from "./support/testDatabase";
 
 const fullInput = {
   odds: [
@@ -60,5 +62,62 @@ describe("SportteryClient", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("", { status: 500 }));
     const client = new SportteryClient();
     await expect(client.getResultHistory(1)).rejects.toThrow(/status 500/);
+  });
+});
+
+describe("Sporttery fixture mapping sync", () => {
+  it("syncs exact World Cup Sporttery fixture mappings", () => {
+    const { db } = createTestDatabase();
+    const result = syncSportteryMappingsForMatches(db, {
+      matches: [
+        { apiFootballFixtureId: 1001, homeTeamName: "德国", awayTeamName: "库拉索" },
+        { apiFootballFixtureId: 1002, homeTeamName: "荷兰", awayTeamName: "日本" }
+      ],
+      sportteryMatchList: {
+        value: {
+          matchInfoList: [
+            {
+              subMatchList: [
+                { leagueAbbName: "世界杯", leagueAllName: "世界杯", homeTeamAbbName: "德国", awayTeamAbbName: "库拉索", matchId: 2040170 },
+                { leagueAbbName: "芬超", leagueAllName: "芬超", homeTeamAbbName: "荷兰", awayTeamAbbName: "日本", matchId: 9999999 }
+              ]
+            }
+          ]
+        }
+      }
+    });
+
+    expect(result).toEqual({
+      matched: 1,
+      unmatched: 0,
+      totalSportteryMatches: 1
+    });
+    expect(db.prepare("SELECT api_football_fixture_id, sporttery_match_id FROM fixture_sporttery_mappings").all()).toEqual([
+      { api_football_fixture_id: 1001, sporttery_match_id: 2040170 }
+    ]);
+    db.close();
+  });
+
+  it("ensures a single Sporttery mapping when exact names match", () => {
+    const { db } = createTestDatabase();
+    const mapping = ensureSportteryMappingForFixture(db, {
+      apiFootballFixtureId: 1001,
+      homeTeamName: "德国",
+      awayTeamName: "库拉索",
+      sportteryMatchList: {
+        value: {
+          matchInfoList: [
+            {
+              subMatchList: [
+                { leagueAbbName: "世界杯", leagueAllName: "世界杯", homeTeamAbbName: "德国", awayTeamAbbName: "库拉索", matchId: 2040170 }
+              ]
+            }
+          ]
+        }
+      }
+    });
+
+    expect(mapping).toMatchObject({ apiFootballFixtureId: 1001, sportteryMatchId: 2040170 });
+    db.close();
   });
 });
