@@ -33,7 +33,8 @@ const defaultDataOptions: PredictionDataOptionsDto = {
   useApiFootballPrediction: false,
   useHeadToHead: true,
   usePlayerLineupInjuries: true,
-  useDongqiudiIntel: true
+  useDongqiudiIntel: true,
+  useSporttery: true
 };
 
 export function PredictionRequestDrawer({
@@ -138,6 +139,14 @@ export function PredictionRequestDrawer({
                   onChange={(event) => setDataOption("useDongqiudiIntel", event.target.checked)}
                 />
                 <span>使用懂球帝情报</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={dataOptions.useSporttery}
+                  onChange={(event) => setDataOption("useSporttery", event.target.checked)}
+                />
+                <span>使用体彩数据</span>
               </label>
             </div>
           </section>

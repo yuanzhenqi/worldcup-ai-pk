@@ -107,9 +107,10 @@ export interface PredictionDataOptionsDto {
   useHeadToHead: boolean;
   usePlayerLineupInjuries: boolean;
   useDongqiudiIntel: boolean;
+  useSporttery: boolean;
 }
 
-export type FixtureContextDomain = "odds" | "api_prediction" | "head_to_head" | "squad" | "dongqiudi_intel";
+export type FixtureContextDomain = "odds" | "api_prediction" | "head_to_head" | "squad" | "dongqiudi_intel" | "sporttery";
 
 export type FixtureContextDomainStatus = "cached" | "unavailable" | "refresh_failed" | "not_requested";
 

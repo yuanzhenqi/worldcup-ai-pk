@@ -48,7 +48,8 @@ describe("PredictionRequestDrawer", () => {
         useApiFootballPrediction: false,
         useHeadToHead: true,
         usePlayerLineupInjuries: true,
-        useDongqiudiIntel: true
+        useDongqiudiIntel: true,
+        useSporttery: true
       },
       promptTemplateId: "prompt-1",
       customPrompt: "",

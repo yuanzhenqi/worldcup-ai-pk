@@ -232,7 +232,8 @@ describe("FixturesPage", () => {
         useApiFootballPrediction: false,
         useHeadToHead: true,
         usePlayerLineupInjuries: true,
-        useDongqiudiIntel: true
+        useDongqiudiIntel: true,
+        useSporttery: true
       },
       promptTemplateId: "prompt-1",
       customPrompt: "",
@@ -376,7 +377,8 @@ describe("FixturesPage", () => {
       useApiFootballPrediction: false,
       useHeadToHead: true,
       usePlayerLineupInjuries: true,
-      useDongqiudiIntel: true
+      useDongqiudiIntel: true,
+      useSporttery: true
     });
     expect(await screen.findByText("历史交锋 2 场")).toBeInTheDocument();
   });
