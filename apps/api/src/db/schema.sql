@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS fixture_context_snapshots (
   head_to_head_summary_json TEXT NOT NULL,
   squad_summary_json TEXT NOT NULL,
   dongqiudi_intel_summary_json TEXT NOT NULL,
+  sporttery_summary_json TEXT NOT NULL,
   completeness TEXT NOT NULL,
   raw_json TEXT NOT NULL,
   created_at TEXT NOT NULL
@@ -215,6 +216,15 @@ ALTER TABLE fixture_context_snapshots ADD COLUMN dongqiudi_intel_summary_json TE
 CREATE TABLE IF NOT EXISTS fixture_dongqiudi_mappings (
   api_football_fixture_id INTEGER PRIMARY KEY,
   dongqiudi_match_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+ALTER TABLE fixture_context_snapshots ADD COLUMN sporttery_summary_json TEXT NOT NULL DEFAULT '{}';
+
+CREATE TABLE IF NOT EXISTS fixture_sporttery_mappings (
+  api_football_fixture_id INTEGER PRIMARY KEY,
+  sporttery_match_id INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

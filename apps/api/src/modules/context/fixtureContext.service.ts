@@ -4,6 +4,8 @@ import { FootballService } from "../football/football.service";
 import { parseApiFootballFixturePrediction, parseFixtureHeadToHeadSummary, parseFixtureOddsSummary, parseFixtureSquadSummary } from "./apiFootballContextParsers";
 import { parseDongqiudiIntelSummary } from "./dongqiudiContextParsers";
 import type { DongqiudiClient } from "../football/dongqiudiClient";
+import { extractOddsForMatch, parseSportterySummary } from "./sportteryContextParsers";
+import type { SportteryClient } from "../football/sportteryClient";
 import { getLatestFixtureContextSummary, saveFixtureContextSnapshot, writeFixtureDataSyncLog } from "./fixtureContext.repository";
 
 interface RefreshFixtureContextInput {
@@ -15,6 +17,8 @@ interface RefreshFixtureContextInput {
   footballService: FootballService | null;
   dongqiudiClient: DongqiudiClient | null;
   dongqiudiMatchId: number | null;
+  sportteryClient: SportteryClient | null;
+  sportteryMatchId: number | null;
   dataOptions: PredictionDataOptionsDto;
   now?: Date;
 }
@@ -59,7 +63,8 @@ export function getFixtureContextSummary(db: Database, matchId: string): Fixture
         notRequestedSummary("api_prediction"),
         notRequestedSummary("head_to_head"),
         notRequestedSummary("squad"),
-        notRequestedSummary("dongqiudi_intel")
+        notRequestedSummary("dongqiudi_intel"),
+        notRequestedSummary("sporttery")
       ]
     }
   );
@@ -158,6 +163,30 @@ export async function refreshFixtureContext(input: RefreshFixtureContextInput): 
     }
   } else {
     domains.push(notRequestedSummary("dongqiudi_intel"));
+  }
+
+  if (input.dataOptions.useSporttery && input.sportteryClient && input.sportteryMatchId) {
+    try {
+      const [matchList, history, tables, result, feature, injuries] = await Promise.all([
+        input.sportteryClient.getMatchList(),
+        input.sportteryClient.getResultHistory(input.sportteryMatchId),
+        input.sportteryClient.getMatchTables(input.sportteryMatchId),
+        input.sportteryClient.getMatchResult(input.sportteryMatchId),
+        input.sportteryClient.getMatchFeature(input.sportteryMatchId),
+        input.sportteryClient.getInjurySuspension(input.sportteryMatchId)
+      ]);
+      const odds = extractOddsForMatch(matchList, input.sportteryMatchId);
+      const parsed = parseSportterySummary({ odds, history, tables, result, feature, injuries });
+      raw.sporttery = parsed.raw;
+      domains.push({ domain: "sporttery", status: parsed.status, summary: parsed.summary, lastSyncedAt: now.toISOString(), error: null });
+      writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "sporttery", status: parsed.status, error: null, now });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Sporttery refresh failed";
+      domains.push({ domain: "sporttery", status: "refresh_failed", summary: "未获取体彩数据", lastSyncedAt: now.toISOString(), error: message });
+      writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "sporttery", status: "refresh_failed", error: message, now });
+    }
+  } else {
+    domains.push(notRequestedSummary("sporttery"));
   }
 
   const completeness = getCompleteness(domains);

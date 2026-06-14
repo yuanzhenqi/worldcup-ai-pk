@@ -46,3 +46,24 @@ export function isDongqiudiEnabled(db: Database): boolean {
     | undefined;
   return row?.value === "true";
 }
+
+const sportteryEnabledKey = "sporttery.enabled";
+
+export function saveSportteryEnabled(db: Database, enabled: boolean, now = new Date()): void {
+  db.prepare(
+    `
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `
+  ).run(sportteryEnabledKey, enabled ? "true" : "false", now.toISOString());
+}
+
+export function isSportteryEnabled(db: Database): boolean {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get(sportteryEnabledKey) as
+    | { value: string }
+    | undefined;
+  return row?.value === "true";
+}

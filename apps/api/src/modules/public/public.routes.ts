@@ -11,7 +11,9 @@ import { executeManualPredictionRequest, getPredictionRunStatus, listPredictionR
 import { planPredictionRequest } from "../predictions/prediction.service";
 import { DongqiudiClient } from "../football/dongqiudiClient";
 import { getDongqiudiMappingByFixtureId } from "../football/dongqiudiMapping.repository";
-import { getApiFootballKey, isDongqiudiEnabled } from "../settings/settings.repository";
+import { SportteryClient } from "../football/sportteryClient";
+import { getSportteryMappingByFixtureId } from "../football/sportteryMapping.repository";
+import { getApiFootballKey, isDongqiudiEnabled, isSportteryEnabled } from "../settings/settings.repository";
 import { settleFinishedMatchPredictions } from "../predictions/predictionSettlement.service";
 
 export interface PublicRoutesOptions {
@@ -23,7 +25,8 @@ const predictionDataOptionsSchema = z.object({
   useApiFootballPrediction: z.boolean(),
   useHeadToHead: z.boolean(),
   usePlayerLineupInjuries: z.boolean(),
-  useDongqiudiIntel: z.boolean()
+  useDongqiudiIntel: z.boolean(),
+  useSporttery: z.boolean()
 });
 
 const contextRefreshSchema = z.object({
@@ -46,7 +49,8 @@ const defaultPredictionRequestInput: PredictionRequestInputDto = {
     useApiFootballPrediction: false,
     useHeadToHead: true,
     usePlayerLineupInjuries: true,
-    useDongqiudiIntel: true
+    useDongqiudiIntel: true,
+    useSporttery: true
   },
   promptTemplateId: null,
   customPrompt: "",
@@ -130,6 +134,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       footballService,
       dongqiudiClient: isDongqiudiEnabled(options.db) ? new DongqiudiClient() : null,
       dongqiudiMatchId: getDongqiudiMappingByFixtureId(options.db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,
+      sportteryClient: isSportteryEnabled(options.db) ? new SportteryClient() : null,
+      sportteryMatchId: getSportteryMappingByFixtureId(options.db, match.api_football_fixture_id)?.sportteryMatchId ?? null,
       dataOptions: parsed.data.dataOptions as PredictionDataOptionsDto
     });
   });
@@ -187,6 +193,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
         footballService,
         dongqiudiClient: isDongqiudiEnabled(options.db) ? new DongqiudiClient() : null,
         dongqiudiMatchId: getDongqiudiMappingByFixtureId(options.db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,
+        sportteryClient: isSportteryEnabled(options.db) ? new SportteryClient() : null,
+        sportteryMatchId: getSportteryMappingByFixtureId(options.db, match.api_football_fixture_id)?.sportteryMatchId ?? null,
         dataOptions: predictionInput.dataOptions
       });
     }
