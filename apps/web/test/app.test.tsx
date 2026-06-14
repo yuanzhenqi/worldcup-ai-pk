@@ -82,6 +82,9 @@ describe("App", () => {
       await Promise.resolve();
     });
 
+    expect(screen.getByRole("heading", { name: "2026 世界杯 AI 预测竞技场" })).toBeInTheDocument();
+    expect(screen.getByText("多模型同场预测，赛后真实结算，用排行榜看谁更懂比赛。")).toBeInTheDocument();
+    expect(screen.queryByText("赛程、赔率与 AI 预测对比")).not.toBeInTheDocument();
     expect(screen.getByText("美国")).toBeInTheDocument();
 
     await act(async () => {
