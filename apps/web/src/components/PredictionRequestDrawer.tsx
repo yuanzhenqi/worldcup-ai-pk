@@ -31,9 +31,9 @@ const taskOptions: Array<{ value: PredictionTaskType; label: string }> = [
 const defaultDataOptions: PredictionDataOptionsDto = {
   useOdds: false,
   useApiFootballPrediction: false,
-  useHeadToHead: true,
-  usePlayerLineupInjuries: true,
-  useDongqiudiIntel: true,
+  useHeadToHead: false,
+  usePlayerLineupInjuries: false,
+  useDongqiudiIntel: false,
   useSporttery: true
 };
 
@@ -75,8 +75,15 @@ export function PredictionRequestDrawer({
     });
   }
 
-  function setDataOption(key: keyof PredictionDataOptionsDto, value: boolean) {
-    setDataOptions((currentOptions) => ({ ...currentOptions, [key]: value }));
+  function setSportteryDataOption(value: boolean) {
+    setDataOptions({
+      useOdds: false,
+      useApiFootballPrediction: false,
+      useHeadToHead: false,
+      usePlayerLineupInjuries: false,
+      useDongqiudiIntel: false,
+      useSporttery: value
+    });
   }
 
   function handleSubmit() {
@@ -121,32 +128,8 @@ export function PredictionRequestDrawer({
             </label>
             <div className="drawer-option-grid">
               <label>
-                <input type="checkbox" checked={dataOptions.useHeadToHead} onChange={(event) => setDataOption("useHeadToHead", event.target.checked)} />
-                <span>使用历史交锋</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={dataOptions.usePlayerLineupInjuries}
-                  onChange={(event) => setDataOption("usePlayerLineupInjuries", event.target.checked)}
-                />
-                <span>使用球员/阵容/伤停</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={dataOptions.useDongqiudiIntel}
-                  onChange={(event) => setDataOption("useDongqiudiIntel", event.target.checked)}
-                />
-                <span>使用懂球帝情报</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={dataOptions.useSporttery}
-                  onChange={(event) => setDataOption("useSporttery", event.target.checked)}
-                />
-                <span>使用体彩数据</span>
+                <input type="checkbox" checked={dataOptions.useSporttery} onChange={(event) => setSportteryDataOption(event.target.checked)} />
+                <span>使用体彩赛前情报</span>
               </label>
             </div>
           </section>

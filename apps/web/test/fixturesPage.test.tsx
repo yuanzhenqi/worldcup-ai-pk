@@ -230,9 +230,9 @@ describe("FixturesPage", () => {
       dataOptions: {
         useOdds: false,
         useApiFootballPrediction: false,
-        useHeadToHead: true,
-        usePlayerLineupInjuries: true,
-        useDongqiudiIntel: true,
+        useHeadToHead: false,
+        usePlayerLineupInjuries: false,
+        useDongqiudiIntel: false,
         useSporttery: true
       },
       promptTemplateId: "prompt-1",
@@ -362,9 +362,13 @@ describe("FixturesPage", () => {
       completeness: "partial",
       createdAt: "2026-06-13T08:00:00.000Z",
       domains: [
-        { domain: "odds", status: "cached", summary: "主胜 2.10", lastSyncedAt: "2026-06-13T08:00:00.000Z", error: null },
-        { domain: "head_to_head", status: "cached", summary: "历史交锋 2 场", lastSyncedAt: "2026-06-13T08:00:00.000Z", error: null },
-        { domain: "squad", status: "cached", summary: "伤停 1 人", lastSyncedAt: "2026-06-13T08:00:00.000Z", error: null }
+        {
+          domain: "sporttery",
+          status: "cached",
+          summary: "官方指数：主1.68/平4.85/客3.05\n历史交锋：6场\n伤停影响：主[无] 客[无]",
+          lastSyncedAt: "2026-06-13T08:00:00.000Z",
+          error: null
+        }
       ]
     });
 
@@ -373,14 +377,15 @@ describe("FixturesPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "数据" }));
 
     expect(onRefreshMatchContext).toHaveBeenCalledWith("scheduled-1", {
-      useOdds: true,
+      useOdds: false,
       useApiFootballPrediction: false,
-      useHeadToHead: true,
-      usePlayerLineupInjuries: true,
-      useDongqiudiIntel: true,
+      useHeadToHead: false,
+      usePlayerLineupInjuries: false,
+      useDongqiudiIntel: false,
       useSporttery: true
     });
-    expect(await screen.findByText("历史交锋 2 场")).toBeInTheDocument();
+    expect(await screen.findByText("历史交锋")).toBeInTheDocument();
+    expect(screen.getByText("6场")).toBeInTheDocument();
   });
 
   it("polls prediction run status while models are still running", async () => {

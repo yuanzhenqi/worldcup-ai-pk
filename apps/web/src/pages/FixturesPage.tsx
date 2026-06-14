@@ -49,11 +49,11 @@ const statusTabs: Array<{ status: FixtureTab; label: string }> = [
 ];
 
 const defaultContextDataOptions: PredictionDataOptionsDto = {
-  useOdds: true,
+  useOdds: false,
   useApiFootballPrediction: false,
-  useHeadToHead: true,
-  usePlayerLineupInjuries: true,
-  useDongqiudiIntel: true,
+  useHeadToHead: false,
+  usePlayerLineupInjuries: false,
+  useDongqiudiIntel: false,
   useSporttery: true
 };
 

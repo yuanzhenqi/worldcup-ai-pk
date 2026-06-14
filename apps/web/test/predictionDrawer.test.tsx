@@ -46,9 +46,9 @@ describe("PredictionRequestDrawer", () => {
       dataOptions: {
         useOdds: false,
         useApiFootballPrediction: false,
-        useHeadToHead: true,
-        usePlayerLineupInjuries: true,
-        useDongqiudiIntel: true,
+        useHeadToHead: false,
+        usePlayerLineupInjuries: false,
+        useDongqiudiIntel: false,
         useSporttery: true
       },
       promptTemplateId: "prompt-1",
@@ -56,8 +56,12 @@ describe("PredictionRequestDrawer", () => {
       outputStyle: "concise",
       refreshContext: true
     });
+    expect(screen.getByLabelText("使用体彩赛前情报")).toBeChecked();
     expect(screen.queryByText("赔率解读")).not.toBeInTheDocument();
     expect(screen.queryByText("使用赔率")).not.toBeInTheDocument();
     expect(screen.queryByText("使用官方预测")).not.toBeInTheDocument();
+    expect(screen.queryByText("使用历史交锋")).not.toBeInTheDocument();
+    expect(screen.queryByText("使用球员/阵容/伤停")).not.toBeInTheDocument();
+    expect(screen.queryByText("使用懂球帝情报")).not.toBeInTheDocument();
   });
 });

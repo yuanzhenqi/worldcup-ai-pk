@@ -1,4 +1,4 @@
-import type { FixtureContextDomain, FixtureContextDomainStatus, FixtureContextSummaryDto, MatchDto } from "@worldcup-ai-pk/shared";
+import type { FixtureContextDomainStatus, FixtureContextSummaryDto, MatchDto } from "@worldcup-ai-pk/shared";
 import { BottomDrawer } from "./BottomDrawer";
 
 interface MatchContextDrawerProps {
@@ -16,23 +16,28 @@ const contextStatusLabels: Record<FixtureContextDomainStatus, string> = {
   not_requested: "未请求"
 };
 
-const domainLabels: Record<FixtureContextDomain, string> = {
-  odds: "赔率",
-  api_prediction: "官方预测",
-  head_to_head: "历史交锋",
-  squad: "球员/阵容/伤停",
-  dongqiudi_intel: "懂球帝情报",
-  sporttery: "体彩数据"
-};
-
 const completenessLabels: Record<FixtureContextSummaryDto["completeness"], string> = {
   full: "完整",
   partial: "部分可用",
   base_only: "仅基础信息"
 };
 
+function parseSportterySummarySections(summary: string): Array<{ label: string; value: string }> {
+  return summary
+    .split(/\n|；(?=(?:官方指数|历史交锋|积分形势|近期状态|特征对比|伤停影响)：)/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const separatorIndex = part.indexOf("：");
+      return separatorIndex > -1
+        ? { label: part.slice(0, separatorIndex), value: part.slice(separatorIndex + 1) }
+        : { label: "情报摘要", value: part };
+    });
+}
+
 export function MatchContextDrawer({ open, match, context, loading, onClose }: MatchContextDrawerProps) {
-  const visibleDomains = context?.domains.filter((domain) => domain.domain !== "api_prediction") ?? [];
+  const sportteryDomain = context?.domains.find((domain) => domain.domain === "sporttery") ?? null;
+  const sportterySections = sportteryDomain ? parseSportterySummarySections(sportteryDomain.summary) : [];
 
   return (
     <BottomDrawer open={open} title="预测数据" onClose={onClose}>
@@ -55,17 +60,36 @@ export function MatchContextDrawer({ open, match, context, loading, onClose }: M
 
           {context ? (
             <div className="context-domain-list">
-              {visibleDomains.map((domain) => (
-                <article className={`context-domain status-${domain.status}`} key={domain.domain}>
+              {sportteryDomain ? (
+                <article className={`context-domain sporttery-context-domain status-${sportteryDomain.status}`}>
                   <header>
-                    <strong>{domainLabels[domain.domain]}</strong>
-                    <span>{contextStatusLabels[domain.status]}</span>
+                    <strong>赛前情报</strong>
+                    <span>{contextStatusLabels[sportteryDomain.status]}</span>
                   </header>
-                  <p>{domain.summary}</p>
-                  {domain.error ? <small>{domain.error}</small> : null}
-                  {domain.lastSyncedAt ? <time>{new Date(domain.lastSyncedAt).toLocaleString("zh-CN")}</time> : null}
+                  {sportterySections.length > 0 ? (
+                    <div className="sporttery-section-list">
+                      {sportterySections.map((section) => (
+                        <div className="sporttery-section-item" key={`${section.label}-${section.value}`}>
+                          <strong>{section.label}</strong>
+                          <p>{section.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>{sportteryDomain.summary}</p>
+                  )}
+                  {sportteryDomain.error ? <small>{sportteryDomain.error}</small> : null}
+                  {sportteryDomain.lastSyncedAt ? <time>{new Date(sportteryDomain.lastSyncedAt).toLocaleString("zh-CN")}</time> : null}
                 </article>
-              ))}
+              ) : (
+                <article className="context-domain status-unavailable">
+                  <header>
+                    <strong>赛前情报</strong>
+                    <span>未获取</span>
+                  </header>
+                  <p>暂无体彩赛前情报。</p>
+                </article>
+              )}
             </div>
           ) : null}
         </div>
