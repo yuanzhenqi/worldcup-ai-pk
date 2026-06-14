@@ -6,6 +6,7 @@ import {
   deleteAdminAiProvider,
   deleteAdminPromptTemplate,
   getAdminApiFootballSettings,
+  getAdminSportterySettings,
   getAdminSummary,
   getMatchContext,
   getMatchPredictionHistory,
@@ -15,15 +16,18 @@ import {
   listAdminAiProviders,
   listAdminContextCacheLogs,
   listAdminPromptTemplates,
+  listAdminSportteryMappings,
   listAdminTeamDisplayNames,
   refreshMatchContext,
   saveAdminAiModel,
   saveAdminAiProvider,
   saveAdminApiFootballKey,
+  saveAdminSportterySettings,
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
   requestMatchPrediction,
   getPredictionRunStatus,
+  syncAdminSportteryMappings,
   syncApiFootballFixtures,
   testAdminAiModel,
   updateAdminPromptTemplate
@@ -100,6 +104,65 @@ describe("web API client", () => {
         "content-type": "application/json"
       },
       body: JSON.stringify({ apiKey: "secret-api-football-key" })
+    });
+  });
+
+  it("loads and saves admin sporttery settings", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ enabled: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ enabled: false }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      );
+
+    await expect(getAdminSportterySettings()).resolves.toEqual({ enabled: true });
+    await expect(saveAdminSportterySettings(false)).resolves.toEqual({ enabled: false });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/admin/settings/sporttery");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/settings/sporttery", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ enabled: false })
+    });
+  });
+
+  it("loads and syncs admin sporttery mappings", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            mappings: [{ apiFootballFixtureId: 1001, sportteryMatchId: 2040170, updatedAt: "2026-06-14T08:00:00.000Z" }]
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ matched: 12, unmatched: 10, totalSportteryMatches: 22 }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      );
+
+    await expect(listAdminSportteryMappings()).resolves.toEqual([
+      { apiFootballFixtureId: 1001, sportteryMatchId: 2040170, updatedAt: "2026-06-14T08:00:00.000Z" }
+    ]);
+    await expect(syncAdminSportteryMappings()).resolves.toEqual({ matched: 12, unmatched: 10, totalSportteryMatches: 22 });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/admin/sporttery-mappings");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/sporttery-mappings/sync", {
+      method: "POST"
     });
   });
 

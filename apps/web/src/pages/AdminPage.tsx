@@ -7,18 +7,22 @@ import {
   deleteAdminAiProvider,
   deleteAdminPromptTemplate,
   getAdminApiFootballSettings,
+  getAdminSportterySettings,
   getAdminSummary,
   listAdminAiModels,
   listAdminAiProviders,
   listAdminContextCacheLogs,
   listAdminPromptTemplates,
+  listAdminSportteryMappings,
   listAdminTeamDisplayNames,
   saveAdminAiModel,
   saveAdminAiProvider,
   saveAdminApiFootballKey,
+  saveAdminSportterySettings,
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
   syncApiFootballFixtures,
+  syncAdminSportteryMappings,
   testAdminAiModel,
   updateAdminPromptTemplate
 } from "../api/client";
@@ -65,6 +69,8 @@ export function AdminPage() {
   const [activeModule, setActiveModule] = useState<AdminModule>("data-source");
   const [apiKey, setApiKey] = useState("");
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [sportteryEnabled, setSportteryEnabled] = useState<boolean | null>(null);
+  const [sportteryMappingsCount, setSportteryMappingsCount] = useState(0);
   const [summary, setSummary] = useState<AdminSummaryDto | null>(null);
   const [providers, setProviders] = useState<AiProviderConfigDto[]>([]);
   const [models, setModels] = useState<AiModelConfigDto[]>([]);
@@ -86,8 +92,10 @@ export function AdminPage() {
   }
 
   async function loadAdminData() {
-    const [settings, nextSummary, nextProviders, nextModels, nextPromptTemplates, nextContextCacheLogs, nextTeams] = await Promise.all([
+    const [settings, sportterySettings, sportteryMappings, nextSummary, nextProviders, nextModels, nextPromptTemplates, nextContextCacheLogs, nextTeams] = await Promise.all([
       getAdminApiFootballSettings(),
+      getAdminSportterySettings(),
+      listAdminSportteryMappings(),
       getAdminSummary(),
       listAdminAiProviders(),
       listAdminAiModels(),
@@ -97,6 +105,8 @@ export function AdminPage() {
     ]);
 
     setConfigured(settings.configured);
+    setSportteryEnabled(sportterySettings.enabled);
+    setSportteryMappingsCount(sportteryMappings.length);
     setSummary(nextSummary);
     setProviders(nextProviders);
     setModels(nextModels);
@@ -163,6 +173,32 @@ export function AdminPage() {
       setStatusText("原始赛程响应已写入系统日志");
     } catch (error) {
       setStatusText(error instanceof Error ? `抓取失败：${error.message}` : "抓取失败，请确认 API-Football key 已配置且可用");
+    }
+  }
+
+  async function handleToggleSporttery() {
+    const nextEnabled = !(sportteryEnabled ?? false);
+    setStatusText(nextEnabled ? "正在启用体彩赛前情报..." : "正在停用体彩赛前情报...");
+
+    try {
+      const settings = await saveAdminSportterySettings(nextEnabled);
+      setSportteryEnabled(settings.enabled);
+      setStatusText(settings.enabled ? "体彩赛前情报已启用" : "体彩赛前情报已停用");
+    } catch (error) {
+      setStatusText(error instanceof Error ? `体彩配置保存失败：${error.message}` : "体彩配置保存失败，请确认本地后台 API 可访问");
+    }
+  }
+
+  async function handleSyncSportteryMappings() {
+    setStatusText("正在同步体彩映射...");
+
+    try {
+      const result = await syncAdminSportteryMappings();
+      const mappings = await listAdminSportteryMappings();
+      setSportteryMappingsCount(mappings.length);
+      setStatusText(`体彩映射同步完成：匹配 ${result.matched} 场，未匹配 ${result.unmatched} 场`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? `体彩映射同步失败：${error.message}` : "体彩映射同步失败，请确认本地后台 API 可访问");
     }
   }
 
@@ -281,7 +317,7 @@ export function AdminPage() {
             <>
               <header>
                 <h3>比赛数据</h3>
-                <span>{configured ? "API-Football key 已配置" : "API-Football key 未配置"}</span>
+                <span>{sportteryEnabled ? "体彩赛前情报已启用" : "体彩赛前情报未启用"}</span>
               </header>
               <div className="admin-summary-grid">
                 <div>
@@ -301,31 +337,53 @@ export function AdminPage() {
                   <strong>{summary?.finishedCount ?? 0}</strong>
                 </div>
               </div>
-              <form className="admin-form-grid" onSubmit={handleSaveApiFootballKey}>
-                <label>
-                  <span>API-Football key</span>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    placeholder={configured ? "已配置，输入新 key 可覆盖" : "输入 API-Football key"}
-                    onChange={(event) => setApiKey(event.target.value)}
-                  />
-                </label>
-                <button type="submit">保存 key</button>
-              </form>
-              <div className="settings-actions">
-                <button type="button" onClick={handleSyncFixtures} disabled={!configured}>
-                  同步赛程
-                </button>
-                <button type="button" onClick={handleCaptureRawFixtures} disabled={!configured}>
-                  抓取原始响应
-                </button>
-              </div>
-              {summary?.latestSyncLog ? (
-                <p className="secret-note">
-                  最近同步：{summary.latestSyncLog.message} · {new Date(summary.latestSyncLog.createdAt).toLocaleString("zh-CN")}
-                </p>
-              ) : null}
+              <section className="admin-subsection">
+                <header>
+                  <h4>赛程基础数据</h4>
+                  <span>{configured ? "API-Football key 已配置" : "API-Football key 未配置"}</span>
+                </header>
+                <form className="admin-form-grid" onSubmit={handleSaveApiFootballKey}>
+                  <label>
+                    <span>API-Football key</span>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      placeholder={configured ? "已配置，输入新 key 可覆盖" : "输入 API-Football key"}
+                      onChange={(event) => setApiKey(event.target.value)}
+                    />
+                  </label>
+                  <button type="submit">保存 key</button>
+                </form>
+                <div className="settings-actions">
+                  <button type="button" onClick={handleSyncFixtures} disabled={!configured}>
+                    同步赛程
+                  </button>
+                  <button type="button" onClick={handleCaptureRawFixtures} disabled={!configured}>
+                    抓取原始响应
+                  </button>
+                </div>
+                {summary?.latestSyncLog ? (
+                  <p className="secret-note">
+                    最近同步：{summary.latestSyncLog.message} · {new Date(summary.latestSyncLog.createdAt).toLocaleString("zh-CN")}
+                  </p>
+                ) : null}
+              </section>
+              <section className="admin-subsection">
+                <header>
+                  <h4>体彩赛前情报</h4>
+                  <span>{sportteryEnabled ? "已启用" : "未启用"}</span>
+                </header>
+                <p className="secret-note">用于预测上下文：官方指数、历史交锋、积分形势、近期状态、特征对比和伤停影响。</p>
+                <div className="settings-actions">
+                  <button type="button" onClick={handleToggleSporttery}>
+                    {sportteryEnabled ? "停用体彩情报" : "启用体彩情报"}
+                  </button>
+                  <button type="button" onClick={handleSyncSportteryMappings}>
+                    同步体彩映射
+                  </button>
+                </div>
+                <p className="secret-note">{sportteryMappingsCount} 场已映射</p>
+              </section>
             </>
           ) : null}
 

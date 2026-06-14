@@ -1216,6 +1216,28 @@ a {
   font-size: 13px;
 }
 
+.admin-subsection {
+  border: 1px solid #e1e7ea;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.admin-subsection header {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.admin-subsection h4 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.admin-subsection .settings-actions {
+  margin: 0;
+}
+
 .admin-summary-grid {
   display: grid;
   gap: 10px;

@@ -60,6 +60,22 @@ export interface ApiFootballSettingsStatus {
   configured: boolean;
 }
 
+export interface SportterySettingsStatus {
+  enabled: boolean;
+}
+
+export interface AdminSportteryMappingDto {
+  apiFootballFixtureId: number;
+  sportteryMatchId: number;
+  updatedAt: string;
+}
+
+export interface AdminSportteryMappingSyncResult {
+  matched: number;
+  unmatched: number;
+  totalSportteryMatches: number;
+}
+
 export interface RawFixturesCaptureResult {
   captured: boolean;
   error?: string;
@@ -205,6 +221,47 @@ export async function saveAdminApiFootballKey(apiKey: string): Promise<ApiFootba
     throw new Error(`Admin API-Football settings save failed with status ${response.status}`);
   }
   return (await response.json()) as ApiFootballSettingsStatus;
+}
+
+export async function getAdminSportterySettings(): Promise<SportterySettingsStatus> {
+  const response = await request(`${apiBaseUrl}/api/admin/settings/sporttery`);
+  if (!response.ok) {
+    throw new Error(`Admin Sporttery settings request failed with status ${response.status}`);
+  }
+  return (await response.json()) as SportterySettingsStatus;
+}
+
+export async function saveAdminSportterySettings(enabled: boolean): Promise<SportterySettingsStatus> {
+  const response = await request(`${apiBaseUrl}/api/admin/settings/sporttery`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ enabled })
+  });
+  if (!response.ok) {
+    throw new Error(`Admin Sporttery settings save failed with status ${response.status}`);
+  }
+  return (await response.json()) as SportterySettingsStatus;
+}
+
+export async function listAdminSportteryMappings(): Promise<AdminSportteryMappingDto[]> {
+  const response = await request(`${apiBaseUrl}/api/admin/sporttery-mappings`);
+  if (!response.ok) {
+    throw new Error(`Admin Sporttery mappings request failed with status ${response.status}`);
+  }
+  const body = (await response.json()) as { mappings: AdminSportteryMappingDto[] };
+  return body.mappings;
+}
+
+export async function syncAdminSportteryMappings(): Promise<AdminSportteryMappingSyncResult> {
+  const response = await request(`${apiBaseUrl}/api/admin/sporttery-mappings/sync`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(`Admin Sporttery mappings sync failed with status ${response.status}`);
+  }
+  return (await response.json()) as AdminSportteryMappingSyncResult;
 }
 
 export async function captureApiFootballFixturesRaw(): Promise<RawFixturesCaptureResult> {

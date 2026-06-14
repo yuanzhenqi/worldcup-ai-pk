@@ -1,7 +1,15 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminPage } from "../src/pages/AdminPage";
-import { deleteAdminAiModel, deleteAdminAiProvider, deleteAdminPromptTemplate, listAdminContextCacheLogs, testAdminAiModel, updateAdminPromptTemplate } from "../src/api/client";
+import {
+  deleteAdminAiModel,
+  deleteAdminAiProvider,
+  deleteAdminPromptTemplate,
+  listAdminContextCacheLogs,
+  syncAdminSportteryMappings,
+  testAdminAiModel,
+  updateAdminPromptTemplate
+} from "../src/api/client";
 
 const { model, promptTemplate, provider } = vi.hoisted(() => ({
   provider: {
@@ -33,7 +41,9 @@ const { model, promptTemplate, provider } = vi.hoisted(() => ({
 
 vi.mock("../src/api/client", () => ({
   getAdminApiFootballSettings: vi.fn().mockResolvedValue({ configured: true }),
+  getAdminSportterySettings: vi.fn().mockResolvedValue({ enabled: true }),
   getAdminSummary: vi.fn().mockResolvedValue({ matchCount: 72, scheduledCount: 70, liveCount: 0, finishedCount: 2, latestSyncLog: null }),
+  listAdminSportteryMappings: vi.fn().mockResolvedValue([{ apiFootballFixtureId: 1001, sportteryMatchId: 2040170, updatedAt: "2026-06-14T08:00:00.000Z" }]),
   listAdminAiProviders: vi.fn().mockResolvedValue([provider]),
   listAdminAiModels: vi.fn().mockResolvedValue([model]),
   listAdminContextCacheLogs: vi.fn().mockResolvedValue([
@@ -48,7 +58,9 @@ vi.mock("../src/api/client", () => ({
   listAdminPromptTemplates: vi.fn().mockResolvedValue([promptTemplate]),
   listAdminTeamDisplayNames: vi.fn().mockResolvedValue([]),
   saveAdminApiFootballKey: vi.fn(),
+  saveAdminSportterySettings: vi.fn().mockResolvedValue({ enabled: false }),
   syncApiFootballFixtures: vi.fn(),
+  syncAdminSportteryMappings: vi.fn().mockResolvedValue({ matched: 12, unmatched: 10, totalSportteryMatches: 22 }),
   saveAdminAiProvider: vi.fn(),
   saveAdminAiModel: vi.fn(),
   testAdminAiModel: vi.fn().mockResolvedValue({ ok: true, status: 200, message: "模型测试成功", latencyMs: 128 }),
@@ -74,6 +86,19 @@ describe("AdminPage", () => {
     expect(screen.getByText("提示词模板")).toBeInTheDocument();
     expect(screen.getByText("球队中文名")).toBeInTheDocument();
     expect(screen.getByText("数据缓存")).toBeInTheDocument();
+  });
+
+  it("renders and syncs sporttery data source settings", async () => {
+    render(<AdminPage />);
+
+    expect(await screen.findByText("体彩赛前情报")).toBeInTheDocument();
+    expect(screen.getByText("已启用")).toBeInTheDocument();
+    expect(screen.getByText("1 场已映射")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "同步体彩映射" }));
+
+    expect(syncAdminSportteryMappings).toHaveBeenCalled();
+    expect(await screen.findByText("体彩映射同步完成：匹配 12 场，未匹配 10 场")).toBeInTheDocument();
   });
 
   it("renders context cache sync logs", async () => {
