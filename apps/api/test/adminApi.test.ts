@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
+import { createTestDatabase } from "./support/testDatabase";
 
 describe("admin API", () => {
   it("allows local health checks", async () => {
-    const app = buildApp();
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
     const response = await app.inject({ method: "GET", url: "/api/admin/health", remoteAddress: "127.0.0.1" });
 
     expect(response.statusCode).toBe(200);
@@ -16,7 +20,10 @@ describe("admin API", () => {
   });
 
   it("allows private LAN callers and rejects public remote callers", async () => {
-    const app = buildApp();
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
 
     const lanResponse = await app.inject({ method: "GET", url: "/api/admin/health", remoteAddress: "192.168.1.23" });
     expect(lanResponse.statusCode).toBe(200);

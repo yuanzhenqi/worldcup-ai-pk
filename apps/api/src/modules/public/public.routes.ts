@@ -12,6 +12,7 @@ import { planPredictionRequest } from "../predictions/prediction.service";
 import { DongqiudiClient } from "../football/dongqiudiClient";
 import { getDongqiudiMappingByFixtureId } from "../football/dongqiudiMapping.repository";
 import { getApiFootballKey, isDongqiudiEnabled } from "../settings/settings.repository";
+import { settleFinishedMatchPredictions } from "../predictions/predictionSettlement.service";
 
 export interface PublicRoutesOptions {
   db: Database;
@@ -68,7 +69,10 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
     matches: listMatches(options.db)
   }));
 
-  app.get("/leaderboard", async () => listPublicLeaderboard(options.db));
+  app.get("/leaderboard", async () => {
+    settleFinishedMatchPredictions(options.db);
+    return listPublicLeaderboard(options.db);
+  });
 
   app.get<{ Params: { runId: string } }>("/prediction-runs/:runId", async (request, reply) => {
     const status = getPredictionRunStatus(options.db, request.params.runId);

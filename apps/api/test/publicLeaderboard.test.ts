@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
+import { createDatabase } from "../src/db/connection";
 import { createTestDatabase } from "./support/testDatabase";
 
 type TestDatabase = ReturnType<typeof createTestDatabase>["db"];
@@ -94,7 +95,7 @@ function insertPredictionRun(db: TestDatabase) {
   ).run("run-1", "match-1", "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:05.000Z", "completed", null);
 }
 
-function insertAiPrediction(db: TestDatabase, input: { id: string; modelId: string; result: string; confidence: number; createdAt: string }) {
+function insertAiPrediction(db: TestDatabase, input: { id: string; modelId: string; result: string; confidence: number; createdAt: string; eligibleForScoring?: boolean }) {
   db.prepare(
     `
       INSERT INTO ai_predictions (
@@ -135,7 +136,7 @@ function insertAiPrediction(db: TestDatabase, input: { id: string; modelId: stri
     JSON.stringify(["转换进攻风险"]),
     "{}",
     "parsed",
-    1,
+    input.eligibleForScoring === false ? 0 : 1,
     input.createdAt
   );
 }
@@ -209,6 +210,16 @@ describe("public leaderboard API", () => {
           resultAccuracy: 1,
           exactScoreHits: 1,
           recentScores: [10]
+        },
+        {
+          modelId: "model-2",
+          modelDisplayName: "Claude Haiku",
+          totalScore: 0,
+          finishedMatchesCounted: 1,
+          resultHits: 0,
+          resultAccuracy: 0,
+          exactScoreHits: 0,
+          recentScores: [0]
         }
       ],
       activeRows: [
@@ -238,6 +249,114 @@ describe("public leaderboard API", () => {
         }
       ]
     });
+
+    await app.close();
+  });
+
+  it("settles eligible finished-match predictions before returning the public leaderboard", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, { id: "match-1", status: "finished", homeScore: 2, awayScore: 1 });
+    insertAiConfig(db);
+    insertPredictionRun(db);
+    insertAiPrediction(db, {
+      id: "prediction-1",
+      modelId: "model-1",
+      result: "home",
+      confidence: 0.8,
+      createdAt: "2026-06-13T08:00:02.000Z"
+    });
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "GET", url: "/api/public/leaderboard" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().settledRows).toEqual([
+      {
+        modelId: "model-1",
+        modelDisplayName: "GPT-4o mini",
+        totalScore: 10,
+        finishedMatchesCounted: 1,
+        resultHits: 1,
+        resultAccuracy: 1,
+        exactScoreHits: 1,
+        recentScores: [10]
+      }
+    ]);
+
+    await app.close();
+  });
+
+  it("does not duplicate scores when the leaderboard is requested repeatedly", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, { id: "match-1", status: "finished", homeScore: 2, awayScore: 1 });
+    insertAiConfig(db);
+    insertPredictionRun(db);
+    insertAiPrediction(db, {
+      id: "prediction-1",
+      modelId: "model-1",
+      result: "home",
+      confidence: 0.8,
+      createdAt: "2026-06-13T08:00:02.000Z"
+    });
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    await app.inject({ method: "GET", url: "/api/public/leaderboard" });
+    await app.inject({ method: "GET", url: "/api/public/leaderboard" });
+    await app.close();
+
+    const checkDb = createDatabase(databasePath);
+    const row = checkDb
+      .prepare("SELECT COUNT(*) AS count FROM prediction_scores WHERE ai_prediction_id = ?")
+      .get("prediction-1") as { count: number };
+    checkDb.close();
+    expect(row.count).toBe(1);
+  });
+
+  it("does not settle live or scheduled matches", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, { id: "match-1", status: "live", homeScore: 1, awayScore: 0 });
+    insertAiConfig(db);
+    insertPredictionRun(db);
+    insertAiPrediction(db, {
+      id: "prediction-1",
+      modelId: "model-1",
+      result: "home",
+      confidence: 0.8,
+      createdAt: "2026-06-13T08:00:02.000Z"
+    });
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "GET", url: "/api/public/leaderboard" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().settledRows).toEqual([]);
+
+    await app.close();
+  });
+
+  it("does not settle predictions that are not eligible for scoring", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, { id: "match-1", status: "finished", homeScore: 2, awayScore: 1 });
+    insertAiConfig(db);
+    insertPredictionRun(db);
+    insertAiPrediction(db, {
+      id: "prediction-1",
+      modelId: "model-1",
+      result: "home",
+      confidence: 0.8,
+      createdAt: "2026-06-13T08:00:02.000Z",
+      eligibleForScoring: false
+    });
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "GET", url: "/api/public/leaderboard" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().settledRows).toEqual([]);
 
     await app.close();
   });

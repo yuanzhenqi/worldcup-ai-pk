@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
+import { createTestDatabase } from "./support/testDatabase";
 
 describe("public API filtering", () => {
   it("does not expose keys, full prompts, or raw responses in health payload", async () => {
-    const app = buildApp();
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
     const response = await app.inject({ method: "GET", url: "/api/public/health" });
     const body = response.json();
 
