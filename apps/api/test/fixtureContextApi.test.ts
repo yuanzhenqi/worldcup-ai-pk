@@ -386,7 +386,7 @@ describe("fixture context API", () => {
         expect.objectContaining({
           domain: "sporttery",
           status: "cached",
-          summary: expect.stringContaining("历史交锋 6场")
+          summary: expect.stringContaining("历史交锋：6场")
         })
       ])
     });
@@ -394,11 +394,11 @@ describe("fixture context API", () => {
       expect.arrayContaining([
         expect.objectContaining({
           domain: "sporttery",
-          summary: expect.stringContaining("胜平负赔率 主2.50/平3.20/客2.80")
+          summary: expect.stringContaining("官方指数：胜平负 主2.50/平3.20/客2.80")
         }),
         expect.objectContaining({
           domain: "sporttery",
-          summary: expect.stringContaining("伤停 主[球员A·中场]")
+          summary: expect.stringContaining("伤停影响：主[球员A·中场]")
         })
       ])
     );
