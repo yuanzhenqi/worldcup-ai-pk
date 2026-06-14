@@ -20,12 +20,11 @@ describe("Sporttery parser", () => {
   it("parses 6 dimensions into a cached summary", () => {
     const r = parseSportterySummary(fullInput);
     expect(r.status).toBe("cached");
-    expect(r.summary).toContain("胜平负赔率 主2.50/平3.20/客2.80");
-    expect(r.summary).toContain("让球胜平负 主1.90/平3.50/客3.80(让-1.00)");
-    expect(r.summary).toContain("历史交锋 6场 胜50%/平20%/负30%");
-    expect(r.summary).toContain("积分榜 主排名1积3 客排名3积0");
-    expect(r.summary).toContain("近10场胜率 主70% 客40%");
-    expect(r.summary).toContain("伤停 主[穆西亚拉·中场]");
+    expect(r.summary).toContain("官方指数：胜平负 主2.50/平3.20/客2.80；让球胜平负 主1.90/平3.50/客3.80(让-1.00)");
+    expect(r.summary).toContain("历史交锋：6场 胜50%/平20%/负30%");
+    expect(r.summary).toContain("积分形势：主排名1积3 客排名3积0");
+    expect(r.summary).toContain("特征对比：近10场胜率 主70% 客40%");
+    expect(r.summary).toContain("伤停影响：主[穆西亚拉·中场] 客[无]");
   });
 
   it("returns unavailable when all empty", () => {
