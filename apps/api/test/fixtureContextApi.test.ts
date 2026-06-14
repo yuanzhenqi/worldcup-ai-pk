@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app";
 import { parseFixtureHeadToHeadSummary, parseFixtureOddsSummary, parseFixtureSquadSummary } from "../src/modules/context/apiFootballContextParsers";
-import { saveApiFootballKey } from "../src/modules/settings/settings.repository";
+import { upsertSportteryMapping } from "../src/modules/football/sportteryMapping.repository";
+import { saveApiFootballKey, saveSportteryEnabled } from "../src/modules/settings/settings.repository";
 import { createTestDatabase } from "./support/testDatabase";
 
 function insertContextApiMatch(db: ReturnType<typeof createTestDatabase>["db"]) {
@@ -231,7 +232,8 @@ describe("fixture context API", () => {
           useApiFootballPrediction: false,
           useHeadToHead: true,
           usePlayerLineupInjuries: true,
-          useDongqiudiIntel: false
+          useDongqiudiIntel: false,
+          useSporttery: false
         }
       }
     });
@@ -252,6 +254,160 @@ describe("fixture context API", () => {
       "https://v3.football.api-sports.io/fixtures/headtohead?h2h=home-1-away-1",
       expect.any(Object)
     );
+
+    await app.close();
+  });
+
+  it("refreshes sporttery context when enabled and mapped", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertContextApiMatch(db);
+    saveSportteryEnabled(db, true);
+    upsertSportteryMapping(db, 1001, 2040170);
+    db.close();
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: {
+              matchInfoList: [
+                {
+                  subMatchList: [
+                    {
+                      matchId: 2040170,
+                      oddsList: [
+                        { poolCode: "HAD", h: "2.50", d: "3.20", a: "2.80", goalLine: "" },
+                        { poolCode: "HHAD", h: "1.90", d: "3.50", a: "3.80", goalLine: "-1.00" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: {
+              statistics: {
+                totalLegCnt: "6",
+                winProbability: "50%",
+                drawProbability: "20%",
+                lossProbability: "30%"
+              }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: {
+              homeTables: { total: { ranking: "1", points: "3" } },
+              awayTables: { total: { ranking: "3", points: "0" } }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: {
+              home: {
+                matchList: [
+                  {
+                    homeTeamShortName: "主队",
+                    homeTeamFullCourtGoalCnt: "3",
+                    awayTeamFullCourtGoalCnt: "1",
+                    awayTeamShortName: "客队"
+                  }
+                ]
+              },
+              away: { matchList: [] }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: {
+              eachHomeAway: {
+                totalLegCnt: "10",
+                homeScoreRatio: "70",
+                awayScoreRatio: "40"
+              }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: {
+              home: {
+                injuriesAndSuspensionsList: [{ personName: "球员A", playerPositionDesc: "中场" }]
+              },
+              away: { injuriesAndSuspensionsList: [] }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      );
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/public/matches/match-1/context/refresh",
+      payload: {
+        dataOptions: {
+          useOdds: false,
+          useApiFootballPrediction: false,
+          useHeadToHead: false,
+          usePlayerLineupInjuries: false,
+          useDongqiudiIntel: false,
+          useSporttery: true
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      matchId: "match-1",
+      completeness: "full",
+      domains: expect.arrayContaining([
+        expect.objectContaining({
+          domain: "sporttery",
+          status: "cached",
+          summary: expect.stringContaining("历史交锋 6场")
+        })
+      ])
+    });
+    expect(response.json().domains).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          domain: "sporttery",
+          summary: expect.stringContaining("胜平负赔率 主2.50/平3.20/客2.80")
+        }),
+        expect.objectContaining({
+          domain: "sporttery",
+          summary: expect.stringContaining("伤停 主[球员A·中场]")
+        })
+      ])
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      "https://webapi.sporttery.cn/gateway/uniform/football/getMatchListV1.qry?clientCode=3001",
+      expect.any(Object)
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(6);
 
     await app.close();
   });
