@@ -52,7 +52,8 @@ const defaultContextDataOptions: PredictionDataOptionsDto = {
   useOdds: true,
   useApiFootballPrediction: false,
   useHeadToHead: true,
-  usePlayerLineupInjuries: true
+  usePlayerLineupInjuries: true,
+  useDongqiudiIntel: true
 };
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -134,6 +135,49 @@ function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
+const predictionResultLabels: Record<PredictionRunPredictionDto["predictedResult"], string> = {
+  home: "主胜",
+  draw: "平局",
+  away: "客胜"
+};
+
+function formatPredictionScore(prediction: PredictionRunPredictionDto): string {
+  return `${prediction.predictedHomeScore}-${prediction.predictedAwayScore}`;
+}
+
+function getPredictionResultText(prediction: PredictionRunPredictionDto): string {
+  return predictionResultLabels[prediction.predictedResult];
+}
+
+function buildPredictionConsensus(predictions: PredictionRunPredictionDto[], failedCount: number) {
+  const resultCounts = predictions.reduce(
+    (counts, prediction) => {
+      counts[prediction.predictedResult] += 1;
+      return counts;
+    },
+    { home: 0, draw: 0, away: 0 } as Record<PredictionRunPredictionDto["predictedResult"], number>
+  );
+  const topResult = (Object.entries(resultCounts) as Array<[PredictionRunPredictionDto["predictedResult"], number]>).sort(
+    (left, right) => right[1] - left[1]
+  )[0];
+  const scoreCounts = new Map<string, number>();
+
+  for (const prediction of predictions) {
+    const score = formatPredictionScore(prediction);
+    scoreCounts.set(score, (scoreCounts.get(score) ?? 0) + 1);
+  }
+
+  const topScore = [...scoreCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? "未形成共识";
+
+  return {
+    successCount: predictions.length,
+    failedCount,
+    topResultText: topResult && topResult[1] > 0 ? predictionResultLabels[topResult[0]] : "未形成共识",
+    topScore,
+    resultDistributionText: `主胜 ${resultCounts.home} / 平 ${resultCounts.draw} / 客胜 ${resultCounts.away}`
+  };
+}
+
 function getUpcomingDateKeys(now = new Date()): Set<string> {
   return new Set([0, 1, 2].map((offset) => getLocalDateKey(addDays(now, offset))));
 }
@@ -184,6 +228,8 @@ function MatchCard({
   onOpenReport: (feedback: PredictionFeedback) => void;
 }) {
   const hasHistory = match.hasAiPrediction || Boolean(feedback?.predictions.length);
+  const failedPredictionCount = feedback?.logs.filter((log) => log.level === "error").length ?? 0;
+  const consensus = feedback ? buildPredictionConsensus(feedback.predictions, failedPredictionCount) : null;
 
   return (
     <article className={`match-card status-${match.status}`}>
@@ -225,21 +271,45 @@ function MatchCard({
         {feedback ? (
           <div className="prediction-feedback-block">
             <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span>
-            {feedback.logs.length > 0 ? (
-              <ol className="prediction-log-list" aria-label="预测执行日志">
-                {feedback.logs.map((log) => (
-                  <li className={log.level} key={`${log.createdAt}-${log.message}`}>
-                    {log.modelDisplayName ? `${log.modelDisplayName}：` : ""}
-                    {log.message}
-                  </li>
-                ))}
-              </ol>
-            ) : null}
             {feedback.predictions.length > 0 ? (
-              <button type="button" className="secondary-action" onClick={() => onOpenReport(feedback)}>
-                查看报告
-              </button>
-            ) : null}
+              <>
+                <div className="prediction-consensus-summary">
+                  <span>{`综合观点：${consensus?.topResultText ?? "未形成共识"}`}</span>
+                  <span>{`参考比分：${consensus?.topScore ?? "未形成共识"}`}</span>
+                  <span>{consensus?.resultDistributionText}</span>
+                  <span>{`成功 ${consensus?.successCount ?? 0} / 失败 ${consensus?.failedCount ?? 0}`}</span>
+                </div>
+                <div className="table-scroll prediction-summary-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>AI 模型</th>
+                        <th>胜平负</th>
+                        <th>比分</th>
+                        <th>信心</th>
+                        <th>胜负手</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {feedback.predictions.map((prediction) => (
+                        <tr key={prediction.id}>
+                          <td>{prediction.modelDisplayName}</td>
+                          <td>{getPredictionResultText(prediction)}</td>
+                          <td>{formatPredictionScore(prediction)}</td>
+                          <td>{`${Math.round(prediction.confidence * 100)}%`}</td>
+                          <td>{prediction.shortReason || prediction.analysisReport.slice(0, 80) || "未给出"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button type="button" className="secondary-action" onClick={() => onOpenReport(feedback)}>
+                  查看报告
+                </button>
+              </>
+            ) : (
+              <p className="muted">AI 正在生成预测，完成后这里会汇总各模型观点。</p>
+            )}
           </div>
         ) : null}
       </div>
@@ -615,7 +685,7 @@ export function FixturesPage({
                 </header>
                 <p>置信度：{prediction.confidence}</p>
                 <p>{prediction.shortReason}</p>
-                <p>{prediction.oddsInterpretation}</p>
+                <p>市场背景：{prediction.oddsInterpretation}</p>
                 <div>
                   <span>关键因素</span>
                   <ul>

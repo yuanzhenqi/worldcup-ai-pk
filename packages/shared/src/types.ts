@@ -73,6 +73,24 @@ export interface LeaderboardRowDto {
   recentScores: number[];
 }
 
+export interface LeaderboardActiveRowDto {
+  modelId: string;
+  modelDisplayName: string;
+  predictionsCount: number;
+  parsedPredictionsCount: number;
+  matchesCovered: number;
+  homeWinVotes: number;
+  drawVotes: number;
+  awayWinVotes: number;
+  averageConfidence: number | null;
+  latestPredictionAt: string | null;
+}
+
+export interface LeaderboardDto {
+  settledRows: LeaderboardRowDto[];
+  activeRows: LeaderboardActiveRowDto[];
+}
+
 export type PredictionTaskType =
   | "result_1x2"
   | "scoreline"
@@ -88,9 +106,10 @@ export interface PredictionDataOptionsDto {
   useApiFootballPrediction: boolean;
   useHeadToHead: boolean;
   usePlayerLineupInjuries: boolean;
+  useDongqiudiIntel: boolean;
 }
 
-export type FixtureContextDomain = "odds" | "api_prediction" | "head_to_head" | "squad";
+export type FixtureContextDomain = "odds" | "api_prediction" | "head_to_head" | "squad" | "dongqiudi_intel";
 
 export type FixtureContextDomainStatus = "cached" | "unavailable" | "refresh_failed" | "not_requested";
 

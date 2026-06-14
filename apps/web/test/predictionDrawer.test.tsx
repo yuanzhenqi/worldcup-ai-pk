@@ -42,18 +42,21 @@ describe("PredictionRequestDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "开始预测" }));
 
     expect(onSubmit).toHaveBeenCalledWith({
-      taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
+      taskTypes: ["result_1x2", "scoreline"],
       dataOptions: {
-        useOdds: true,
+        useOdds: false,
         useApiFootballPrediction: false,
         useHeadToHead: true,
-        usePlayerLineupInjuries: true
+        usePlayerLineupInjuries: true,
+        useDongqiudiIntel: true
       },
       promptTemplateId: "prompt-1",
       customPrompt: "",
       outputStyle: "concise",
       refreshContext: true
     });
+    expect(screen.queryByText("赔率解读")).not.toBeInTheDocument();
+    expect(screen.queryByText("使用赔率")).not.toBeInTheDocument();
     expect(screen.queryByText("使用官方预测")).not.toBeInTheDocument();
   });
 });

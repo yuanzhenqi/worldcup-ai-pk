@@ -23,7 +23,9 @@ import { refreshFixtureContext } from "../context/fixtureContext.service";
 import { importApiFootballFixturesResponse } from "../football/fixtureImport.service";
 import { FootballService } from "../football/football.service";
 import { writeSystemLog } from "../logs/log.service";
-import { getApiFootballKey, hasApiFootballKey, saveApiFootballKey } from "../settings/settings.repository";
+import { DongqiudiClient } from "../football/dongqiudiClient";
+import { deleteDongqiudiMapping, getDongqiudiMappingByFixtureId, listDongqiudiMappings, upsertDongqiudiMapping } from "../football/dongqiudiMapping.repository";
+import { getApiFootballKey, hasApiFootballKey, isDongqiudiEnabled, saveApiFootballKey, saveDongqiudiEnabled } from "../settings/settings.repository";
 import { listTeamDisplayNames, updateTeamDisplayName } from "../teams/teamDisplayName.repository";
 
 export interface AdminRoutesOptions {
@@ -61,6 +63,15 @@ const promptTemplateSchema = z.object({
 
 const teamDisplayNameUpdateSchema = z.object({
   displayNameZh: z.string().min(1)
+});
+
+const dongqiudiSettingsSchema = z.object({
+  enabled: z.boolean()
+});
+
+const dongqiudiMappingSchema = z.object({
+  apiFootballFixtureId: z.number().int(),
+  dongqiudiMatchId: z.number().int()
 });
 
 function getApiFootballErrors(response: unknown): unknown | null {
@@ -130,6 +141,36 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
 
     saveApiFootballKey(options.db, parsed.data.apiKey);
     return { configured: true };
+  });
+
+  app.get("/settings/dongqiudi", async () => ({
+    enabled: isDongqiudiEnabled(options.db)
+  }));
+
+  app.put("/settings/dongqiudi", async (request, reply) => {
+    const parsed = dongqiudiSettingsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid dongqiudi settings payload" });
+    }
+    saveDongqiudiEnabled(options.db, parsed.data.enabled);
+    return { enabled: parsed.data.enabled };
+  });
+
+  app.get("/dongqiudi-mappings", async () => ({
+    mappings: listDongqiudiMappings(options.db)
+  }));
+
+  app.post("/dongqiudi-mappings", async (request, reply) => {
+    const parsed = dongqiudiMappingSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid dongqiudi mapping payload" });
+    }
+    return upsertDongqiudiMapping(options.db, parsed.data.apiFootballFixtureId, parsed.data.dongqiudiMatchId);
+  });
+
+  app.delete("/dongqiudi-mappings/:apiFootballFixtureId", async (request) => {
+    deleteDongqiudiMapping(options.db, Number(getIdParam(request, "apiFootballFixtureId")));
+    return { deleted: true };
   });
 
   app.get("/ai-providers", async () => ({
@@ -333,11 +374,14 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
       homeTeamId: match.home_team_id,
       awayTeamId: match.away_team_id,
       footballService: new FootballService({ apiKey }),
+      dongqiudiClient: isDongqiudiEnabled(options.db) ? new DongqiudiClient() : null,
+      dongqiudiMatchId: getDongqiudiMappingByFixtureId(options.db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,
       dataOptions: {
         useOdds: true,
         useApiFootballPrediction: false,
         useHeadToHead: true,
-        usePlayerLineupInjuries: true
+        usePlayerLineupInjuries: true,
+        useDongqiudiIntel: true
       }
     });
   });

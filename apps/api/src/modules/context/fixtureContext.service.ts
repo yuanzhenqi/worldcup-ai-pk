@@ -2,6 +2,8 @@ import type { Database } from "better-sqlite3";
 import type { FixtureContextSummaryDto, PredictionDataOptionsDto } from "@worldcup-ai-pk/shared";
 import { FootballService } from "../football/football.service";
 import { parseApiFootballFixturePrediction, parseFixtureHeadToHeadSummary, parseFixtureOddsSummary, parseFixtureSquadSummary } from "./apiFootballContextParsers";
+import { parseDongqiudiIntelSummary } from "./dongqiudiContextParsers";
+import type { DongqiudiClient } from "../football/dongqiudiClient";
 import { getLatestFixtureContextSummary, saveFixtureContextSnapshot, writeFixtureDataSyncLog } from "./fixtureContext.repository";
 
 interface RefreshFixtureContextInput {
@@ -11,6 +13,8 @@ interface RefreshFixtureContextInput {
   homeTeamId: string;
   awayTeamId: string;
   footballService: FootballService | null;
+  dongqiudiClient: DongqiudiClient | null;
+  dongqiudiMatchId: number | null;
   dataOptions: PredictionDataOptionsDto;
   now?: Date;
 }
@@ -54,7 +58,8 @@ export function getFixtureContextSummary(db: Database, matchId: string): Fixture
         notRequestedSummary("odds"),
         notRequestedSummary("api_prediction"),
         notRequestedSummary("head_to_head"),
-        notRequestedSummary("squad")
+        notRequestedSummary("squad"),
+        notRequestedSummary("dongqiudi_intel")
       ]
     }
   );
@@ -137,6 +142,22 @@ export async function refreshFixtureContext(input: RefreshFixtureContextInput): 
     }
   } else {
     domains.push(notRequestedSummary("squad"));
+  }
+
+  if (input.dataOptions.useDongqiudiIntel && input.dongqiudiClient && input.dongqiudiMatchId) {
+    try {
+      const dongqiudiResponse = await input.dongqiudiClient.getPreAnalyzeContrast(input.dongqiudiMatchId);
+      const parsed = parseDongqiudiIntelSummary(dongqiudiResponse);
+      raw.dongqiudiIntel = parsed.raw;
+      domains.push({ domain: "dongqiudi_intel", status: parsed.status, summary: parsed.summary, lastSyncedAt: now.toISOString(), error: null });
+      writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "dongqiudi_intel", status: parsed.status, error: null, now });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Dongqiudi intel refresh failed";
+      domains.push({ domain: "dongqiudi_intel", status: "refresh_failed", summary: "未获取懂球帝情报", lastSyncedAt: now.toISOString(), error: message });
+      writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "dongqiudi_intel", status: "refresh_failed", error: message, now });
+    }
+  } else {
+    domains.push(notRequestedSummary("dongqiudi_intel"));
   }
 
   const completeness = getCompleteness(domains);

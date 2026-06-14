@@ -71,7 +71,8 @@ describe("fixture context repository", () => {
         { domain: "odds", status: "cached", summary: "主胜 2.10，平局 3.20，客胜 3.50" },
         { domain: "api_prediction", status: "unavailable", summary: "未获取" },
         { domain: "head_to_head", status: "not_requested", summary: "未请求" },
-        { domain: "squad", status: "refresh_failed", summary: "未获取", error: "API-Football returned errors" }
+        { domain: "squad", status: "refresh_failed", summary: "未获取", error: "API-Football returned errors" },
+        { domain: "dongqiudi_intel", status: "not_requested", summary: "未请求" }
       ]
     });
 

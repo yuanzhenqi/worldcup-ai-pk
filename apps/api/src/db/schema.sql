@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS fixture_context_snapshots (
   api_prediction_summary_json TEXT NOT NULL,
   head_to_head_summary_json TEXT NOT NULL,
   squad_summary_json TEXT NOT NULL,
+  dongqiudi_intel_summary_json TEXT NOT NULL,
   completeness TEXT NOT NULL,
   raw_json TEXT NOT NULL,
   created_at TEXT NOT NULL
@@ -208,3 +209,12 @@ ALTER TABLE prediction_requests ADD COLUMN prompt_template_id TEXT;
 ALTER TABLE prediction_requests ADD COLUMN custom_prompt TEXT NOT NULL DEFAULT '';
 ALTER TABLE prediction_requests ADD COLUMN output_style TEXT NOT NULL DEFAULT 'concise';
 ALTER TABLE ai_predictions ADD COLUMN analysis_report TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE fixture_context_snapshots ADD COLUMN dongqiudi_intel_summary_json TEXT NOT NULL DEFAULT '{}';
+
+CREATE TABLE IF NOT EXISTS fixture_dongqiudi_mappings (
+  api_football_fixture_id INTEGER PRIMARY KEY,
+  dongqiudi_match_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

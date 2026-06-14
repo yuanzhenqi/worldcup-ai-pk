@@ -230,7 +230,8 @@ describe("fixture context API", () => {
           useOdds: true,
           useApiFootballPrediction: false,
           useHeadToHead: true,
-          usePlayerLineupInjuries: true
+          usePlayerLineupInjuries: true,
+          useDongqiudiIntel: false
         }
       }
     });

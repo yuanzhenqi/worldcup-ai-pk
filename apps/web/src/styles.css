@@ -485,6 +485,62 @@ a {
   font-weight: 700;
 }
 
+.prediction-consensus-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.prediction-consensus-summary span {
+  background: #f1f5f4;
+  border: 1px solid #d8e3df;
+  border-radius: 999px;
+  color: #173f35;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 8px;
+}
+
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.table-scroll table {
+  min-width: 680px;
+}
+
+.prediction-summary-table table {
+  min-width: 620px;
+}
+
+.leaderboard-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.leaderboard-panel {
+  min-width: 0;
+}
+
+.section-heading-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.section-heading-row h3 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.section-heading-row span {
+  color: #64737a;
+  font-size: 13px;
+}
+
 .folded-fixtures {
   border-top: 1px solid #d8dee4;
   display: grid;
@@ -1130,6 +1186,10 @@ td {
     justify-items: start;
     max-width: 100%;
     width: 100%;
+  }
+
+  .prediction-consensus-summary {
+    justify-content: flex-start;
   }
 
   .prediction-log-list {

@@ -46,7 +46,7 @@ describe("FixturesPage", () => {
             id: "scheduled-1",
             apiFootballFixtureId: 1,
             stage: "Group Stage - 1",
-            kickoffAt: "2026-06-12T19:00:00.000Z",
+            kickoffAt: "2026-06-14T19:00:00.000Z",
             status: "scheduled",
             statusLabelZh: "未开始",
             venue: "BMO Field",
@@ -94,7 +94,7 @@ describe("FixturesPage", () => {
         matches={[
           buildMatch({
             id: "scheduled-1",
-            kickoffAt: "2026-06-13T12:00:00.000Z",
+            kickoffAt: "2026-06-14T12:00:00.000Z",
             status: "scheduled",
             homeDisplayNameZh: "美国",
             homeName: "USA",
@@ -209,7 +209,7 @@ describe("FixturesPage", () => {
     });
     const match = buildMatch({
       id: "scheduled-1",
-      kickoffAt: "2026-06-13T12:00:00.000Z",
+      kickoffAt: "2026-06-14T12:00:00.000Z",
       status: "scheduled",
       homeDisplayNameZh: "美国",
       homeName: "USA",
@@ -223,12 +223,13 @@ describe("FixturesPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "开始预测" }));
 
     expect(onRequestPrediction).toHaveBeenCalledWith(match, {
-      taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
+      taskTypes: ["result_1x2", "scoreline"],
       dataOptions: {
-        useOdds: true,
+        useOdds: false,
         useApiFootballPrediction: false,
         useHeadToHead: true,
-        usePlayerLineupInjuries: true
+        usePlayerLineupInjuries: true,
+        useDongqiudiIntel: true
       },
       promptTemplateId: "prompt-1",
       customPrompt: "",
@@ -236,11 +237,19 @@ describe("FixturesPage", () => {
       refreshContext: true
     });
     expect(await screen.findByText("已完成 1 个模型预测")).toBeInTheDocument();
-    expect(screen.getByText("预测请求已创建")).toBeInTheDocument();
-    expect(screen.getByText("GPT-4o mini：模型预测完成：GPT-4o mini")).toBeInTheDocument();
+    expect(screen.getByText("综合观点：主胜")).toBeInTheDocument();
+    expect(screen.getByText("参考比分：2-1")).toBeInTheDocument();
+    expect(screen.getByText("主胜 1 / 平 0 / 客胜 0")).toBeInTheDocument();
+    expect(screen.getByText("成功 1 / 失败 0")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "AI 模型" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "胜负手" })).toBeInTheDocument();
+    expect(screen.getByText("72%")).toBeInTheDocument();
+    expect(screen.getByText("主队更稳定。")).toBeInTheDocument();
+    expect(screen.queryByText("预测请求已创建")).not.toBeInTheDocument();
+    expect(screen.queryByText("GPT-4o mini：模型预测完成：GPT-4o mini")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "查看报告" }));
-    expect(screen.getByText("GPT-4o mini")).toBeInTheDocument();
+    expect(screen.getAllByText("GPT-4o mini")).toHaveLength(2);
     expect(screen.getByText("2 - 1")).toBeInTheDocument();
     expect(screen.getByText("详细分析报告正文。")).toBeInTheDocument();
   });
@@ -249,7 +258,7 @@ describe("FixturesPage", () => {
     const match = {
       ...buildMatch({
         id: "scheduled-1",
-        kickoffAt: "2026-06-13T12:00:00.000Z",
+        kickoffAt: "2026-06-14T12:00:00.000Z",
         status: "scheduled",
         homeDisplayNameZh: "美国",
         homeName: "USA",
@@ -311,7 +320,7 @@ describe("FixturesPage", () => {
   it("refreshes match context automatically when opening the data card", async () => {
     const match = buildMatch({
       id: "scheduled-1",
-      kickoffAt: "2026-06-13T12:00:00.000Z",
+      kickoffAt: "2026-06-14T12:00:00.000Z",
       status: "scheduled",
       homeDisplayNameZh: "美国",
       homeName: "USA",
@@ -337,7 +346,8 @@ describe("FixturesPage", () => {
       useOdds: true,
       useApiFootballPrediction: false,
       useHeadToHead: true,
-      usePlayerLineupInjuries: true
+      usePlayerLineupInjuries: true,
+      useDongqiudiIntel: true
     });
     expect(await screen.findByText("历史交锋 2 场")).toBeInTheDocument();
   });
@@ -345,7 +355,7 @@ describe("FixturesPage", () => {
   it("polls prediction run status while models are still running", async () => {
     const match = buildMatch({
       id: "scheduled-1",
-      kickoffAt: "2026-06-13T12:00:00.000Z",
+      kickoffAt: "2026-06-14T12:00:00.000Z",
       status: "scheduled",
       homeDisplayNameZh: "美国",
       homeName: "USA",
@@ -411,7 +421,8 @@ describe("FixturesPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "开始预测" }));
 
     expect(await screen.findByText("预测执行中")).toBeInTheDocument();
-    expect(screen.getByText("GPT-4o mini：开始调用模型：GPT-4o mini")).toBeInTheDocument();
+    expect(screen.getByText("AI 正在生成预测，完成后这里会汇总各模型观点。")).toBeInTheDocument();
+    expect(screen.queryByText("GPT-4o mini：开始调用模型：GPT-4o mini")).not.toBeInTheDocument();
     resolveRunStatus!(completedStatus);
     expect(await screen.findByText("已完成 1 个模型预测")).toBeInTheDocument();
     expect(onLoadPredictionRunStatus).toHaveBeenCalledWith("run-1");

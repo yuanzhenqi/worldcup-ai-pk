@@ -5,10 +5,13 @@ import { z } from "zod";
 import type { MatchStatus, PredictionDataOptionsDto, PredictionRequestInputDto, PredictionRequestResponseDto } from "@worldcup-ai-pk/shared";
 import { getFixtureContextSummary, refreshFixtureContext } from "../context/fixtureContext.service";
 import { FootballService } from "../football/football.service";
+import { listPublicLeaderboard } from "../leaderboard/leaderboard.repository";
 import { listMatches } from "../matches/match.repository";
 import { executeManualPredictionRequest, getPredictionRunStatus, listPredictionRunHistory, markPredictionRunFailed } from "../predictions/predictionExecutor.service";
 import { planPredictionRequest } from "../predictions/prediction.service";
-import { getApiFootballKey } from "../settings/settings.repository";
+import { DongqiudiClient } from "../football/dongqiudiClient";
+import { getDongqiudiMappingByFixtureId } from "../football/dongqiudiMapping.repository";
+import { getApiFootballKey, isDongqiudiEnabled } from "../settings/settings.repository";
 
 export interface PublicRoutesOptions {
   db: Database;
@@ -18,7 +21,8 @@ const predictionDataOptionsSchema = z.object({
   useOdds: z.boolean(),
   useApiFootballPrediction: z.boolean(),
   useHeadToHead: z.boolean(),
-  usePlayerLineupInjuries: z.boolean()
+  usePlayerLineupInjuries: z.boolean(),
+  useDongqiudiIntel: z.boolean()
 });
 
 const contextRefreshSchema = z.object({
@@ -35,12 +39,13 @@ const predictionRequestSchema = z.object({
 });
 
 const defaultPredictionRequestInput: PredictionRequestInputDto = {
-  taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
+  taskTypes: ["result_1x2", "scoreline"],
   dataOptions: {
-    useOdds: true,
-    useApiFootballPrediction: true,
+    useOdds: false,
+    useApiFootballPrediction: false,
     useHeadToHead: true,
-    usePlayerLineupInjuries: true
+    usePlayerLineupInjuries: true,
+    useDongqiudiIntel: true
   },
   promptTemplateId: null,
   customPrompt: "",
@@ -62,6 +67,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
   app.get("/matches", async () => ({
     matches: listMatches(options.db)
   }));
+
+  app.get("/leaderboard", async () => listPublicLeaderboard(options.db));
 
   app.get<{ Params: { runId: string } }>("/prediction-runs/:runId", async (request, reply) => {
     const status = getPredictionRunStatus(options.db, request.params.runId);
@@ -117,6 +124,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       homeTeamId: match.home_team_id,
       awayTeamId: match.away_team_id,
       footballService,
+      dongqiudiClient: isDongqiudiEnabled(options.db) ? new DongqiudiClient() : null,
+      dongqiudiMatchId: getDongqiudiMappingByFixtureId(options.db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,
       dataOptions: parsed.data.dataOptions as PredictionDataOptionsDto
     });
   });
@@ -172,6 +181,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
         homeTeamId: match.home_team_id,
         awayTeamId: match.away_team_id,
         footballService,
+        dongqiudiClient: isDongqiudiEnabled(options.db) ? new DongqiudiClient() : null,
+        dongqiudiMatchId: getDongqiudiMappingByFixtureId(options.db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,
         dataOptions: predictionInput.dataOptions
       });
     }

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import type { MatchDto, PredictionRequestInputDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
+import type { LeaderboardDto, MatchDto, PredictionRequestInputDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
 import {
   getMatchContext,
   getMatchPredictionHistory,
   getPredictionRunStatus,
+  getPublicLeaderboard,
   getPublicMatches,
   listAdminPromptTemplates,
   refreshMatchContext,
@@ -17,6 +18,7 @@ import "./styles.css";
 
 export function App() {
   const [matches, setMatches] = useState<MatchDto[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardDto>({ settledRows: [], activeRows: [] });
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateConfigDto[]>([]);
   const [matchesStatus, setMatchesStatus] = useState<"loading" | "loaded" | "failed">("loading");
 
@@ -25,10 +27,11 @@ export function App() {
 
     async function loadInitialData() {
       try {
-        const [nextMatches, nextPromptTemplates] = await Promise.all([getPublicMatches(), listAdminPromptTemplates()]);
+        const [nextMatches, nextPromptTemplates, nextLeaderboard] = await Promise.all([getPublicMatches(), listAdminPromptTemplates(), getPublicLeaderboard()]);
         if (!cancelled) {
           setMatches(nextMatches);
           setPromptTemplates(nextPromptTemplates);
+          setLeaderboard(nextLeaderboard);
           setMatchesStatus("loaded");
         }
       } catch {
@@ -40,9 +43,10 @@ export function App() {
 
     async function loadMatches() {
       try {
-        const nextMatches = await getPublicMatches();
+        const [nextMatches, nextLeaderboard] = await Promise.all([getPublicMatches(), getPublicLeaderboard()]);
         if (!cancelled) {
           setMatches(nextMatches);
+          setLeaderboard(nextLeaderboard);
           setMatchesStatus("loaded");
         }
       } catch {
@@ -76,6 +80,7 @@ export function App() {
     const response = await requestMatchPrediction(match.id, input);
     try {
       setMatches(await getPublicMatches());
+      setLeaderboard(await getPublicLeaderboard());
     } catch {
       // The request feedback is still useful even if the immediate refresh fails.
     }
@@ -110,7 +115,7 @@ export function App() {
         onLoadPredictionRunStatus={getPredictionRunStatus}
         onLoadPredictionHistory={getMatchPredictionHistory}
       />
-      <LeaderboardPage rows={[]} />
+      <LeaderboardPage leaderboard={leaderboard} />
       <AdminPage />
     </main>
   );

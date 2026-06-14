@@ -11,8 +11,14 @@ interface BuiltInPromptTemplate {
   isDefault: boolean;
 }
 
-const contextRules =
-  "你必须只使用 prediction_context 中已经提供的数据。对缺失的赔率、球员、伤停、阵容、历史交锋或官方预测，必须写明未获取；不得编造任何球员状态、伤停、历史战绩、赔率或阵容信息。如果赔率与模型判断冲突，必须解释冲突。输出必须包含结构化字段和中文摘要。";
+const contextRules = [
+  "你必须只使用 prediction_context 中已经提供的数据。",
+  "对缺失的球员、伤停、阵容、历史交锋、市场赔率或官方预测，必须写明未获取；不得编造任何球员状态、伤停、历史战绩、市场赔率或阵容信息。",
+  "若 prediction_context 包含市场赔率，只能把它作为赛前市场背景说明，不得作为胜平负或比分预测的权重。",
+  "不要因为赔率更低或市场更热而直接提高某一结果概率。",
+  "如果你的足球判断与市场背景不一致，可以说明差异原因，但最终结论必须来自球队状态、阵容、战术、赛程和历史交锋等足球数据分析。",
+  "输出必须包含结构化字段和中文摘要。"
+].join("\n");
 
 export const builtInPromptTemplates: BuiltInPromptTemplate[] = [
   {
@@ -45,16 +51,16 @@ export const builtInPromptTemplates: BuiltInPromptTemplate[] = [
   },
   {
     id: "builtin-prompt-odds-driven",
-    name: "赔率驱动预测",
-    description: "优先解释赔率信号，再给出胜平负和比分判断。",
+    name: "市场背景说明",
+    description: "仅用于解释市场信息，不参与默认预测权重。",
     fullPrompt: [
       contextRules,
-      "你是赔率解读型足球预测分析师。请基于 prediction_context 中的赔率、官方预测和比赛基础信息，分析 {{homeTeam}} 对阵 {{awayTeam}}。",
-      "输出：1. odds_signal；2. market_implied_1x2；3. model_1x2；4. conflict_with_odds；5. predicted_scoreline；6. betting_risk_note。"
+      "你是赛前市场背景分析师。请基于 prediction_context 中已经提供的市场信息和比赛基础信息，说明 {{homeTeam}} 对阵 {{awayTeam}} 的市场关注点。",
+      "输出：1. market_context_note；2. market_attention_note；3. football_data_gap；4. conflict_with_football_analysis；5. non_weighting_notice。"
     ].join("\n\n"),
-    promptSummary: "结合赔率信号解释胜平负和比分",
+    promptSummary: "说明市场背景，不参与默认预测权重",
     scope: "match_prediction",
-    enabled: true,
+    enabled: false,
     isDefault: false
   },
   {
@@ -63,7 +69,7 @@ export const builtInPromptTemplates: BuiltInPromptTemplate[] = [
     description: "聚焦球员、阵容、伤停对比赛结果和比分的影响。",
     fullPrompt: [
       contextRules,
-      "你是阵容影响分析师。请基于 prediction_context 中已经提供的球员、阵容、伤停、赔率和比赛信息，分析 {{homeTeam}} 对阵 {{awayTeam}}。",
+      "你是阵容影响分析师。请基于 prediction_context 中已经提供的球员、阵容、伤停和比赛信息，分析 {{homeTeam}} 对阵 {{awayTeam}}。",
       "输出：1. lineup_availability_status；2. key_player_impact；3. tactical_impact；4. 1x2_prediction；5. predicted_scoreline；6. missing_data_note。"
     ].join("\n\n"),
     promptSummary: "评估球员、阵容、伤停对预测的影响",
@@ -77,7 +83,7 @@ export const builtInPromptTemplates: BuiltInPromptTemplate[] = [
     description: "聚焦历史交锋、风格克制和心理优势。",
     fullPrompt: [
       contextRules,
-      "你是历史交锋分析师。请基于 prediction_context 中已经提供的历史交锋、赔率、官方预测和比赛信息，分析 {{homeTeam}} 对阵 {{awayTeam}}。",
+      "你是历史交锋分析师。请基于 prediction_context 中已经提供的历史交锋、官方预测和比赛信息，分析 {{homeTeam}} 对阵 {{awayTeam}}。",
       "输出：1. head_to_head_status；2. historical_pattern；3. style_matchup；4. 1x2_prediction；5. predicted_scoreline；6. confidence_adjustment。"
     ].join("\n\n"),
     promptSummary: "结合历史交锋和风格克制预测",
@@ -92,7 +98,7 @@ export const builtInPromptTemplates: BuiltInPromptTemplate[] = [
     fullPrompt: [
       contextRules,
       "你是世界杯爆冷风险分析师。请基于 prediction_context 评估 {{homeTeam}} 对阵 {{awayTeam}} 是否存在爆冷风险。",
-      "输出：1. favorite_side；2. upset_risk_level；3. underdog_paths；4. favorite_risk_points；5. odds_overheat_signal；6. predicted_scoreline。"
+      "输出：1. favorite_side；2. upset_risk_level；3. underdog_paths；4. favorite_risk_points；5. market_attention_note；6. predicted_scoreline。"
     ].join("\n\n"),
     promptSummary: "识别爆冷概率、路径和风险信号",
     scope: "match_prediction",
@@ -102,11 +108,11 @@ export const builtInPromptTemplates: BuiltInPromptTemplate[] = [
   {
     id: "builtin-prompt-comprehensive-report",
     name: "综合赛前报告",
-    description: "综合赔率、官方预测、历史交锋和阵容信息生成赛前报告。",
+    description: "综合球队状态、官方预测、历史交锋和阵容信息生成赛前报告。",
     fullPrompt: [
       contextRules,
       "你是世界杯综合赛前报告分析师。请基于 prediction_context 为 {{homeTeam}} 对阵 {{awayTeam}} 输出一份可读性强的赛前预测报告。",
-      "输出：1. executive_summary；2. data_completeness；3. 1x2_prediction；4. scoreline_prediction；5. odds_analysis；6. player_lineup_note；7. head_to_head_note；8. confidence；9. risks。"
+      "输出：1. executive_summary；2. data_completeness；3. 1x2_prediction；4. scoreline_prediction；5. market_context_note；6. player_lineup_note；7. head_to_head_note；8. confidence；9. risks。"
     ].join("\n\n"),
     promptSummary: "综合上下文生成赛前预测报告",
     scope: "match_prediction",
@@ -141,9 +147,40 @@ export function seedBuiltInPromptTemplates(db: Database, now = new Date()): void
       )
     `
   );
+  const update = db.prepare(
+    `
+      UPDATE prompt_templates
+      SET
+        name = ?,
+        description = ?,
+        full_prompt = ?,
+        prompt_summary = ?,
+        scope = ?,
+        enabled = ?,
+        is_default = CASE WHEN ? = 0 THEN 0 ELSE is_default END,
+        updated_at = ?
+      WHERE id = ?
+    `
+  );
 
   const transaction = db.transaction(() => {
     for (const template of builtInPromptTemplates) {
+      const existing = db.prepare("SELECT id FROM prompt_templates WHERE id = ?").get(template.id);
+      if (existing) {
+        update.run(
+          template.name,
+          template.description,
+          template.fullPrompt,
+          template.promptSummary,
+          template.scope,
+          template.enabled ? 1 : 0,
+          template.enabled ? 1 : 0,
+          createdAt,
+          template.id
+        );
+        continue;
+      }
+
       insert.run(
         template.id,
         template.name,

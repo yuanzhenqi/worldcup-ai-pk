@@ -20,7 +20,8 @@ const domainLabels: Record<FixtureContextDomain, string> = {
   odds: "赔率",
   api_prediction: "官方预测",
   head_to_head: "历史交锋",
-  squad: "球员/阵容/伤停"
+  squad: "球员/阵容/伤停",
+  dongqiudi_intel: "懂球帝情报"
 };
 
 const completenessLabels: Record<FixtureContextSummaryDto["completeness"], string> = {

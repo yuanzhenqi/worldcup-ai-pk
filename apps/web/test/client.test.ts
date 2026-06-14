@@ -10,6 +10,7 @@ import {
   getMatchContext,
   getMatchPredictionHistory,
   getPublicHealth,
+  getPublicLeaderboard,
   listAdminAiModels,
   listAdminAiProviders,
   listAdminContextCacheLogs,
@@ -174,7 +175,8 @@ describe("web API client", () => {
         useOdds: true,
         useApiFootballPrediction: true,
         useHeadToHead: true,
-        usePlayerLineupInjuries: true
+        usePlayerLineupInjuries: true,
+        useDongqiudiIntel: true
       },
       promptTemplateId: "prompt-1",
       customPrompt: "偏重上半场节奏。",
@@ -254,6 +256,48 @@ describe("web API client", () => {
     });
   });
 
+  it("loads the public leaderboard", async () => {
+    const leaderboard = {
+      settledRows: [
+        {
+          modelId: "model-1",
+          modelDisplayName: "GPT-4o mini",
+          totalScore: 10,
+          finishedMatchesCounted: 1,
+          resultHits: 1,
+          resultAccuracy: 1,
+          exactScoreHits: 1,
+          recentScores: [10]
+        }
+      ],
+      activeRows: [
+        {
+          modelId: "model-1",
+          modelDisplayName: "GPT-4o mini",
+          predictionsCount: 3,
+          parsedPredictionsCount: 3,
+          matchesCovered: 2,
+          homeWinVotes: 2,
+          drawVotes: 1,
+          awayWinVotes: 0,
+          averageConfidence: 0.72,
+          latestPredictionAt: "2026-06-13T08:00:00.000Z"
+        }
+      ]
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(leaderboard), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(getPublicLeaderboard()).resolves.toEqual(leaderboard);
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/leaderboard", {
+      cache: "no-store"
+    });
+  });
+
   it("loads public match context", async () => {
     const context = {
       matchId: "match-1",
@@ -283,7 +327,8 @@ describe("web API client", () => {
       useOdds: true,
       useApiFootballPrediction: true,
       useHeadToHead: true,
-      usePlayerLineupInjuries: true
+      usePlayerLineupInjuries: true,
+      useDongqiudiIntel: true
     };
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(context), {

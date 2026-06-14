@@ -5,7 +5,7 @@ import { createTestDatabase } from "./support/testDatabase";
 const builtInPromptTemplateNames = [
   "稳健胜平负预测",
   "比分预测",
-  "赔率驱动预测",
+  "市场背景说明",
   "球员阵容影响",
   "历史交锋模型",
   "爆冷风险评估",
@@ -460,6 +460,7 @@ describe("admin config API", () => {
 
     const list = await app.inject({ method: "GET", url: "/api/admin/prompt-templates", remoteAddress: "127.0.0.1" });
     const templates = list.json().promptTemplates as Array<{
+      id: string;
       name: string;
       scope: string;
       enabled: boolean;
@@ -470,11 +471,66 @@ describe("admin config API", () => {
     expect(list.statusCode).toBe(200);
     expect(templates.map((template) => template.name).sort()).toEqual([...builtInPromptTemplateNames].sort());
     expect(templates.every((template) => template.scope === "match_prediction")).toBe(true);
-    expect(templates.every((template) => template.enabled)).toBe(true);
+    expect(templates.find((template) => template.id === "builtin-prompt-odds-driven")).toMatchObject({
+      name: "市场背景说明",
+      enabled: false
+    });
+    expect(templates.filter((template) => template.id !== "builtin-prompt-odds-driven").every((template) => template.enabled)).toBe(true);
     expect(templates.filter((template) => template.isDefault).map((template) => template.name)).toEqual(["稳健胜平负预测"]);
     expect(templates.every((template) => template.fullPrompt.includes("{{homeTeam}}") && template.fullPrompt.includes("{{awayTeam}}"))).toBe(true);
     expect(templates.every((template) => template.fullPrompt.includes("prediction_context"))).toBe(true);
     expect(templates.every((template) => template.fullPrompt.includes("不得编造"))).toBe(true);
+    expect(templates.map((template) => template.fullPrompt).join("\n")).not.toContain("赔率驱动");
+    expect(templates.map((template) => template.fullPrompt).join("\n")).not.toContain("odds_analysis");
+    expect(templates.map((template) => template.fullPrompt).join("\n")).not.toContain("odds_overheat_signal");
+    expect(templates.map((template) => template.fullPrompt).join("\n")).not.toContain("优先解释赔率");
+
+    await app.close();
+  });
+
+  it("updates existing built-in prompt templates when the app starts", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO prompt_templates (
+          id,
+          name,
+          description,
+          full_prompt,
+          prompt_summary,
+          scope,
+          enabled,
+          is_default,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "builtin-prompt-odds-driven",
+      "赔率驱动预测",
+      "旧描述",
+      "旧提示词：优先解释赔率。",
+      "旧摘要",
+      "match_prediction",
+      1,
+      0,
+      "2026-06-13T00:00:00.000Z",
+      "2026-06-13T00:00:00.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const list = await app.inject({ method: "GET", url: "/api/admin/prompt-templates", remoteAddress: "127.0.0.1" });
+    const template = (list.json().promptTemplates as Array<{ id: string; name: string; enabled: boolean; fullPrompt: string }>).find(
+      (item) => item.id === "builtin-prompt-odds-driven"
+    );
+
+    expect(template).toMatchObject({
+      id: "builtin-prompt-odds-driven",
+      name: "市场背景说明",
+      enabled: false
+    });
+    expect(template?.fullPrompt).not.toContain("优先解释赔率");
 
     await app.close();
   });

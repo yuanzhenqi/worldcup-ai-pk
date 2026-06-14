@@ -18,22 +18,22 @@ interface PredictionRequestDrawerProps {
   onSubmit: (input: PredictionRequestInputDto) => void;
 }
 
-const defaultTaskTypes: PredictionTaskType[] = ["result_1x2", "scoreline", "odds_interpretation"];
+const defaultTaskTypes: PredictionTaskType[] = ["result_1x2", "scoreline"];
 
 const taskOptions: Array<{ value: PredictionTaskType; label: string }> = [
   { value: "result_1x2", label: "胜平负" },
   { value: "scoreline", label: "比分预测" },
-  { value: "odds_interpretation", label: "赔率解读" },
   { value: "player_lineup_impact", label: "球员/阵容影响" },
   { value: "head_to_head", label: "历史交锋" },
   { value: "upset_risk", label: "爆冷风险" }
 ];
 
 const defaultDataOptions: PredictionDataOptionsDto = {
-  useOdds: true,
+  useOdds: false,
   useApiFootballPrediction: false,
   useHeadToHead: true,
-  usePlayerLineupInjuries: true
+  usePlayerLineupInjuries: true,
+  useDongqiudiIntel: true
 };
 
 export function PredictionRequestDrawer({
@@ -120,10 +120,6 @@ export function PredictionRequestDrawer({
             </label>
             <div className="drawer-option-grid">
               <label>
-                <input type="checkbox" checked={dataOptions.useOdds} onChange={(event) => setDataOption("useOdds", event.target.checked)} />
-                <span>使用赔率</span>
-              </label>
-              <label>
                 <input type="checkbox" checked={dataOptions.useHeadToHead} onChange={(event) => setDataOption("useHeadToHead", event.target.checked)} />
                 <span>使用历史交锋</span>
               </label>
@@ -134,6 +130,14 @@ export function PredictionRequestDrawer({
                   onChange={(event) => setDataOption("usePlayerLineupInjuries", event.target.checked)}
                 />
                 <span>使用球员/阵容/伤停</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={dataOptions.useDongqiudiIntel}
+                  onChange={(event) => setDataOption("useDongqiudiIntel", event.target.checked)}
+                />
+                <span>使用懂球帝情报</span>
               </label>
             </div>
           </section>

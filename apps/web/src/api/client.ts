@@ -3,6 +3,7 @@ import type {
   AiModelConfigDto,
   AiProviderConfigDto,
   FixtureContextSummaryDto,
+  LeaderboardDto,
   MatchDto,
   PredictionDataOptionsDto,
   PredictionRequestInputDto,
@@ -120,6 +121,16 @@ export async function getPublicMatches(): Promise<MatchDto[]> {
   }
   const body = (await response.json()) as { matches: MatchDto[] };
   return body.matches;
+}
+
+export async function getPublicLeaderboard(): Promise<LeaderboardDto> {
+  const response = await request(`${apiBaseUrl}/api/public/leaderboard`, {
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new Error(`Public leaderboard request failed with status ${response.status}`);
+  }
+  return (await response.json()) as LeaderboardDto;
 }
 
 export async function getMatchContext(matchId: string): Promise<FixtureContextSummaryDto> {
