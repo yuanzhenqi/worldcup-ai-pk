@@ -297,8 +297,8 @@ a {
   border-radius: 8px;
   display: grid;
   gap: 14px;
-  grid-template-columns: 112px minmax(0, 1.4fr) minmax(120px, 0.7fr) auto;
-  padding: 14px;
+  grid-template-columns: minmax(86px, 0.42fr) minmax(260px, 1.3fr) minmax(150px, 0.65fr) 76px;
+  padding: 12px 14px;
 }
 
 .match-card.status-scheduled {
@@ -314,7 +314,7 @@ a {
 }
 
 .match-time-block,
-.match-meta,
+.match-status-block,
 .match-action {
   display: grid;
   gap: 6px;
@@ -326,7 +326,7 @@ a {
 }
 
 .match-time-block span,
-.match-meta span,
+.match-status-block span,
 .team-line small {
   color: #64737a;
   font-size: 12px;
@@ -342,7 +342,7 @@ a {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: 24px minmax(80px, auto) minmax(0, 1fr);
+  grid-template-columns: 24px minmax(80px, max-content) minmax(0, 1fr);
   min-width: 0;
 }
 
@@ -370,8 +370,13 @@ a {
   white-space: nowrap;
 }
 
+.match-status-block {
+  align-content: center;
+}
+
 .match-action {
-  justify-items: end;
+  align-content: center;
+  justify-items: stretch;
 }
 
 .match-action button {
@@ -383,8 +388,10 @@ a {
   font: inherit;
   font-size: 14px;
   font-weight: 700;
-  padding: 9px 12px;
+  min-height: 38px;
+  padding: 8px 10px;
   white-space: nowrap;
+  width: 100%;
 }
 
 .match-action button.secondary-action {
@@ -417,10 +424,13 @@ a {
 }
 
 .prediction-feedback-block {
+  border-top: 1px solid #e4e9ec;
   display: grid;
   gap: 8px;
-  justify-items: end;
-  max-width: 260px;
+  grid-column: 1 / -1;
+  justify-items: start;
+  max-width: none;
+  padding-top: 10px;
 }
 
 .prediction-feedback.info {
@@ -489,7 +499,7 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .prediction-consensus-summary span {
@@ -1401,10 +1411,23 @@ td {
   }
 
   .match-card {
-    gap: 12px;
-    padding: 16px;
     align-items: start;
+    gap: 12px;
     grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .match-time-block {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .match-status-block {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
   }
 
   .team-line {
@@ -1416,20 +1439,16 @@ td {
   }
 
   .match-action {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    justify-items: start;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
   }
 
   .match-action button {
-    flex: 1 1 120px;
     min-height: 42px;
   }
 
   .prediction-feedback-block {
-    justify-items: start;
-    max-width: 100%;
     width: 100%;
   }
 

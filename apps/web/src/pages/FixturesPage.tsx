@@ -232,7 +232,7 @@ function MatchCard({
   const consensus = feedback ? buildPredictionConsensus(feedback.predictions, failedPredictionCount) : null;
 
   return (
-    <article className={`match-card status-${match.status}`}>
+    <article className={`match-card match-card-shell status-${match.status}`}>
       <div className="match-time-block">
         <time>{timeFormatter.format(new Date(match.kickoffAt))}</time>
         <span>{match.venue ?? "场馆待同步"}</span>
@@ -249,12 +249,12 @@ function MatchCard({
           <small>{match.awayTeam.name}</small>
         </div>
       </div>
-      <div className="match-meta">
+      <div className="match-status-block">
         <span>{getStageLabelZh(match.stage)}</span>
         <span>{match.statusLabelZh}</span>
-      </div>
-      <div className="match-action">
         {match.status === "finished" || match.status === "live" ? <strong className="score-pill">{getScoreText(match)}</strong> : null}
+      </div>
+      <div className="match-action match-action-stack">
         {match.status === "scheduled" ? (
           <button disabled={!match.canRequestPrediction || isRequesting} type="button" onClick={() => onOpenPrediction(match)}>
             {isRequesting ? "请求中" : "预测"}
@@ -268,51 +268,51 @@ function MatchCard({
             历史
           </button>
         ) : null}
-        {feedback ? (
-          <div className="prediction-feedback-block">
-            <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span>
-            {feedback.predictions.length > 0 ? (
-              <>
-                <div className="prediction-consensus-summary">
-                  <span>{`综合观点：${consensus?.topResultText ?? "未形成共识"}`}</span>
-                  <span>{`参考比分：${consensus?.topScore ?? "未形成共识"}`}</span>
-                  <span>{consensus?.resultDistributionText}</span>
-                  <span>{`成功 ${consensus?.successCount ?? 0} / 失败 ${consensus?.failedCount ?? 0}`}</span>
-                </div>
-                <div className="table-scroll prediction-summary-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>AI 模型</th>
-                        <th>胜平负</th>
-                        <th>比分</th>
-                        <th>信心</th>
-                        <th>胜负手</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {feedback.predictions.map((prediction) => (
-                        <tr key={prediction.id}>
-                          <td>{prediction.modelDisplayName}</td>
-                          <td>{getPredictionResultText(prediction)}</td>
-                          <td>{formatPredictionScore(prediction)}</td>
-                          <td>{`${Math.round(prediction.confidence * 100)}%`}</td>
-                          <td>{prediction.shortReason || prediction.analysisReport.slice(0, 80) || "未给出"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <button type="button" className="secondary-action" onClick={() => onOpenReport(feedback)}>
-                  查看报告
-                </button>
-              </>
-            ) : (
-              <p className="muted">AI 正在生成预测，完成后这里会汇总各模型观点。</p>
-            )}
-          </div>
-        ) : null}
       </div>
+      {feedback ? (
+        <div className="prediction-feedback-block">
+          <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span>
+          {feedback.predictions.length > 0 ? (
+            <>
+              <div className="prediction-consensus-summary">
+                <span>{`综合观点：${consensus?.topResultText ?? "未形成共识"}`}</span>
+                <span>{`参考比分：${consensus?.topScore ?? "未形成共识"}`}</span>
+                <span>{consensus?.resultDistributionText}</span>
+                <span>{`成功 ${consensus?.successCount ?? 0} / 失败 ${consensus?.failedCount ?? 0}`}</span>
+              </div>
+              <div className="table-scroll prediction-summary-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>AI 模型</th>
+                      <th>胜平负</th>
+                      <th>比分</th>
+                      <th>信心</th>
+                      <th>胜负手</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {feedback.predictions.map((prediction) => (
+                      <tr key={prediction.id}>
+                        <td>{prediction.modelDisplayName}</td>
+                        <td>{getPredictionResultText(prediction)}</td>
+                        <td>{formatPredictionScore(prediction)}</td>
+                        <td>{`${Math.round(prediction.confidence * 100)}%`}</td>
+                        <td>{prediction.shortReason || prediction.analysisReport.slice(0, 80) || "未给出"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button type="button" className="secondary-action" onClick={() => onOpenReport(feedback)}>
+                查看报告
+              </button>
+            </>
+          ) : (
+            <p className="muted">AI 正在生成预测，完成后这里会汇总各模型观点。</p>
+          )}
+        </div>
+      ) : null}
     </article>
   );
 }
