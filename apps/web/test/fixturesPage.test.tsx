@@ -323,6 +323,7 @@ describe("FixturesPage", () => {
 
     expect(onLoadPredictionHistory).toHaveBeenCalledWith("scheduled-1");
     expect(await screen.findByText("历史预测记录")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "历史预测记录" })).toHaveClass("bottom-drawer-wide");
     expect(screen.getByText("已完成 2 个模型预测")).toBeInTheDocument();
     expect(screen.getByText("综合观点：主胜")).toBeInTheDocument();
     expect(screen.getByText("参考比分：2-1")).toBeInTheDocument();

@@ -633,7 +633,7 @@ export function FixturesPage({
         loading={activeContextMatch ? contextLoadingMatchIds.has(activeContextMatch.id) : false}
         onClose={() => setActiveContextMatch(null)}
       />
-      <BottomDrawer open={Boolean(activePredictionHistory)} title="历史预测记录" onClose={() => setActivePredictionHistory(null)}>
+      <BottomDrawer open={Boolean(activePredictionHistory)} title="历史预测记录" size="wide" onClose={() => setActivePredictionHistory(null)}>
         {activePredictionHistory ? (
           <div className="prediction-history-list">
             <p>

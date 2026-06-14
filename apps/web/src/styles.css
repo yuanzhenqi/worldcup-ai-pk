@@ -561,6 +561,36 @@ a {
   vertical-align: top;
 }
 
+.history-prediction-table table {
+  min-width: 860px;
+  table-layout: fixed;
+}
+
+.history-prediction-table th:nth-child(1),
+.history-prediction-table td:nth-child(1) {
+  width: 170px;
+}
+
+.history-prediction-table th:nth-child(2),
+.history-prediction-table td:nth-child(2),
+.history-prediction-table th:nth-child(3),
+.history-prediction-table td:nth-child(3),
+.history-prediction-table th:nth-child(4),
+.history-prediction-table td:nth-child(4),
+.history-prediction-table th:nth-child(6),
+.history-prediction-table td:nth-child(6) {
+  width: 76px;
+}
+
+.history-prediction-table th:nth-child(5),
+.history-prediction-table td:nth-child(5) {
+  width: auto;
+}
+
+.history-prediction-table td {
+  line-height: 1.45;
+}
+
 .table-action {
   background: #173f35;
   border: 0;
@@ -1292,5 +1322,10 @@ td {
     left: auto;
     max-width: 520px;
     right: 24px;
+  }
+
+  .bottom-drawer-wide {
+    max-width: min(960px, calc(100vw - 48px));
+    width: min(960px, calc(100vw - 48px));
   }
 }
