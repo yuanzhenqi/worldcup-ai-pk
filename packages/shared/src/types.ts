@@ -97,7 +97,14 @@ export type PredictionTaskType =
   | "odds_interpretation"
   | "player_lineup_impact"
   | "head_to_head"
-  | "upset_risk";
+  | "upset_risk"
+  | "match_analysis"
+  | "handicap"
+  | "total_goals"
+  | "scoreline_combo"
+  | "half_full"
+  | "single_bet_combo"
+  | "parlay_combo";
 
 export type PredictionOutputStyle = "concise" | "detailed";
 
@@ -129,6 +136,82 @@ export interface FixtureContextSummaryDto {
   createdAt: string | null;
 }
 
+export type SportteryOddsPoolStatus = "available" | "unavailable";
+
+export interface SportteryOddsOptionDto {
+  code: string;
+  label: string;
+  value: string;
+}
+
+export interface SportteryOddsPoolDto {
+  poolCode: string;
+  status: SportteryOddsPoolStatus;
+  goalLine: string | null;
+  updateDate: string | null;
+  updateTime: string | null;
+  options: SportteryOddsOptionDto[];
+  raw: unknown;
+}
+
+export type AgentRole = "match_analysis" | "single_combo" | "parlay_combo";
+
+export interface MatchAnalysisAgentOutputDto {
+  predictedResult: PredictionResult;
+  predictedHomeScore: number;
+  predictedAwayScore: number;
+  confidence: number;
+  shortReason: string;
+  keyFactors: string[];
+  riskPoints: string[];
+  analysisReport: string;
+  dataGaps: string[];
+}
+
+export type BettingRiskLevel = "low" | "medium" | "high";
+
+export interface BettingPlanLegDto {
+  poolCode: string;
+  selectionCode: string;
+  selectionLabel: string;
+  reason: string;
+}
+
+export interface BettingPlanDto {
+  planName: string;
+  riskLevel: BettingRiskLevel;
+  legs: BettingPlanLegDto[];
+  stakeUnits: number;
+  expectedScenario: string;
+  avoidReason: string | null;
+}
+
+export interface SingleCombinationAgentOutputDto {
+  summary: string;
+  primaryPlan: BettingPlanDto;
+  backupPlans: BettingPlanDto[];
+  passRecommendation: string;
+  riskWarnings: string[];
+  dataGaps: string[];
+}
+
+export interface ParlayCombinationInputDto {
+  matchIds: string[];
+  riskLevel: BettingRiskLevel;
+  stakeUnits: number;
+}
+
+export interface ParlayCombinationRunDto {
+  id: string;
+  matchIds: string[];
+  riskLevel: BettingRiskLevel;
+  stakeUnits: number;
+  summary: string;
+  plans: BettingPlanDto[];
+  riskWarnings: string[];
+  createdAt: string;
+}
+
 export interface PredictionRequestInputDto {
   taskTypes: PredictionTaskType[];
   dataOptions: PredictionDataOptionsDto;
@@ -157,6 +240,9 @@ export interface PredictionRunPredictionDto {
   oddsInterpretation: string;
   riskPoints: string[];
   analysisReport: string;
+  matchAnalysis?: MatchAnalysisAgentOutputDto | null;
+  singleCombination?: SingleCombinationAgentOutputDto | null;
+  sportteryOddsPools?: SportteryOddsPoolDto[];
 }
 
 export interface PredictionRunStatusDto {
