@@ -42,7 +42,7 @@ describe("PredictionRequestDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "开始预测" }));
 
     expect(onSubmit).toHaveBeenCalledWith({
-      taskTypes: ["result_1x2", "scoreline"],
+      taskTypes: ["match_analysis", "scoreline", "single_bet_combo"],
       dataOptions: {
         useOdds: false,
         useApiFootballPrediction: false,
@@ -57,6 +57,12 @@ describe("PredictionRequestDrawer", () => {
       refreshContext: true
     });
     expect(screen.getByLabelText("使用体彩赛前情报")).toBeChecked();
+    expect(screen.getByLabelText("赛果 Agent")).toBeChecked();
+    expect(screen.getByLabelText("比分预测")).toBeChecked();
+    expect(screen.getByLabelText("单场组合")).toBeChecked();
+    expect(screen.getByLabelText("让球")).not.toBeChecked();
+    expect(screen.getByLabelText("总进球")).not.toBeChecked();
+    expect(screen.getByLabelText("半全场")).not.toBeChecked();
     expect(screen.queryByText("赔率解读")).not.toBeInTheDocument();
     expect(screen.queryByText("使用赔率")).not.toBeInTheDocument();
     expect(screen.queryByText("使用官方预测")).not.toBeInTheDocument();

@@ -18,14 +18,17 @@ interface PredictionRequestDrawerProps {
   onSubmit: (input: PredictionRequestInputDto) => void;
 }
 
-const defaultTaskTypes: PredictionTaskType[] = ["result_1x2", "scoreline"];
+const defaultTaskTypes: PredictionTaskType[] = ["match_analysis", "scoreline", "single_bet_combo"];
 
 const taskOptions: Array<{ value: PredictionTaskType; label: string }> = [
-  { value: "result_1x2", label: "胜平负" },
+  { value: "match_analysis", label: "赛果 Agent" },
   { value: "scoreline", label: "比分预测" },
-  { value: "player_lineup_impact", label: "球员/阵容影响" },
-  { value: "head_to_head", label: "历史交锋" },
-  { value: "upset_risk", label: "爆冷风险" }
+  { value: "handicap", label: "让球" },
+  { value: "total_goals", label: "总进球" },
+  { value: "scoreline_combo", label: "比分组合" },
+  { value: "half_full", label: "半全场" },
+  { value: "single_bet_combo", label: "单场组合" },
+  { value: "parlay_combo", label: "串关组合" }
 ];
 
 const defaultDataOptions: PredictionDataOptionsDto = {
