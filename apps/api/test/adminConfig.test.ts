@@ -814,6 +814,69 @@ describe("admin config API", () => {
     await app.close();
   });
 
+  it("clears default from enabled legacy weighted prompts and restores the built-in steady default", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO prompt_templates (
+          id,
+          name,
+          description,
+          full_prompt,
+          prompt_summary,
+          scope,
+          enabled,
+          is_default,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "manual-default-weighted-betting",
+      "旧默认权重模板",
+      "旧默认提示词",
+      "按以下权重评估：赔率变化 10%。请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+      "旧默认权重模板",
+      "match_prediction",
+      1,
+      1,
+      "2026-06-13T00:00:00.000Z",
+      "2026-06-13T00:00:00.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/prompt-templates",
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const templates = response.json().promptTemplates as Array<{
+      id: string;
+      enabled: boolean;
+      isDefault: boolean;
+    }>;
+    const legacyTemplate = templates.find((template) => template.id === "manual-default-weighted-betting");
+    const defaultTemplates = templates.filter((template) => template.isDefault);
+
+    expect(legacyTemplate).toMatchObject({
+      id: "manual-default-weighted-betting",
+      enabled: false,
+      isDefault: false
+    });
+    expect(defaultTemplates).toEqual([
+      expect.objectContaining({
+        id: "builtin-prompt-steady-1x2",
+        enabled: true,
+        isDefault: true
+      })
+    ]);
+
+    await app.close();
+  });
+
   it("updates existing built-in prompt templates when the app starts", async () => {
     const { db, databasePath } = createTestDatabase();
     db.prepare(

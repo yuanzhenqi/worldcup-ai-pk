@@ -124,6 +124,7 @@ export const builtInPromptTemplates: BuiltInPromptTemplate[] = [
 ];
 
 export function seedBuiltInPromptTemplates(db: Database, now = new Date()): void {
+  const builtInDefaultPromptTemplateId = "builtin-prompt-steady-1x2";
   const hasDefaultPromptTemplate = Boolean(
     db.prepare("SELECT id FROM prompt_templates WHERE is_default = 1 LIMIT 1").get()
   );
@@ -205,9 +206,28 @@ export function seedBuiltInPromptTemplates(db: Database, now = new Date()): void
     `
       UPDATE prompt_templates
       SET enabled = 0,
+          is_default = 0,
           updated_at = ?
-      WHERE full_prompt LIKE '%赔率变化 10%'
-         OR full_prompt LIKE '%按以下权重评估%'
+      WHERE (enabled = 1 OR is_default = 1)
+        AND (
+          full_prompt LIKE '%赔率变化 10%'
+          OR full_prompt LIKE '%按以下权重评估%'
+        )
     `
   ).run(createdAt);
+
+  const hasEnabledDefaultPromptTemplate = Boolean(
+    db.prepare("SELECT id FROM prompt_templates WHERE enabled = 1 AND is_default = 1 LIMIT 1").get()
+  );
+
+  if (!hasEnabledDefaultPromptTemplate) {
+    db.prepare("UPDATE prompt_templates SET is_default = 0, updated_at = ? WHERE id != ? AND is_default = 1").run(
+      createdAt,
+      builtInDefaultPromptTemplateId
+    );
+    db.prepare("UPDATE prompt_templates SET is_default = 1, updated_at = ? WHERE id = ? AND enabled = 1 AND is_default = 0").run(
+      createdAt,
+      builtInDefaultPromptTemplateId
+    );
+  }
 }
