@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   BettingRiskLevel,
   FixtureContextSummaryDto,
@@ -444,6 +444,8 @@ export function FixturesPage({
   const [parlayGenerating, setParlayGenerating] = useState(false);
   const [parlayResult, setParlayResult] = useState<ParlayCombinationRunDto | null>(null);
   const [parlayError, setParlayError] = useState<string | null>(null);
+  const selectedParlayMatchIdsRef = useRef(selectedParlayMatchIds);
+  const parlayRequestVersionRef = useRef(0);
 
   const stages = useMemo(() => Array.from(new Set(matches.map((match) => match.stage))).sort(), [matches]);
   const filteredMatches = useMemo(
@@ -482,11 +484,16 @@ export function FixturesPage({
 
   useEffect(() => {
     const currentMatchIds = new Set(matches.map((match) => match.id));
+    const currentSelectedIds = selectedParlayMatchIdsRef.current;
+    const nextSelectedIds = new Set([...currentSelectedIds].filter((matchId) => currentMatchIds.has(matchId)));
 
-    setSelectedParlayMatchIds((currentIds) => {
-      const nextIds = new Set([...currentIds].filter((matchId) => currentMatchIds.has(matchId)));
-      return nextIds.size === currentIds.size ? currentIds : nextIds;
-    });
+    if (nextSelectedIds.size === currentSelectedIds.size) {
+      return;
+    }
+
+    invalidateParlayRequest();
+    selectedParlayMatchIdsRef.current = nextSelectedIds;
+    setSelectedParlayMatchIds(nextSelectedIds);
   }, [matches]);
 
   useEffect(() => {
@@ -642,6 +649,7 @@ export function FixturesPage({
   }
 
   function toggleParlayMatch(matchId: string) {
+    invalidateParlayRequest();
     setSelectedParlayMatchIds((currentIds) => {
       const nextIds = new Set(currentIds);
       if (nextIds.has(matchId)) {
@@ -649,8 +657,14 @@ export function FixturesPage({
       } else {
         nextIds.add(matchId);
       }
+      selectedParlayMatchIdsRef.current = nextIds;
       return nextIds;
     });
+  }
+
+  function invalidateParlayRequest() {
+    parlayRequestVersionRef.current += 1;
+    setParlayGenerating(false);
     setParlayResult(null);
     setParlayError(null);
   }
@@ -659,6 +673,8 @@ export function FixturesPage({
     if (!onCreateParlayCombination || !canCreateParlay) {
       return;
     }
+    const requestVersion = parlayRequestVersionRef.current + 1;
+    parlayRequestVersionRef.current = requestVersion;
     setParlayGenerating(true);
     setParlayError(null);
     try {
@@ -668,11 +684,19 @@ export function FixturesPage({
         riskLevel: parlayRiskLevel,
         stakeUnits
       });
+      if (parlayRequestVersionRef.current !== requestVersion) {
+        return;
+      }
       setParlayResult(result);
     } catch {
+      if (parlayRequestVersionRef.current !== requestVersion) {
+        return;
+      }
       setParlayError("串关组合生成失败，请检查所选比赛是否都有单场方案。");
     } finally {
-      setParlayGenerating(false);
+      if (parlayRequestVersionRef.current === requestVersion) {
+        setParlayGenerating(false);
+      }
     }
   }
 
@@ -759,8 +783,7 @@ export function FixturesPage({
                 value={parlayRiskLevel}
                 onChange={(event) => {
                   setParlayRiskLevel(event.target.value as BettingRiskLevel);
-                  setParlayResult(null);
-                  setParlayError(null);
+                  invalidateParlayRequest();
                 }}
               >
                 <option value="low">低风险</option>
@@ -777,8 +800,7 @@ export function FixturesPage({
                 value={parlayStakeUnits}
                 onChange={(event) => {
                   setParlayStakeUnits(normalizeParlayStakeUnits(Number(event.target.value)));
-                  setParlayResult(null);
-                  setParlayError(null);
+                  invalidateParlayRequest();
                 }}
               />
             </label>

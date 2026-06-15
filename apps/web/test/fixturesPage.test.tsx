@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
+  ParlayCombinationRunDto,
   MatchDto,
   PredictionRunHistoryDto,
   PredictionRunPredictionDto,
@@ -111,6 +112,19 @@ function buildPredictionHistory(input: {
         ]
       }
     ]
+  };
+}
+
+function buildParlayResult(summary: string): ParlayCombinationRunDto {
+  return {
+    id: "parlay-1",
+    matchIds: ["scheduled-1", "scheduled-2"],
+    riskLevel: "medium",
+    stakeUnits: 2,
+    summary,
+    plans: [],
+    riskWarnings: [],
+    createdAt: "2026-06-15T08:00:00.000Z"
   };
 }
 
@@ -897,6 +911,103 @@ describe("FixturesPage", () => {
 
     fireEvent.change(screen.getByLabelText("注数"), { target: { value: "3" } });
     expect(screen.queryByText("旧串关结果")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      name: "risk changes",
+      invalidate: async () => {
+        fireEvent.change(screen.getByLabelText("风险"), { target: { value: "high" } });
+      }
+    },
+    {
+      name: "stake changes",
+      invalidate: async () => {
+        fireEvent.change(screen.getByLabelText("注数"), { target: { value: "3" } });
+      }
+    },
+    {
+      name: "selection changes",
+      invalidate: async () => {
+        const matchOneCard = screen.getByText("美国").closest("article");
+        expect(matchOneCard).not.toBeNull();
+        await userEvent.click(within(matchOneCard as HTMLElement).getByRole("button", { name: "已加入" }));
+      }
+    }
+  ])("does not render stale parlay result when $name before generation resolves", async ({ invalidate }) => {
+    const matchOne = {
+      ...buildMatch({
+        id: "scheduled-1",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "美国",
+        homeName: "USA",
+        awayDisplayNameZh: "巴拉圭",
+        awayName: "Paraguay"
+      }),
+      hasAiPrediction: true
+    };
+    const matchTwo = {
+      ...buildMatch({
+        id: "scheduled-2",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "德国",
+        homeName: "Germany",
+        awayDisplayNameZh: "库拉索",
+        awayName: "Curaçao"
+      }),
+      hasAiPrediction: true
+    };
+    const onLoadPredictionHistory = vi
+      .fn()
+      .mockResolvedValueOnce(
+        buildPredictionHistory({
+          matchId: "scheduled-1",
+          runId: "run-1",
+          predictionId: "prediction-1",
+          modelDisplayName: "Doubao",
+          planName: "主胜小比分"
+        })
+      )
+      .mockResolvedValueOnce(
+        buildPredictionHistory({
+          matchId: "scheduled-2",
+          runId: "run-2",
+          predictionId: "prediction-2",
+          modelDisplayName: "Qwen",
+          planName: "让球平保护"
+        })
+      );
+    const parlayRequest = createDeferred<ParlayCombinationRunDto>();
+    const onCreateParlayCombination = vi.fn(() => parlayRequest.promise);
+
+    render(
+      <FixturesPage
+        matches={[matchOne, matchTwo]}
+        onLoadPredictionHistory={onLoadPredictionHistory}
+        onCreateParlayCombination={onCreateParlayCombination}
+      />
+    );
+
+    expect(await screen.findByText("主胜小比分")).toBeInTheDocument();
+    expect(await screen.findByText("让球平保护")).toBeInTheDocument();
+
+    const matchOneCard = screen.getByText("美国").closest("article");
+    const matchTwoCard = screen.getByText("德国").closest("article");
+    expect(matchOneCard).not.toBeNull();
+    expect(matchTwoCard).not.toBeNull();
+    await userEvent.click(within(matchOneCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    await userEvent.click(within(matchTwoCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    await userEvent.click(screen.getByRole("button", { name: "生成串关组合" }));
+
+    await invalidate();
+
+    await act(async () => {
+      parlayRequest.resolve(buildParlayResult("过期串关结果"));
+    });
+
+    expect(screen.queryByText("过期串关结果")).not.toBeInTheDocument();
   });
 
   it("prunes selected parlay match IDs when refreshed matches remove a match", async () => {
