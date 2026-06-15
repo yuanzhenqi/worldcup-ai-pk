@@ -1,16 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import type {
+  AgentRole,
   FixtureContextSummaryDto,
+  MatchAnalysisAgentOutputDto,
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
   PredictionResult,
   PredictionRunHistoryDto,
   PredictionRunLogDto,
   PredictionRunPredictionDto,
-  PredictionRunStatusDto
+  PredictionRunStatusDto,
+  SingleCombinationAgentOutputDto
 } from "@worldcup-ai-pk/shared";
 import { runOpenAiCompatiblePrediction } from "../ai/openAiCompatibleClient";
+import { buildMatchAnalysisPrompt, buildSingleCombinationPrompt } from "./predictionAgentPrompts";
+import { parseMatchAnalysisOutput, parseSingleCombinationOutput } from "./predictionAgentOutputs";
 
 interface PredictionMatchRow {
   id: string;
@@ -39,16 +44,8 @@ interface PromptTemplateRow {
   prompt_summary: string;
 }
 
-interface ParsedModelPrediction {
-  predictedResult: PredictionResult;
-  predictedHomeScore: number;
-  predictedAwayScore: number;
-  confidence: number;
-  shortReason: string;
-  analysisReport: string;
-  keyFactors: string[];
+interface ParsedModelPrediction extends MatchAnalysisAgentOutputDto {
   oddsInterpretation: string;
-  riskPoints: string[];
 }
 
 interface ExecutePredictionInput {
@@ -81,6 +78,7 @@ interface PredictionRunLogRow {
 
 interface PredictionRunPredictionRow {
   id: string;
+  model_id: string;
   model_display_name: string;
   predicted_result: PredictionResult;
   predicted_home_score: number;
@@ -91,6 +89,12 @@ interface PredictionRunPredictionRow {
   key_factors_json: string;
   odds_interpretation: string;
   risk_points_json: string;
+}
+
+interface PredictionAgentOutputRow {
+  model_id: string;
+  agent_role: AgentRole;
+  output_json: string;
 }
 
 function listEnabledModels(db: Database): EnabledModelRow[] {
@@ -180,117 +184,6 @@ function createLogWriter(db: Database, input: { runId: string; matchId: string; 
   };
 }
 
-function replacePromptVariables(template: string, match: PredictionMatchRow): string {
-  return template
-    .replaceAll("{{homeTeam}}", match.home_team_name)
-    .replaceAll("{{awayTeam}}", match.away_team_name)
-    .replaceAll("{{kickoffAt}}", match.kickoff_at)
-    .replaceAll("{{stage}}", match.stage)
-    .replaceAll("{{venue}}", match.venue ?? "场馆待同步");
-}
-
-function buildPredictionPrompt(input: {
-  match: PredictionMatchRow;
-  predictionInput: PredictionRequestInputDto;
-  context: FixtureContextSummaryDto | null;
-  promptTemplate: PromptTemplateRow;
-}): string {
-  const predictionContext = {
-    match: {
-      id: input.match.id,
-      apiFootballFixtureId: input.match.api_football_fixture_id,
-      stage: input.match.stage,
-      kickoffAt: input.match.kickoff_at,
-      venue: input.match.venue,
-      homeTeam: input.match.home_team_name,
-      awayTeam: input.match.away_team_name
-    },
-    taskTypes: input.predictionInput.taskTypes,
-    dataOptions: input.predictionInput.dataOptions,
-    outputStyle: input.predictionInput.outputStyle,
-    customPrompt: input.predictionInput.customPrompt,
-    context: input.context
-  };
-  const outputContract = {
-    predicted_result: "home | draw | away",
-    predicted_home_score: "integer",
-    predicted_away_score: "integer",
-    confidence: "number between 0 and 1",
-    short_reason: "Chinese text",
-    analysis_report: "Detailed Chinese analysis report",
-    key_factors: ["Chinese text"],
-    odds_interpretation: "Chinese text",
-    risk_points: ["Chinese text"]
-  };
-
-  return [
-    replacePromptVariables(input.promptTemplate.full_prompt, input.match),
-    "",
-    "prediction_context:",
-    JSON.stringify(predictionContext, null, 2),
-    "",
-    "Return JSON only. Required JSON shape:",
-    JSON.stringify(outputContract, null, 2)
-  ].join("\n");
-}
-
-function parseJsonObject(content: string): unknown {
-  const fencedMatch = /```json\s*([\s\S]*?)\s*```/.exec(content);
-  const jsonText = fencedMatch?.[1] ?? content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
-  return JSON.parse(jsonText);
-}
-
-function isPredictionResult(value: unknown): value is PredictionResult {
-  return value === "home" || value === "draw" || value === "away";
-}
-
-function getStringArray(value: unknown, fieldName: string): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-    throw new Error(`AI response field ${fieldName} must be a string array`);
-  }
-  return value;
-}
-
-function getInteger(value: unknown, fieldName: string): number {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new Error(`AI response field ${fieldName} must be an integer`);
-  }
-  return value;
-}
-
-function parseModelPrediction(content: string): ParsedModelPrediction {
-  const value = parseJsonObject(content);
-  if (!value || typeof value !== "object") {
-    throw new Error("AI response JSON must be an object");
-  }
-
-  const record = value as Record<string, unknown>;
-  if (!isPredictionResult(record.predicted_result)) {
-    throw new Error("AI response field predicted_result is invalid");
-  }
-  if (typeof record.confidence !== "number") {
-    throw new Error("AI response field confidence must be a number");
-  }
-  if (typeof record.short_reason !== "string") {
-    throw new Error("AI response field short_reason must be a string");
-  }
-  if (typeof record.odds_interpretation !== "string") {
-    throw new Error("AI response field odds_interpretation must be a string");
-  }
-
-  return {
-    predictedResult: record.predicted_result,
-    predictedHomeScore: getInteger(record.predicted_home_score, "predicted_home_score"),
-    predictedAwayScore: getInteger(record.predicted_away_score, "predicted_away_score"),
-    confidence: record.confidence,
-    shortReason: record.short_reason,
-    analysisReport: typeof record.analysis_report === "string" && record.analysis_report.trim() ? record.analysis_report : record.short_reason,
-    keyFactors: getStringArray(record.key_factors, "key_factors"),
-    oddsInterpretation: record.odds_interpretation,
-    riskPoints: getStringArray(record.risk_points, "risk_points")
-  };
-}
-
 function insertParsedPrediction(db: Database, input: {
   runId: string;
   matchId: string;
@@ -345,6 +238,78 @@ function insertParsedPrediction(db: Database, input: {
   );
 }
 
+function insertAgentOutput(db: Database, input: {
+  runId: string;
+  matchId: string;
+  modelId: string;
+  agentRole: AgentRole;
+  output: unknown;
+  rawResponse: string;
+  now: Date;
+}) {
+  db.prepare(
+    `
+      INSERT INTO prediction_agent_outputs (
+        id,
+        prediction_run_id,
+        match_id,
+        model_id,
+        agent_role,
+        output_json,
+        raw_response,
+        parse_status,
+        error,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    randomUUID(),
+    input.runId,
+    input.matchId,
+    input.modelId,
+    input.agentRole,
+    JSON.stringify(input.output),
+    input.rawResponse,
+    "parsed",
+    null,
+    input.now.toISOString()
+  );
+}
+
+function readAgentOutputs(db: Database, runId: string): Map<string, {
+  matchAnalysis: MatchAnalysisAgentOutputDto | null;
+  singleCombination: SingleCombinationAgentOutputDto | null;
+}> {
+  const rows = db
+    .prepare(
+      `
+        SELECT model_id, agent_role, output_json
+        FROM prediction_agent_outputs
+        WHERE prediction_run_id = ?
+          AND parse_status = 'parsed'
+        ORDER BY created_at ASC
+      `
+    )
+    .all(runId) as PredictionAgentOutputRow[];
+  const result = new Map<string, {
+    matchAnalysis: MatchAnalysisAgentOutputDto | null;
+    singleCombination: SingleCombinationAgentOutputDto | null;
+  }>();
+
+  for (const row of rows) {
+    const current = result.get(row.model_id) ?? { matchAnalysis: null, singleCombination: null };
+    if (row.agent_role === "match_analysis") {
+      current.matchAnalysis = JSON.parse(row.output_json) as MatchAnalysisAgentOutputDto;
+    }
+    if (row.agent_role === "single_combo") {
+      current.singleCombination = JSON.parse(row.output_json) as SingleCombinationAgentOutputDto;
+    }
+    result.set(row.model_id, current);
+  }
+
+  return result;
+}
+
 function parseStringArrayJson(value: string): string[] {
   const parsed = JSON.parse(value);
   return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? parsed : [];
@@ -385,6 +350,7 @@ export function getPredictionRunStatus(db: Database, runId: string): PredictionR
       `
         SELECT
           ai_predictions.id,
+          ai_predictions.model_id,
           ai_models.display_name AS model_display_name,
           ai_predictions.predicted_result,
           ai_predictions.predicted_home_score,
@@ -404,6 +370,7 @@ export function getPredictionRunStatus(db: Database, runId: string): PredictionR
     )
     .all(runId) as PredictionRunPredictionRow[];
   const predictionsCount = predictions.length;
+  const agentOutputsByModelId = readAgentOutputs(db, run.id);
   const message =
     run.status === "running"
       ? "模型预测进行中"
@@ -434,7 +401,10 @@ export function getPredictionRunStatus(db: Database, runId: string): PredictionR
       keyFactors: parseStringArrayJson(prediction.key_factors_json),
       oddsInterpretation: prediction.odds_interpretation,
       riskPoints: parseStringArrayJson(prediction.risk_points_json),
-      analysisReport: prediction.analysis_report
+      analysisReport: prediction.analysis_report,
+      matchAnalysis: agentOutputsByModelId.get(prediction.model_id)?.matchAnalysis ?? null,
+      singleCombination: agentOutputsByModelId.get(prediction.model_id)?.singleCombination ?? null,
+      sportteryOddsPools: []
     }))
   };
 }
@@ -521,9 +491,12 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
     };
   }
 
-  const prompt = buildPredictionPrompt({
+  const matchAnalysisPrompt = buildMatchAnalysisPrompt({
     match: input.match,
-    predictionInput: input.predictionInput,
+    taskTypes: input.predictionInput.taskTypes,
+    dataOptions: input.predictionInput.dataOptions,
+    outputStyle: input.predictionInput.outputStyle,
+    customPrompt: input.predictionInput.customPrompt,
     context: input.context,
     promptTemplate
   });
@@ -532,24 +505,76 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
     const logModel = { id: model.model_id, displayName: model.model_display_name };
     logWriter.write("info", `开始调用模型：${model.model_display_name}`, logModel);
     try {
-      const result = await runOpenAiCompatiblePrediction(
+      const matchAnalysisResult = await runOpenAiCompatiblePrediction(
         {
           baseUrl: model.base_url,
           apiKey: model.api_key,
           modelName: model.model_name
         },
-        prompt
+        matchAnalysisPrompt
       );
-      const parsedPrediction = parseModelPrediction(result.content);
+      const matchAnalysis = parseMatchAnalysisOutput(matchAnalysisResult.content);
+      insertAgentOutput(input.db, {
+        runId: input.runId,
+        matchId: input.match.id,
+        modelId: model.model_id,
+        agentRole: "match_analysis",
+        output: matchAnalysis,
+        rawResponse: matchAnalysisResult.rawResponse,
+        now: addMilliseconds(startedAt, logWriter.logs.length)
+      });
+      const parsedPrediction: ParsedModelPrediction = {
+        ...matchAnalysis,
+        oddsInterpretation: "体彩指数仅作为投注选项背景，未作为赛果权重。"
+      };
       insertParsedPrediction(input.db, {
         runId: input.runId,
         matchId: input.match.id,
         modelId: model.model_id,
         promptTemplate,
         prediction: parsedPrediction,
-        rawResponse: result.rawResponse,
+        rawResponse: matchAnalysisResult.rawResponse,
         now: addMilliseconds(startedAt, logWriter.logs.length)
       });
+      let singleCombination: SingleCombinationAgentOutputDto | null = null;
+      const shouldRunSingleCombination = input.predictionInput.taskTypes.includes("single_bet_combo");
+      let singleCombinationFailed = false;
+      if (shouldRunSingleCombination) {
+        logWriter.write("info", `开始生成投注组合：${model.model_display_name}`, logModel);
+        try {
+          const singleCombinationResult = await runOpenAiCompatiblePrediction(
+            {
+              baseUrl: model.base_url,
+              apiKey: model.api_key,
+              modelName: model.model_name
+            },
+            buildSingleCombinationPrompt({
+              match: input.match,
+              taskTypes: input.predictionInput.taskTypes,
+              dataOptions: input.predictionInput.dataOptions,
+              outputStyle: input.predictionInput.outputStyle,
+              customPrompt: input.predictionInput.customPrompt,
+              context: input.context,
+              matchAnalysis
+            })
+          );
+          singleCombination = parseSingleCombinationOutput(singleCombinationResult.content);
+          insertAgentOutput(input.db, {
+            runId: input.runId,
+            matchId: input.match.id,
+            modelId: model.model_id,
+            agentRole: "single_combo",
+            output: singleCombination,
+            rawResponse: singleCombinationResult.rawResponse,
+            now: addMilliseconds(startedAt, logWriter.logs.length)
+          });
+          logWriter.write("info", `投注组合生成完成：${model.model_display_name}`, logModel);
+        } catch (error) {
+          singleCombinationFailed = true;
+          const message = error instanceof Error ? error.message : "AI prediction failed";
+          logWriter.write("error", `投注组合生成失败：${model.model_display_name}：${message}`, logModel);
+        }
+      }
       predictionsCount += 1;
       predictions.push({
         id: `${input.runId}-${model.model_id}`,
@@ -562,9 +587,18 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
         keyFactors: parsedPrediction.keyFactors,
         oddsInterpretation: parsedPrediction.oddsInterpretation,
         riskPoints: parsedPrediction.riskPoints,
-        analysisReport: parsedPrediction.analysisReport
+        analysisReport: parsedPrediction.analysisReport,
+        matchAnalysis,
+        singleCombination,
+        sportteryOddsPools: []
       });
-      logWriter.write("info", `模型预测完成：${model.model_display_name}`, logModel);
+      logWriter.write(
+        "info",
+        shouldRunSingleCombination && singleCombinationFailed
+          ? `赛果预测完成，投注组合失败：${model.model_display_name}`
+          : `模型预测完成：${model.model_display_name}`,
+        logModel
+      );
     } catch (error) {
       failedModelCount += 1;
       const message = error instanceof Error ? error.message : "AI prediction failed";

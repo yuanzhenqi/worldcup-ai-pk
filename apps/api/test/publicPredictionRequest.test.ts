@@ -160,37 +160,74 @@ describe("public prediction request API", () => {
     insertAiConfig(db);
     db.close();
 
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  predicted_result: "home",
-                  predicted_home_score: 2,
-                  predicted_away_score: 1,
-                  confidence: 0.64,
-                  short_reason: "墨西哥主场和赔率更有利。",
-                  analysis_report: "墨西哥在主场和赔率层面更有优势，但需要防守加拿大反击。",
-                  key_factors: ["主场", "赔率"],
-                  odds_interpretation: "主胜赔率更低。",
-                  risk_points: ["加拿大反击"]
-                })
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    predicted_result: "home",
+                    predicted_home_score: 2,
+                    predicted_away_score: 1,
+                    confidence: 0.64,
+                    short_reason: "墨西哥主场推进更稳定。",
+                    analysis_report: "墨西哥控球和前场压迫更稳定，但需要防守加拿大反击。",
+                    key_factors: ["主场", "前场压迫"],
+                    risk_points: ["加拿大反击"],
+                    data_gaps: ["未获取首发名单"]
+                  })
+                }
               }
-            }
-          ]
-        }),
-        { status: 200, headers: { "content-type": "application/json" } }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
       )
-    );
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    summary: "主队小胜路径更清晰，单场组合以主胜保护为主。",
+                    primary_plan: {
+                      plan_name: "主胜小比分",
+                      risk_level: "medium",
+                      legs: [
+                        {
+                          pool_code: "HAD",
+                          selection_code: "h",
+                          selection_label: "主胜",
+                          reason: "Agent A 判断主队胜面更高。"
+                        }
+                      ],
+                      stake_units: 2,
+                      expected_scenario: "墨西哥 2-1。",
+                      avoid_reason: null
+                    },
+                    backup_plans: [],
+                    pass_recommendation: "可低注参与。",
+                    risk_warnings: ["临场阵容缺失会提高不确定性"],
+                    data_gaps: ["未获取首发名单"]
+                  })
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      );
 
     const app = buildApp({ databasePath, logger: false });
     const response = await app.inject({
       method: "POST",
       url: "/api/public/matches/match-1/prediction-request",
       payload: {
-        taskTypes: ["result_1x2", "scoreline", "odds_interpretation"],
+        taskTypes: ["match_analysis", "scoreline", "single_bet_combo"],
         dataOptions: {
           useOdds: true,
           useApiFootballPrediction: false,
@@ -229,10 +266,29 @@ describe("public prediction request API", () => {
       logs: [
         expect.objectContaining({ level: "info", message: "预测请求已创建" }),
         expect.objectContaining({ level: "info", message: "开始调用模型：GPT-4o mini", modelDisplayName: "GPT-4o mini" }),
+        expect.objectContaining({ level: "info", message: "开始生成投注组合：GPT-4o mini", modelDisplayName: "GPT-4o mini" }),
+        expect.objectContaining({ level: "info", message: "投注组合生成完成：GPT-4o mini", modelDisplayName: "GPT-4o mini" }),
         expect.objectContaining({ level: "info", message: "模型预测完成：GPT-4o mini", modelDisplayName: "GPT-4o mini" })
       ]
     });
     expect(completedRun.predictions).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(completedRun.predictions[0]).toMatchObject({
+      matchAnalysis: {
+        predictedResult: "home",
+        predictedHomeScore: 2,
+        predictedAwayScore: 1,
+        dataGaps: ["未获取首发名单"]
+      },
+      singleCombination: {
+        summary: "主队小胜路径更清晰，单场组合以主胜保护为主。",
+        primaryPlan: {
+          planName: "主胜小比分",
+          riskLevel: "medium",
+          stakeUnits: 2
+        }
+      }
+    });
     expect(fetchMock).toHaveBeenCalledWith("https://openrouter.ai/api/v1/chat/completions", expect.objectContaining({ method: "POST" }));
 
     await app.close();
@@ -254,8 +310,129 @@ describe("public prediction request API", () => {
     expect(verifyDb.prepare("SELECT level, message, model_id FROM prediction_run_logs WHERE match_id = ? ORDER BY created_at ASC").all("match-1")).toEqual([
       { level: "info", message: "预测请求已创建", model_id: null },
       { level: "info", message: "开始调用模型：GPT-4o mini", model_id: "model-1" },
+      { level: "info", message: "开始生成投注组合：GPT-4o mini", model_id: "model-1" },
+      { level: "info", message: "投注组合生成完成：GPT-4o mini", model_id: "model-1" },
       { level: "info", message: "模型预测完成：GPT-4o mini", model_id: "model-1" }
     ]);
+    expect(
+      verifyDb
+        .prepare("SELECT agent_role, parse_status FROM prediction_agent_outputs WHERE match_id = ? ORDER BY created_at ASC")
+        .all("match-1")
+    ).toEqual([
+      { agent_role: "match_analysis", parse_status: "parsed" },
+      { agent_role: "single_combo", parse_status: "parsed" }
+    ]);
+    verifyDb.close();
+  });
+
+  it("keeps match analysis prediction when single combination generation fails", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, {
+      id: "match-1",
+      kickoffAt: "2099-06-12T19:00:00.000Z",
+      status: "scheduled"
+    });
+    insertAiConfig(db);
+    db.close();
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    predicted_result: "home",
+                    predicted_home_score: 2,
+                    predicted_away_score: 1,
+                    confidence: 0.64,
+                    short_reason: "墨西哥主场推进更稳定。",
+                    analysis_report: "墨西哥控球和前场压迫更稳定。",
+                    key_factors: ["主场", "前场压迫"],
+                    risk_points: ["加拿大反击"],
+                    data_gaps: ["未获取首发名单"]
+                  })
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockRejectedValueOnce(new Error("Agent B timeout"));
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/public/matches/match-1/prediction-request",
+      payload: {
+        taskTypes: ["match_analysis", "scoreline", "single_bet_combo"],
+        dataOptions: {
+          useOdds: false,
+          useApiFootballPrediction: false,
+          useHeadToHead: false,
+          usePlayerLineupInjuries: false,
+          useDongqiudiIntel: false,
+          useSporttery: true
+        },
+        promptTemplateId: "prompt-1",
+        customPrompt: "",
+        outputStyle: "concise",
+        refreshContext: false
+      }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    const completedRun = await waitForRunStatus(app, body.runId, "completed");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(completedRun).toMatchObject({
+      matchId: "match-1",
+      status: "completed",
+      predictionsCount: 1,
+      logs: [
+        expect.objectContaining({ level: "info", message: "预测请求已创建" }),
+        expect.objectContaining({ level: "info", message: "开始调用模型：GPT-4o mini", modelDisplayName: "GPT-4o mini" }),
+        expect.objectContaining({ level: "info", message: "开始生成投注组合：GPT-4o mini", modelDisplayName: "GPT-4o mini" }),
+        expect.objectContaining({ level: "error", message: "投注组合生成失败：GPT-4o mini：Agent B timeout", modelDisplayName: "GPT-4o mini" }),
+        expect.objectContaining({ level: "info", message: "赛果预测完成，投注组合失败：GPT-4o mini", modelDisplayName: "GPT-4o mini" })
+      ]
+    });
+    expect(completedRun.predictions).toHaveLength(1);
+    expect(completedRun.predictions[0]).toMatchObject({
+      matchAnalysis: {
+        predictedResult: "home",
+        predictedHomeScore: 2,
+        predictedAwayScore: 1,
+        dataGaps: ["未获取首发名单"]
+      },
+      singleCombination: null
+    });
+
+    await app.close();
+
+    const verifyDb = createDatabase(databasePath);
+    expect(
+      verifyDb
+        .prepare("SELECT model_id, predicted_result, predicted_home_score, predicted_away_score, parse_status FROM ai_predictions WHERE match_id = ?")
+        .all("match-1")
+    ).toEqual([
+      {
+        model_id: "model-1",
+        predicted_result: "home",
+        predicted_home_score: 2,
+        predicted_away_score: 1,
+        parse_status: "parsed"
+      }
+    ]);
+    expect(
+      verifyDb
+        .prepare("SELECT model_id, agent_role, parse_status FROM prediction_agent_outputs WHERE match_id = ? ORDER BY created_at ASC")
+        .all("match-1")
+    ).toEqual([{ model_id: "model-1", agent_role: "match_analysis", parse_status: "parsed" }]);
     verifyDb.close();
   });
 

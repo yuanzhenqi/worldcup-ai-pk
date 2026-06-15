@@ -35,7 +35,25 @@ const contextRefreshSchema = z.object({
 });
 
 const predictionRequestSchema = z.object({
-  taskTypes: z.array(z.enum(["result_1x2", "scoreline", "odds_interpretation", "player_lineup_impact", "head_to_head", "upset_risk"])).min(1),
+  taskTypes: z
+    .array(
+      z.enum([
+        "result_1x2",
+        "scoreline",
+        "odds_interpretation",
+        "player_lineup_impact",
+        "head_to_head",
+        "upset_risk",
+        "match_analysis",
+        "handicap",
+        "total_goals",
+        "scoreline_combo",
+        "half_full",
+        "single_bet_combo",
+        "parlay_combo"
+      ])
+    )
+    .min(1),
   dataOptions: predictionDataOptionsSchema,
   promptTemplateId: z.string().min(1).nullable(),
   customPrompt: z.string(),
