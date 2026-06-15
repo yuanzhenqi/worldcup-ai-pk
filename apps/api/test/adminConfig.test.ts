@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app";
+import { createDatabase } from "../src/db/connection";
 import { createTestDatabase } from "./support/testDatabase";
 
 const builtInPromptTemplateNames = [
@@ -875,6 +876,121 @@ describe("admin config API", () => {
     ]);
 
     await app.close();
+  });
+
+  it("keeps enabled prompts that contain odds change text without the literal percent sign", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO prompt_templates (
+          id,
+          name,
+          description,
+          full_prompt,
+          prompt_summary,
+          scope,
+          enabled,
+          is_default,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "manual-nonliteral-odds-change",
+      "手动赔率变化模板",
+      "用户手动配置的提示词",
+      "赔率变化 10 后续文本。请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+      "手动赔率变化模板",
+      "match_prediction",
+      1,
+      1,
+      "2026-06-13T00:00:00.000Z",
+      "2026-06-13T00:00:00.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/prompt-templates",
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const templates = response.json().promptTemplates as Array<{
+      id: string;
+      enabled: boolean;
+      isDefault: boolean;
+      fullPrompt: string;
+    }>;
+    const template = templates.find((item) => item.id === "manual-nonliteral-odds-change");
+
+    expect(template).toEqual(expect.objectContaining({
+      id: "manual-nonliteral-odds-change",
+      enabled: true,
+      isDefault: true,
+      fullPrompt: "赔率变化 10 后续文本。请预测 {{homeTeam}} 对阵 {{awayTeam}}。"
+    }));
+    expect(templates.filter((item) => item.isDefault)).toEqual([
+      expect.objectContaining({
+        id: "manual-nonliteral-odds-change",
+        enabled: true,
+        isDefault: true
+      })
+    ]);
+
+    await app.close();
+  });
+
+  it("does not update timestamps for already disabled non-default legacy weighted prompts", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO prompt_templates (
+          id,
+          name,
+          description,
+          full_prompt,
+          prompt_summary,
+          scope,
+          enabled,
+          is_default,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "manual-disabled-weighted-betting",
+      "已关闭旧权重模板",
+      "用户已关闭的旧提示词",
+      "赔率变化 10%。请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+      "已关闭旧权重模板",
+      "match_prediction",
+      0,
+      0,
+      "2026-06-13T00:00:00.000Z",
+      "2026-06-13T00:00:00.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    await app.close();
+
+    const verifyDb = createDatabase(databasePath);
+    const row = verifyDb.prepare(
+      `
+        SELECT enabled, is_default, updated_at
+        FROM prompt_templates
+        WHERE id = ?
+      `
+    ).get("manual-disabled-weighted-betting") as { enabled: number; is_default: number; updated_at: string } | undefined;
+    verifyDb.close();
+
+    expect(row).toEqual({
+      enabled: 0,
+      is_default: 0,
+      updated_at: "2026-06-13T00:00:00.000Z"
+    });
   });
 
   it("updates existing built-in prompt templates when the app starts", async () => {

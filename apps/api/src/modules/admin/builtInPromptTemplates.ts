@@ -210,8 +210,8 @@ export function seedBuiltInPromptTemplates(db: Database, now = new Date()): void
           updated_at = ?
       WHERE (enabled = 1 OR is_default = 1)
         AND (
-          full_prompt LIKE '%赔率变化 10%'
-          OR full_prompt LIKE '%按以下权重评估%'
+          instr(full_prompt, '赔率变化 10%') > 0
+          OR instr(full_prompt, '按以下权重评估') > 0
         )
     `
   ).run(createdAt);
