@@ -476,6 +476,118 @@ describe("admin config API", () => {
     await app.close();
   });
 
+  it("reports event-stream model test responses as unsupported response format", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const providerResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-providers",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        name: "newapi",
+        displayName: "NewAPI",
+        baseUrl: "https://newapi.example.com/v1",
+        apiKey: "secret-provider-key",
+        enabled: true
+      }
+    });
+    const provider = providerResponse.json() as { id: string };
+
+    const modelResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-models",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        providerId: provider.id,
+        modelName: "gpt-5.5",
+        displayName: "GPT 5.5",
+        enabled: true
+      }
+    });
+    const model = modelResponse.json() as { id: string };
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("data: {\"choices\":[]}\n\ndata: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      })
+    );
+
+    const testResponse = await app.inject({
+      method: "POST",
+      url: `/api/admin/ai-models/${model.id}/test`,
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(testResponse.statusCode).toBe(200);
+    expect(testResponse.json()).toMatchObject({
+      ok: false,
+      status: 200,
+      message: "模型测试失败：接口返回 event-stream，当前需要普通 JSON 响应"
+    });
+
+    await app.close();
+  });
+
+  it("reports empty assistant content during model tests", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const providerResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-providers",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        name: "newapi",
+        displayName: "NewAPI",
+        baseUrl: "https://newapi.example.com/v1",
+        apiKey: "secret-provider-key",
+        enabled: true
+      }
+    });
+    const provider = providerResponse.json() as { id: string };
+
+    const modelResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-models",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        providerId: provider.id,
+        modelName: "gemini-3.5-flash",
+        displayName: "Gemini 3.5 Flash",
+        enabled: true
+      }
+    });
+    const model = modelResponse.json() as { id: string };
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "" }, finish_reason: "length" }]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const testResponse = await app.inject({
+      method: "POST",
+      url: `/api/admin/ai-models/${model.id}/test`,
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(testResponse.statusCode).toBe(200);
+    expect(testResponse.json()).toMatchObject({
+      ok: false,
+      status: 200,
+      message: "模型测试失败：模型返回内容为空"
+    });
+
+    await app.close();
+  });
+
   it("deletes model provider and prompt template configuration", async () => {
     const { db, databasePath } = createTestDatabase();
     db.close();

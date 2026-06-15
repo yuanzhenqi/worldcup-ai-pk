@@ -28,8 +28,20 @@ function buildChatCompletionsUrls(baseUrl: string): string[] {
   ];
 }
 
+function getContentType(response: Response): string {
+  return response.headers.get("content-type")?.toLowerCase() ?? "";
+}
+
+function isEventStreamResponse(response: Response): boolean {
+  return getContentType(response).includes("text/event-stream");
+}
+
+function isBlankText(value: string): boolean {
+  return value.trim().length === 0;
+}
+
 function isJsonResponse(response: Response): boolean {
-  return response.headers.get("content-type")?.toLowerCase().includes("application/json") ?? false;
+  return getContentType(response).includes("application/json");
 }
 
 async function postChatCompletion(config: OpenAiCompatibleModelConfig, body: unknown): Promise<{ response: Response; rawResponse: string }> {
@@ -84,6 +96,14 @@ export async function testOpenAiCompatibleModel(config: OpenAiCompatibleModelCon
       latencyMs
     };
   }
+  if (isEventStreamResponse(response)) {
+    return {
+      ok: false,
+      status: response.status,
+      message: "模型测试失败：接口返回 event-stream，当前需要普通 JSON 响应",
+      latencyMs
+    };
+  }
   if (!isJsonResponse(response)) {
     return {
       ok: false,
@@ -93,7 +113,16 @@ export async function testOpenAiCompatibleModel(config: OpenAiCompatibleModelCon
     };
   }
 
-  JSON.parse(rawResponse);
+  const body = JSON.parse(rawResponse) as unknown;
+  const assistantContent = tryExtractAssistantContent(body);
+  if (!assistantContent.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      message: assistantContent.message,
+      latencyMs
+    };
+  }
 
   return {
     ok: true,
@@ -131,6 +160,19 @@ function extractAssistantContent(body: unknown): string {
   return content;
 }
 
+function tryExtractAssistantContent(body: unknown): { ok: true; content: string } | { ok: false; message: string } {
+  try {
+    const content = extractAssistantContent(body);
+    if (isBlankText(content)) {
+      return { ok: false, message: "模型测试失败：模型返回内容为空" };
+    }
+    return { ok: true, content };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "AI response content is invalid";
+    return { ok: false, message: `模型测试失败：${message}` };
+  }
+}
+
 export async function runOpenAiCompatiblePrediction(config: OpenAiCompatibleModelConfig, prompt: string): Promise<OpenAiCompatiblePredictionResult> {
   const { response, rawResponse } = await postChatCompletion(config, {
       model: config.modelName,
@@ -151,14 +193,22 @@ export async function runOpenAiCompatiblePrediction(config: OpenAiCompatibleMode
   if (!response.ok) {
     throw new Error(`AI prediction failed with HTTP ${response.status}`);
   }
+  if (isEventStreamResponse(response)) {
+    throw new Error("AI prediction response was event-stream; expected JSON");
+  }
   if (!isJsonResponse(response)) {
     throw new Error("AI prediction response was not JSON");
   }
 
   const body = JSON.parse(rawResponse) as unknown;
+  const content = extractAssistantContent(body);
+  if (isBlankText(content)) {
+    throw new Error("AI prediction content was empty");
+  }
+
   return {
     status: response.status,
-    content: extractAssistantContent(body),
+    content,
     rawResponse
   };
 }
