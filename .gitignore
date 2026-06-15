@@ -12,3 +12,4 @@ apps/api/data/*.sqlite-wal
 coverage/
 .DS_Store
 .worktrees/
+.superpowers/
