@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { extractOddsForMatch, parseSportterySummary } from "../src/modules/context/sportteryContextParsers";
+import { refreshFixtureContext } from "../src/modules/context/fixtureContext.service";
+import { extractOddsForMatch, parseSportteryOddsPools, parseSportterySummary } from "../src/modules/context/sportteryContextParsers";
 import { SportteryClient } from "../src/modules/football/sportteryClient";
 import { ensureSportteryMappingForFixture, syncSportteryMappingsForMatches } from "../src/modules/football/sportteryMapping.repository";
 import { createTestDatabase } from "./support/testDatabase";
@@ -33,6 +34,92 @@ describe("Sporttery parser", () => {
     expect(r.summary).toBe("未获取体彩数据");
   });
 
+  it("parses Sporttery HAD and HHAD pools while preserving unavailable pools", () => {
+    const pools = parseSportteryOddsPools([
+      {
+        poolCode: "HAD",
+        h: "1.85",
+        d: "3.20",
+        a: "4.10",
+        goalLine: "",
+        updateDate: "2026-06-15",
+        updateTime: "10:00:00"
+      },
+      {
+        poolCode: "HHAD",
+        h: "2.15",
+        d: "3.60",
+        a: "2.75",
+        goalLine: "-1.00",
+        updateDate: "2026-06-15",
+        updateTime: "10:00:00"
+      },
+      {
+        poolCode: "CRS",
+        h: "",
+        d: "",
+        a: "",
+        odds: "",
+        updateDate: "2026-06-15",
+        updateTime: "10:00:00"
+      }
+    ]);
+
+    expect(pools).toMatchObject([
+      {
+        poolCode: "HAD",
+        status: "available",
+        goalLine: null,
+        updateDate: "2026-06-15",
+        updateTime: "10:00:00",
+        options: [
+          { code: "h", label: "主胜", value: "1.85" },
+          { code: "d", label: "平", value: "3.20" },
+          { code: "a", label: "客胜", value: "4.10" }
+        ]
+      },
+      {
+        poolCode: "HHAD",
+        status: "available",
+        goalLine: "-1.00",
+        options: [
+          { code: "h", label: "让球主胜", value: "2.15" },
+          { code: "d", label: "让球平", value: "3.60" },
+          { code: "a", label: "让球客胜", value: "2.75" }
+        ]
+      },
+      {
+        poolCode: "CRS",
+        status: "unavailable",
+        options: []
+      }
+    ]);
+    expect(pools[2]?.raw).toMatchObject({ poolCode: "CRS", odds: "" });
+  });
+
+  it("keeps malformed Sporttery odds entries unavailable", () => {
+    expect(parseSportteryOddsPools([null, "bad-entry"])).toEqual([
+      {
+        poolCode: "UNKNOWN",
+        status: "unavailable",
+        goalLine: null,
+        updateDate: null,
+        updateTime: null,
+        options: [],
+        raw: null
+      },
+      {
+        poolCode: "UNKNOWN",
+        status: "unavailable",
+        goalLine: null,
+        updateDate: null,
+        updateTime: null,
+        options: [],
+        raw: "bad-entry"
+      }
+    ]);
+  });
+
   it("extractOddsForMatch locates the oddsList for a given matchId", () => {
     const resp = { value: { matchInfoList: [{ subMatchList: [{ matchId: 2040170, oddsList: [{ poolCode: "HAD", h: "1.50" }] }] }] } };
     expect(extractOddsForMatch(resp, 2040170)).toEqual([{ poolCode: "HAD", h: "1.50" }]);
@@ -61,6 +148,115 @@ describe("SportteryClient", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("", { status: 500 }));
     const client = new SportteryClient();
     await expect(client.getResultHistory(1)).rejects.toThrow(/status 500/);
+  });
+});
+
+describe("Sporttery fixture context refresh", () => {
+  it("writes structured odds pools into the raw context snapshot", async () => {
+    const { db } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO matches (
+          id,
+          api_football_fixture_id,
+          stage,
+          kickoff_at,
+          status,
+          venue,
+          home_team_id,
+          home_team_name,
+          home_team_logo_url,
+          away_team_id,
+          away_team_name,
+          away_team_logo_url,
+          home_score,
+          away_score,
+          last_synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "match-1",
+      1001,
+      "Group Stage - 1",
+      "2099-06-13T19:00:00.000Z",
+      "scheduled",
+      "BMO Field",
+      "home-1",
+      "Home",
+      null,
+      "away-1",
+      "Away",
+      null,
+      null,
+      null,
+      "2026-06-13T08:00:00.000Z"
+    );
+    const sportteryClient = {
+      getMatchList: async () => ({
+        value: {
+          matchInfoList: [
+            {
+              subMatchList: [
+                {
+                  matchId: 2040170,
+                  oddsList: [
+                    {
+                      poolCode: "HAD",
+                      h: "1.85",
+                      d: "3.20",
+                      a: "4.10",
+                      goalLine: "",
+                      updateDate: "2026-06-15",
+                      updateTime: "10:00:00"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }),
+      getResultHistory: async () => ({}),
+      getMatchTables: async () => ({}),
+      getMatchResult: async () => ({}),
+      getMatchFeature: async () => ({}),
+      getInjurySuspension: async () => ({})
+    } as unknown as SportteryClient;
+
+    await refreshFixtureContext({
+      db,
+      matchId: "match-1",
+      apiFootballFixtureId: 1001,
+      homeTeamId: "home-1",
+      homeTeamName: "Home",
+      awayTeamId: "away-1",
+      awayTeamName: "Away",
+      footballService: null,
+      dongqiudiClient: null,
+      dongqiudiMatchId: null,
+      sportteryClient,
+      sportteryMatchId: 2040170,
+      dataOptions: {
+        useOdds: false,
+        useApiFootballPrediction: false,
+        useHeadToHead: false,
+        usePlayerLineupInjuries: false,
+        useDongqiudiIntel: false,
+        useSporttery: true
+      },
+      now: new Date("2026-06-15T10:00:00.000Z")
+    });
+
+    const row = db.prepare("SELECT raw_json FROM fixture_context_snapshots WHERE match_id = ?").get("match-1") as { raw_json: string };
+    const raw = JSON.parse(row.raw_json) as { sporttery: { oddsPools: unknown } };
+    expect(raw.sporttery.oddsPools).toMatchObject([
+      {
+        poolCode: "HAD",
+        status: "available",
+        options: expect.arrayContaining([{ code: "h", label: "主胜", value: "1.85" }])
+      }
+    ]);
+    db.close();
   });
 });
 

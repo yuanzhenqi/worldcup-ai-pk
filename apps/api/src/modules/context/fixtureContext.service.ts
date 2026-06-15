@@ -4,7 +4,7 @@ import { FootballService } from "../football/football.service";
 import { parseApiFootballFixturePrediction, parseFixtureHeadToHeadSummary, parseFixtureOddsSummary, parseFixtureSquadSummary } from "./apiFootballContextParsers";
 import { parseDongqiudiIntelSummary } from "./dongqiudiContextParsers";
 import type { DongqiudiClient } from "../football/dongqiudiClient";
-import { extractOddsForMatch, parseSportterySummary } from "./sportteryContextParsers";
+import { extractOddsForMatch, parseSportteryOddsPools, parseSportterySummary } from "./sportteryContextParsers";
 import type { SportteryClient } from "../football/sportteryClient";
 import { ensureSportteryMappingForFixture } from "../football/sportteryMapping.repository";
 import { getLatestFixtureContextSummary, saveFixtureContextSnapshot, writeFixtureDataSyncLog } from "./fixtureContext.repository";
@@ -194,7 +194,10 @@ export async function refreshFixtureContext(input: RefreshFixtureContextInput): 
         ]);
         const odds = extractOddsForMatch(matchList, ensuredMapping.sportteryMatchId);
         const parsed = parseSportterySummary({ odds, history, tables, result, feature, injuries });
-        raw.sporttery = parsed.raw;
+        raw.sporttery = {
+          ...parsed.raw,
+          oddsPools: parseSportteryOddsPools(odds)
+        };
         domains.push({ domain: "sporttery", status: parsed.status, summary: parsed.summary, lastSyncedAt: now.toISOString(), error: null });
         writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "sporttery", status: parsed.status, error: null, now });
       }

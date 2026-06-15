@@ -1,9 +1,9 @@
-import type { FixtureContextDomainStatus } from "@worldcup-ai-pk/shared";
+import type { FixtureContextDomainStatus, SportteryOddsPoolDto } from "@worldcup-ai-pk/shared";
 
 interface ParsedContextDomain {
   status: FixtureContextDomainStatus;
   summary: string;
-  raw: unknown;
+  raw: SportterySummaryInput;
 }
 
 interface SportterySummaryInput {
@@ -20,6 +20,10 @@ function str(value: unknown): string | null {
 }
 
 type Obj = Record<string, unknown>;
+
+function isObj(value: unknown): value is Obj {
+  return typeof value === "object" && value !== null;
+}
 
 /** 从 getMatchList 响应里按 sportteryMatchId 提取单场 oddsList。 */
 export function extractOddsForMatch(matchListResponse: unknown, sportteryMatchId: number): unknown | null {
@@ -39,6 +43,60 @@ function pickOdds(oddsList: unknown, poolCode: string): { h: string | null; d: s
   const arr = Array.isArray(oddsList) ? (oddsList as Obj[]) : [];
   const item = arr.find((o) => o?.poolCode === poolCode) ?? {};
   return { h: str(item.h), d: str(item.d), a: str(item.a), goalLine: str(item.goalLine) };
+}
+
+function poolString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function buildStandardOptions(poolCode: string, item: Obj): SportteryOddsPoolDto["options"] {
+  const h = poolString(item.h);
+  const d = poolString(item.d);
+  const a = poolString(item.a);
+  if (!h || !d || !a) return [];
+
+  if (poolCode === "HHAD") {
+    return [
+      { code: "h", label: "让球主胜", value: h },
+      { code: "d", label: "让球平", value: d },
+      { code: "a", label: "让球客胜", value: a }
+    ];
+  }
+
+  return [
+    { code: "h", label: "主胜", value: h },
+    { code: "d", label: "平", value: d },
+    { code: "a", label: "客胜", value: a }
+  ];
+}
+
+export function parseSportteryOddsPools(oddsList: unknown): SportteryOddsPoolDto[] {
+  if (!Array.isArray(oddsList)) return [];
+  return oddsList.map((item) => {
+    if (!isObj(item)) {
+      return {
+        poolCode: "UNKNOWN",
+        status: "unavailable",
+        goalLine: null,
+        updateDate: null,
+        updateTime: null,
+        options: [],
+        raw: item
+      };
+    }
+
+    const poolCode = poolString(item.poolCode) ?? "UNKNOWN";
+    const options = poolCode === "HAD" || poolCode === "HHAD" ? buildStandardOptions(poolCode, item) : [];
+    return {
+      poolCode,
+      status: options.length > 0 ? "available" : "unavailable",
+      goalLine: poolString(item.goalLine),
+      updateDate: poolString(item.updateDate),
+      updateTime: poolString(item.updateTime),
+      options,
+      raw: item
+    };
+  });
 }
 
 /**
