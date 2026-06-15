@@ -192,6 +192,18 @@ function getLatestSingleCombination(feedback?: PredictionFeedback) {
   return feedback?.predictions.find((prediction) => prediction.singleCombination)?.singleCombination ?? null;
 }
 
+function getPrimaryLegText(prediction: PredictionRunPredictionDto): string {
+  const leg = prediction.singleCombination?.primaryPlan.legs[0];
+  if (!leg) {
+    return "未生成";
+  }
+  return `${leg.poolCode} · ${leg.selectionLabel}`;
+}
+
+function getPredictionStatusText(prediction: PredictionRunPredictionDto): string {
+  return prediction.singleCombination ? "已生成组合" : "仅赛果";
+}
+
 function normalizeParlayStakeUnits(stakeUnits: number): number {
   return Math.max(1, Math.floor(Number.isFinite(stakeUnits) ? stakeUnits : 1));
 }
@@ -306,7 +318,24 @@ function MatchCard({
                   <small>
                     {getRiskLabel(latestSingleCombination.primaryPlan.riskLevel)} · {latestSingleCombination.primaryPlan.stakeUnits} 注
                   </small>
-                  <p>{latestSingleCombination.summary}</p>
+                  <dl className="betting-plan-grid">
+                    <div>
+                      <dt>玩法</dt>
+                      <dd>{latestSingleCombination.primaryPlan.legs[0]?.poolCode ?? "未生成"}</dd>
+                    </div>
+                    <div>
+                      <dt>选择</dt>
+                      <dd>{latestSingleCombination.primaryPlan.legs[0]?.selectionLabel ?? "未生成"}</dd>
+                    </div>
+                    <div>
+                      <dt>触发条件</dt>
+                      <dd>{latestSingleCombination.primaryPlan.expectedScenario}</dd>
+                    </div>
+                    <div>
+                      <dt>规避项</dt>
+                      <dd>{latestSingleCombination.primaryPlan.avoidReason ?? "暂无"}</dd>
+                    </div>
+                  </dl>
                   <button
                     type="button"
                     className={`secondary-action parlay-toggle ${selectedForParlay ? "selected" : ""}`}
@@ -331,7 +360,8 @@ function MatchCard({
                       <th>胜平负</th>
                       <th>比分</th>
                       <th>信心</th>
-                      <th>胜负手</th>
+                      <th>主方案</th>
+                      <th>状态</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -341,7 +371,8 @@ function MatchCard({
                         <td>{getPredictionResultText(prediction)}</td>
                         <td>{formatPredictionScore(prediction)}</td>
                         <td>{`${Math.round(prediction.confidence * 100)}%`}</td>
-                        <td>{prediction.shortReason || prediction.analysisReport.slice(0, 80) || "未给出"}</td>
+                        <td>{getPrimaryLegText(prediction)}</td>
+                        <td>{getPredictionStatusText(prediction)}</td>
                       </tr>
                     ))}
                   </tbody>

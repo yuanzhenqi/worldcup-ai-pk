@@ -568,6 +568,36 @@ a {
   margin: 2px 0 0;
 }
 
+.betting-plan-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 10px 0 0;
+}
+
+.betting-plan-grid div {
+  background: #f7faf9;
+  border: 1px solid #d8e3df;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.betting-plan-grid dt {
+  color: #64737a;
+  font-size: 11px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.betting-plan-grid dd {
+  color: #172026;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .match-betting-summary .parlay-toggle {
   background: #eef3f1;
   border: 0;
@@ -1656,6 +1686,14 @@ td {
 
   .prediction-consensus-summary {
     justify-content: flex-start;
+  }
+
+  .betting-plan-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prediction-summary-table table {
+    min-width: 560px;
   }
 
   .prediction-log-list {
