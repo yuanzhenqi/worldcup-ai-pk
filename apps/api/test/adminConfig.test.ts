@@ -5,7 +5,7 @@ import { createTestDatabase } from "./support/testDatabase";
 const builtInPromptTemplateNames = [
   "稳健胜平负预测",
   "比分预测",
-  "市场背景说明",
+  "体彩选项说明",
   "球员阵容影响",
   "历史交锋模型",
   "爆冷风险评估",
@@ -606,7 +606,7 @@ describe("admin config API", () => {
     expect(templates.map((template) => template.name).sort()).toEqual([...builtInPromptTemplateNames].sort());
     expect(templates.every((template) => template.scope === "match_prediction")).toBe(true);
     expect(templates.find((template) => template.id === "builtin-prompt-odds-driven")).toMatchObject({
-      name: "市场背景说明",
+      name: "体彩选项说明",
       enabled: false
     });
     expect(templates.filter((template) => template.id !== "builtin-prompt-odds-driven").every((template) => template.enabled)).toBe(true);
@@ -614,8 +614,8 @@ describe("admin config API", () => {
     expect(templates.every((template) => template.fullPrompt.includes("{{homeTeam}}") && template.fullPrompt.includes("{{awayTeam}}"))).toBe(true);
     expect(templates.every((template) => template.fullPrompt.includes("prediction_context"))).toBe(true);
     expect(templates.every((template) => template.fullPrompt.includes("不得编造"))).toBe(true);
-    expect(templates.map((template) => template.fullPrompt).join("\n")).toContain("官方指数不得作为胜平负预测的权重");
-    expect(templates.map((template) => template.fullPrompt).join("\n")).toContain("官方指数");
+    expect(templates.map((template) => template.fullPrompt).join("\n")).toContain("体彩选项不得作为赛果预测权重");
+    expect(templates.map((template) => template.fullPrompt).join("\n")).toContain("体彩选项只能作为 Agent B 生成投注组合时的可选品类和回报背景");
     expect(templates.map((template) => template.name)).not.toContain("赔率驱动");
     expect(templates.map((template) => template.fullPrompt).join("\n")).not.toContain("赔率驱动");
     expect(templates.map((template) => template.fullPrompt).join("\n")).not.toContain("odds_analysis");
@@ -664,7 +664,7 @@ describe("admin config API", () => {
 
     expect(template).toMatchObject({
       id: "builtin-prompt-odds-driven",
-      name: "市场背景说明",
+      name: "体彩选项说明",
       enabled: false
     });
     expect(template?.fullPrompt).not.toContain("优先解释赔率");

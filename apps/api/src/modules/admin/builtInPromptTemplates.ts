@@ -13,12 +13,12 @@ interface BuiltInPromptTemplate {
 
 const contextRules = [
   "你必须只使用 prediction_context 中已经提供的数据。",
-  "对缺失的球员、伤停、阵容、历史交锋、官方指数或官方预测，必须写明未获取；不得编造任何球员状态、伤停、历史战绩、官方指数或阵容信息。",
-  "若 prediction_context 包含官方指数，只能把它作为赛前市场背景说明，不得作为胜平负或比分预测的权重。",
-  "不要因为官方指数更低或市场更热而直接提高某一结果概率。",
-  "如果你的足球判断与市场背景不一致，可以说明差异原因，但最终结论必须来自球队状态、阵容、战术、赛程和历史交锋等足球数据分析。",
+  "对缺失的球员、伤停、阵容、历史交锋、体彩选项或官方预测，必须写明未获取；不得编造任何球员状态、伤停、历史战绩、体彩选项或阵容信息。",
+  "体彩选项只能作为 Agent B 生成投注组合时的可选品类和回报背景，不得作为 Agent A 胜平负或比分预测的权重。",
+  "Agent A 的结论必须来自球队状态、阵容、战术、赛程、历史交锋、积分形势和伤停影响。",
+  "Agent B 必须尊重 Agent A 的赛果与比分判断，只能围绕体彩可选项生成单场组合方案。",
   "若 prediction_context 包含懂球帝情报（dongqiudi_intel，含两队综合实力、近期战绩、历史交锋、身价对比、场均红黄牌等赛前情报），应结合近期战绩和历史交锋辅助判断球队状态与纪律风险；场均红黄牌可用于评估犯规与红牌风险；身价对比和综合实力百分比仅作实力参考，不得单独作为预测依据，也不得替代阵容、伤停等更直接的情报。",
-  "若 prediction_context 包含体彩赛前情报（sporttery，含官方指数、历史交锋、积分形势、近期状态、特征对比、伤停影响），官方指数只可作为市场背景说明，不得直接决定预测；积分形势用于判断小组出线压力；伤停影响用于判断阵容完整性和关键球员缺阵风险；官方指数不得作为胜平负预测的权重。",
+  "若 prediction_context 包含体彩赛前情报（sporttery，含体彩选项、历史交锋、积分形势、近期状态、特征对比、伤停影响），积分形势用于判断小组出线压力；伤停影响用于判断阵容完整性和关键球员缺阵风险；体彩选项不得作为赛果预测权重。",
   "输出必须包含结构化字段和中文摘要。"
 ].join("\n");
 
@@ -53,14 +53,14 @@ export const builtInPromptTemplates: BuiltInPromptTemplate[] = [
   },
   {
     id: "builtin-prompt-odds-driven",
-    name: "市场背景说明",
-    description: "仅用于解释市场信息，不参与默认预测权重。",
+    name: "体彩选项说明",
+    description: "解释体彩选项如何进入 Agent B 的组合方案，不参与 Agent A 赛果权重。",
     fullPrompt: [
       contextRules,
-      "你是赛前市场背景分析师。请基于 prediction_context 中已经提供的市场信息和比赛基础信息，说明 {{homeTeam}} 对阵 {{awayTeam}} 的市场关注点。",
-      "输出：1. market_context_note；2. market_attention_note；3. football_data_gap；4. conflict_with_football_analysis；5. non_weighting_notice。"
+      "你是体彩选项说明分析师。请基于 prediction_context 中已经提供的体彩选项和比赛基础信息，说明 {{homeTeam}} 对阵 {{awayTeam}} 的可选投注品类。",
+      "输出：1. sporttery_option_note；2. option_availability；3. football_data_gap；4. conflict_with_match_analysis；5. non_weighting_notice。"
     ].join("\n\n"),
-    promptSummary: "说明市场背景，不参与默认预测权重",
+    promptSummary: "说明体彩选项，不参与赛果权重",
     scope: "match_prediction",
     enabled: false,
     isDefault: false
