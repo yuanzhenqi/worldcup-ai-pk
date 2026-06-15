@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PredictionRequestInputDto } from "@worldcup-ai-pk/shared";
 import {
   captureApiFootballFixturesRaw,
+  createParlayCombination,
   deleteAdminAiModel,
   deleteAdminAiProvider,
   deleteAdminPromptTemplate,
@@ -318,6 +319,46 @@ describe("web API client", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/public/matches/match-1/prediction-runs", {
       cache: "no-store"
     });
+  });
+
+  it("creates a parlay combination", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "parlay-1",
+          matchIds: ["match-1", "match-2"],
+          riskLevel: "medium",
+          stakeUnits: 3,
+          summary: "2 场组合：第一场主胜 + 第二场小球",
+          plans: [],
+          riskWarnings: ["串关会放大单场不确定性，请降低单注预算。"],
+          createdAt: "2026-06-15T08:00:00.000Z"
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    await expect(
+      createParlayCombination({
+        matchIds: ["match-1", "match-2"],
+        riskLevel: "medium",
+        stakeUnits: 3
+      })
+    ).resolves.toMatchObject({
+      id: "parlay-1",
+      matchIds: ["match-1", "match-2"]
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/public/parlay-combinations",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          matchIds: ["match-1", "match-2"],
+          riskLevel: "medium",
+          stakeUnits: 3
+        })
+      })
+    );
   });
 
   it("loads the public leaderboard", async () => {

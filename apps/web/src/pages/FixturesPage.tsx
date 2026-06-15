@@ -652,6 +652,17 @@ export function FixturesPage({
 
       {matches.length === 0 ? <p className="empty-state">暂无赛程数据。配置 API-Football key 并同步后会显示在这里。</p> : null}
       {matches.length > 0 && dateGroups.length === 0 && foldedMatches.length === 0 ? <p className="empty-state">当前筛选下暂无比赛。</p> : null}
+      {matches.length > 0 ? (
+        <section className="parlay-workspace">
+          <div>
+            <span>串关工作台</span>
+            <strong>从已生成单场组合的比赛中选择 2 场以上</strong>
+          </div>
+          <button type="button" disabled>
+            生成串关组合
+          </button>
+        </section>
+      ) : null}
 
       <FixtureDateGroups
         groups={dateGroups}

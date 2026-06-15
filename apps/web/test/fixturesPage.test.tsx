@@ -81,6 +81,8 @@ describe("FixturesPage", () => {
       />
     );
 
+    expect(screen.getByText("串关工作台")).toBeInTheDocument();
+    expect(screen.getByText("从已生成单场组合的比赛中选择 2 场以上")).toBeInTheDocument();
     expect(screen.getByText("加拿大")).toBeInTheDocument();
     expect(screen.getAllByText("小组赛第 1 轮").length).toBeGreaterThan(0);
     expect(screen.queryByText("墨西哥")).not.toBeInTheDocument();

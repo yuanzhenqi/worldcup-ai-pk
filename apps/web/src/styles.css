@@ -292,6 +292,43 @@ a {
   gap: 10px;
 }
 
+.parlay-workspace {
+  align-items: center;
+  background: #f7fbf9;
+  border: 1px solid rgba(18, 61, 54, 0.14);
+  border-radius: 8px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: 18px 0;
+  padding: 14px 16px;
+}
+
+.parlay-workspace span {
+  color: #51635f;
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.parlay-workspace strong {
+  color: #14211f;
+  display: block;
+  margin-top: 4px;
+}
+
+.parlay-workspace button {
+  background: #dfe8e4;
+  border: 0;
+  border-radius: 6px;
+  color: #64736f;
+  cursor: not-allowed;
+  font: inherit;
+  font-weight: 700;
+  min-height: 38px;
+  padding: 8px 12px;
+}
+
 .match-card {
   align-items: center;
   background: #ffffff;
@@ -1491,6 +1528,11 @@ td {
 
   .fixture-filters {
     grid-template-columns: 1fr;
+  }
+
+  .parlay-workspace {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .match-card {

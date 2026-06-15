@@ -5,6 +5,8 @@ import type {
   FixtureContextSummaryDto,
   LeaderboardDto,
   MatchDto,
+  ParlayCombinationInputDto,
+  ParlayCombinationRunDto,
   PredictionDataOptionsDto,
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
@@ -199,6 +201,18 @@ export async function getMatchPredictionHistory(matchId: string): Promise<Predic
     throw new Error(`Public match prediction history request failed with status ${response.status}`);
   }
   return (await response.json()) as PredictionRunHistoryDto;
+}
+
+export async function createParlayCombination(input: ParlayCombinationInputDto): Promise<ParlayCombinationRunDto> {
+  const response = await request(`${apiBaseUrl}/api/public/parlay-combinations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) {
+    throw new Error(`Public parlay combination request failed with status ${response.status}`);
+  }
+  return (await response.json()) as ParlayCombinationRunDto;
 }
 
 export async function getAdminApiFootballSettings(): Promise<ApiFootballSettingsStatus> {
