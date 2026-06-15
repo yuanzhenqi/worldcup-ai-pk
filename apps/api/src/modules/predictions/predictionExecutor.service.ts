@@ -2,8 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import type {
   AgentRole,
+  BettingPlanDto,
+  BettingRiskLevel,
   FixtureContextSummaryDto,
   MatchAnalysisAgentOutputDto,
+  ParlayCombinationRunDto,
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
   PredictionResult,
@@ -621,4 +624,56 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
     logs: logWriter.logs,
     predictions
   };
+}
+
+export function createParlayCombinationRun(db: Database, input: {
+  matchIds: string[];
+  riskLevel: BettingRiskLevel;
+  stakeUnits: number;
+  now?: Date;
+}): ParlayCombinationRunDto {
+  const now = input.now ?? new Date();
+  const plans = input.matchIds.map((matchId) => {
+    const row = db
+      .prepare(
+        `
+          SELECT output_json
+          FROM prediction_agent_outputs
+          WHERE match_id = ?
+            AND agent_role = 'single_combo'
+            AND parse_status = 'parsed'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `
+      )
+      .get(matchId) as { output_json: string } | undefined;
+    if (!row) {
+      throw new Error(`No single combo output for match ${matchId}`);
+    }
+    const parsed = JSON.parse(row.output_json) as { primaryPlan: BettingPlanDto };
+    return parsed.primaryPlan;
+  });
+  const run: ParlayCombinationRunDto = {
+    id: randomUUID(),
+    matchIds: input.matchIds,
+    riskLevel: input.riskLevel,
+    stakeUnits: input.stakeUnits,
+    summary: `${plans.length} 场组合：${plans.map((plan) => plan.planName).join(" + ")}`,
+    plans,
+    riskWarnings: ["串关会放大单场不确定性，请降低单注预算。"],
+    createdAt: now.toISOString()
+  };
+  db.prepare(
+    `
+      INSERT INTO parlay_combination_runs (
+        id,
+        match_ids_json,
+        risk_level,
+        stake_units,
+        output_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `
+  ).run(run.id, JSON.stringify(input.matchIds), input.riskLevel, input.stakeUnits, JSON.stringify(run), run.createdAt);
+  return run;
 }

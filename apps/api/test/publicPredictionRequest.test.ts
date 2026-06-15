@@ -655,4 +655,131 @@ describe("public prediction request API", () => {
     expect(row.output_style).toBe("detailed");
     verifyDb.close();
   });
+
+  it("creates a parlay combination from latest single-match plans", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, {
+      id: "match-1",
+      kickoffAt: "2099-06-12T19:00:00.000Z",
+      status: "scheduled"
+    });
+    insertMatch(db, {
+      id: "match-2",
+      kickoffAt: "2099-06-13T19:00:00.000Z",
+      status: "scheduled"
+    });
+    insertAiConfig(db);
+    db.prepare(
+      `
+        INSERT INTO prediction_runs (id, match_id, scheduled_at, started_at, finished_at, status, failure_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "run-1",
+      "match-1",
+      "2026-06-13T08:00:00.000Z",
+      "2026-06-13T08:00:00.000Z",
+      "2026-06-13T08:00:01.000Z",
+      "completed",
+      null,
+      "run-2",
+      "match-2",
+      "2026-06-13T08:10:00.000Z",
+      "2026-06-13T08:10:00.000Z",
+      "2026-06-13T08:10:01.000Z",
+      "completed",
+      null
+    );
+    db.prepare(
+      `
+        INSERT INTO prediction_agent_outputs (
+          id,
+          prediction_run_id,
+          match_id,
+          model_id,
+          agent_role,
+          output_json,
+          raw_response,
+          parse_status,
+          error,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "agent-output-1",
+      "run-1",
+      "match-1",
+      "model-1",
+      "single_combo",
+      JSON.stringify({
+        summary: "第一场主胜保护。",
+        primaryPlan: {
+          planName: "第一场主胜",
+          riskLevel: "medium",
+          legs: [{ poolCode: "HAD", selectionCode: "h", selectionLabel: "主胜", reason: "主队更稳。" }],
+          stakeUnits: 2,
+          expectedScenario: "2-1",
+          avoidReason: null
+        },
+        backupPlans: [],
+        passRecommendation: "可低注参与。",
+        riskWarnings: [],
+        dataGaps: []
+      }),
+      "{}",
+      "parsed",
+      null,
+      "2026-06-13T08:00:01.000Z",
+      "agent-output-2",
+      "run-2",
+      "match-2",
+      "model-1",
+      "single_combo",
+      JSON.stringify({
+        summary: "第二场总进球保护。",
+        primaryPlan: {
+          planName: "第二场小球",
+          riskLevel: "medium",
+          legs: [{ poolCode: "TTG", selectionCode: "2", selectionLabel: "总进球 2", reason: "节奏偏慢。" }],
+          stakeUnits: 1,
+          expectedScenario: "1-1",
+          avoidReason: null
+        },
+        backupPlans: [],
+        passRecommendation: "可低注参与。",
+        riskWarnings: [],
+        dataGaps: []
+      }),
+      "{}",
+      "parsed",
+      null,
+      "2026-06-13T08:10:01.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/public/parlay-combinations",
+      payload: {
+        matchIds: ["match-1", "match-2"],
+        riskLevel: "medium",
+        stakeUnits: 3
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      matchIds: ["match-1", "match-2"],
+      riskLevel: "medium",
+      stakeUnits: 3,
+      summary: "2 场组合：第一场主胜 + 第二场小球",
+      plans: [
+        expect.objectContaining({ planName: "第一场主胜" }),
+        expect.objectContaining({ planName: "第二场小球" })
+      ]
+    });
+
+    await app.close();
+  });
 });

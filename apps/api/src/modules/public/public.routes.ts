@@ -7,7 +7,13 @@ import { getFixtureContextSummary, refreshFixtureContext } from "../context/fixt
 import { FootballService } from "../football/football.service";
 import { listPublicLeaderboard } from "../leaderboard/leaderboard.repository";
 import { listMatches } from "../matches/match.repository";
-import { executeManualPredictionRequest, getPredictionRunStatus, listPredictionRunHistory, markPredictionRunFailed } from "../predictions/predictionExecutor.service";
+import {
+  createParlayCombinationRun,
+  executeManualPredictionRequest,
+  getPredictionRunStatus,
+  listPredictionRunHistory,
+  markPredictionRunFailed
+} from "../predictions/predictionExecutor.service";
 import { planPredictionRequest } from "../predictions/prediction.service";
 import { DongqiudiClient } from "../football/dongqiudiClient";
 import { getDongqiudiMappingByFixtureId } from "../football/dongqiudiMapping.repository";
@@ -32,6 +38,12 @@ const predictionDataOptionsSchema = z.object({
 
 const contextRefreshSchema = z.object({
   dataOptions: predictionDataOptionsSchema
+});
+
+const parlayCombinationSchema = z.object({
+  matchIds: z.array(z.string().min(1)).min(2),
+  riskLevel: z.enum(["low", "medium", "high"]),
+  stakeUnits: z.number().int().min(1)
 });
 
 const predictionRequestSchema = z.object({
@@ -99,6 +111,19 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
   app.get("/leaderboard", async () => {
     settleFinishedMatchPredictions(options.db);
     return listPublicLeaderboard(options.db);
+  });
+
+  app.post("/parlay-combinations", async (request, reply) => {
+    const parsed = parlayCombinationSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid parlay combination payload" });
+    }
+    try {
+      return createParlayCombinationRun(options.db, parsed.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Parlay combination failed";
+      return reply.code(409).send({ message });
+    }
   });
 
   app.get<{ Params: { runId: string } }>("/prediction-runs/:runId", async (request, reply) => {
