@@ -436,6 +436,120 @@ describe("public prediction request API", () => {
     verifyDb.close();
   });
 
+  it("fails a public prediction run when the model returns event-stream", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, {
+      id: "match-1",
+      kickoffAt: "2099-06-12T19:00:00.000Z",
+      status: "scheduled"
+    });
+    insertAiConfig(db);
+    db.close();
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("data: {\"choices\":[]}\n\ndata: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      })
+    );
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "POST", url: "/api/public/matches/match-1/prediction-request" });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      matchId: "match-1",
+      runId: expect.any(String)
+    });
+
+    const failedRun = await waitForRunStatus(app, body.runId, "failed");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(failedRun).toMatchObject({
+      matchId: "match-1",
+      status: "failed",
+      predictionsCount: 0,
+      logs: [
+        expect.objectContaining({ level: "info", message: "预测请求已创建" }),
+        expect.objectContaining({ level: "info", message: "开始调用模型：GPT-4o mini", modelDisplayName: "GPT-4o mini" }),
+        expect.objectContaining({
+          level: "error",
+          message: "模型预测失败：GPT-4o mini：AI prediction response was event-stream; expected JSON",
+          modelDisplayName: "GPT-4o mini"
+        })
+      ]
+    });
+    expect(failedRun.predictions).toHaveLength(0);
+
+    await app.close();
+
+    const verifyDb = createDatabase(databasePath);
+    expect(verifyDb.prepare("SELECT status, failure_reason FROM prediction_runs WHERE id = ?").get(body.runId)).toEqual({
+      status: "failed",
+      failure_reason: "所有模型预测失败"
+    });
+    expect(verifyDb.prepare("SELECT COUNT(*) AS count FROM ai_predictions WHERE match_id = ?").get("match-1")).toEqual({ count: 0 });
+    verifyDb.close();
+  });
+
+  it("fails a public prediction run when the model returns empty assistant content", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, {
+      id: "match-1",
+      kickoffAt: "2099-06-12T19:00:00.000Z",
+      status: "scheduled"
+    });
+    insertAiConfig(db);
+    db.close();
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "" } }]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "POST", url: "/api/public/matches/match-1/prediction-request" });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      matchId: "match-1",
+      runId: expect.any(String)
+    });
+
+    const failedRun = await waitForRunStatus(app, body.runId, "failed");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(failedRun).toMatchObject({
+      matchId: "match-1",
+      status: "failed",
+      predictionsCount: 0,
+      logs: [
+        expect.objectContaining({ level: "info", message: "预测请求已创建" }),
+        expect.objectContaining({ level: "info", message: "开始调用模型：GPT-4o mini", modelDisplayName: "GPT-4o mini" }),
+        expect.objectContaining({
+          level: "error",
+          message: "模型预测失败：GPT-4o mini：AI prediction content was empty",
+          modelDisplayName: "GPT-4o mini"
+        })
+      ]
+    });
+    expect(failedRun.predictions).toHaveLength(0);
+
+    await app.close();
+
+    const verifyDb = createDatabase(databasePath);
+    expect(verifyDb.prepare("SELECT status, failure_reason FROM prediction_runs WHERE id = ?").get(body.runId)).toEqual({
+      status: "failed",
+      failure_reason: "所有模型预测失败"
+    });
+    expect(verifyDb.prepare("SELECT COUNT(*) AS count FROM ai_predictions WHERE match_id = ?").get("match-1")).toEqual({ count: 0 });
+    verifyDb.close();
+  });
+
   it("lists historical prediction runs for a public match", async () => {
     const { db, databasePath } = createTestDatabase();
     insertMatch(db, {
