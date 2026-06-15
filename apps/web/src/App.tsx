@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { LeaderboardDto, MatchDto, PredictionRequestInputDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
 import {
+  createParlayCombination,
   getMatchContext,
   getMatchPredictionHistory,
   getPredictionRunStatus,
@@ -114,6 +115,7 @@ export function App() {
         onRequestPrediction={handleRequestPrediction}
         onLoadPredictionRunStatus={getPredictionRunStatus}
         onLoadPredictionHistory={getMatchPredictionHistory}
+        onCreateParlayCombination={createParlayCombination}
       />
       <LeaderboardPage leaderboard={leaderboard} />
       <AdminPage />

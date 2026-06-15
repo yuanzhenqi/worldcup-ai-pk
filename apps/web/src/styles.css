@@ -293,7 +293,7 @@ a {
 }
 
 .parlay-workspace {
-  align-items: center;
+  align-items: flex-start;
   background: #f7fbf9;
   border: 1px solid rgba(18, 61, 54, 0.14);
   border-radius: 8px;
@@ -304,7 +304,8 @@ a {
   padding: 14px 16px;
 }
 
-.parlay-workspace span {
+.parlay-workspace span,
+.parlay-workspace small {
   color: #51635f;
   display: block;
   font-size: 12px;
@@ -317,16 +318,65 @@ a {
   margin-top: 4px;
 }
 
+.parlay-controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.parlay-controls label {
+  display: grid;
+  gap: 4px;
+}
+
+.parlay-controls input,
+.parlay-controls select {
+  background: #ffffff;
+  border: 1px solid #cad8d2;
+  border-radius: 6px;
+  color: #14211f;
+  font: inherit;
+  min-height: 38px;
+  padding: 7px 10px;
+}
+
+.parlay-controls input {
+  width: 76px;
+}
+
 .parlay-workspace button {
-  background: #dfe8e4;
+  background: #173f35;
   border: 0;
   border-radius: 6px;
-  color: #64736f;
-  cursor: not-allowed;
+  color: #ffffff;
+  cursor: pointer;
   font: inherit;
   font-weight: 700;
   min-height: 38px;
   padding: 8px 12px;
+}
+
+.parlay-workspace button:disabled {
+  background: #dfe8e4;
+  color: #64736f;
+  cursor: not-allowed;
+}
+
+.parlay-result,
+.parlay-error {
+  flex-basis: 100%;
+  font-weight: 700;
+  margin: 0;
+}
+
+.parlay-result {
+  color: #173f35;
+}
+
+.parlay-error {
+  color: #b64225;
 }
 
 .match-card {
@@ -515,6 +565,32 @@ a {
   font-size: 13px;
   line-height: 1.45;
   margin: 2px 0 0;
+}
+
+.match-betting-summary .parlay-toggle {
+  background: #eef3f1;
+  border: 0;
+  border-radius: 6px;
+  color: #173f35;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  justify-self: start;
+  margin-top: 4px;
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+.match-betting-summary .parlay-toggle.selected {
+  background: #173f35;
+  color: #ffffff;
+}
+
+.match-betting-summary .parlay-toggle:disabled {
+  background: #dfe8e4;
+  color: #64736f;
+  cursor: not-allowed;
 }
 
 .prediction-log-list {

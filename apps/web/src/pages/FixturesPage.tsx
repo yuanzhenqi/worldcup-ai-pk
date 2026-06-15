@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
+  BettingRiskLevel,
   FixtureContextSummaryDto,
   MatchDto,
   MatchStatus,
+  ParlayCombinationRunDto,
   PredictionDataOptionsDto,
   PredictionRequestInputDto,
   PredictionRequestResponseDto,
@@ -24,6 +26,7 @@ interface FixturesPageProps {
   onRequestPrediction?: (match: MatchDto, input: PredictionRequestInputDto) => Promise<PredictionRequestResponseDto>;
   onLoadPredictionRunStatus?: (runId: string) => Promise<PredictionRunStatusDto>;
   onLoadPredictionHistory?: (matchId: string) => Promise<PredictionRunHistoryDto>;
+  onCreateParlayCombination?: (input: { matchIds: string[]; riskLevel: BettingRiskLevel; stakeUnits: number }) => Promise<ParlayCombinationRunDto>;
   predictionPollIntervalMs?: number;
 }
 
@@ -228,7 +231,10 @@ function MatchCard({
   onOpenPrediction,
   onOpenContext,
   onOpenHistory,
-  onOpenReport
+  onOpenReport,
+  selectedForParlay,
+  onToggleParlay,
+  canSelectParlay
 }: {
   match: MatchDto;
   feedback?: PredictionFeedback;
@@ -237,6 +243,9 @@ function MatchCard({
   onOpenContext: (match: MatchDto) => void;
   onOpenHistory?: (match: MatchDto) => void;
   onOpenReport: (feedback: PredictionFeedback) => void;
+  selectedForParlay: boolean;
+  onToggleParlay: (matchId: string) => void;
+  canSelectParlay: boolean;
 }) {
   const hasHistory = match.hasAiPrediction || Boolean(feedback?.predictions.length);
   const failedPredictionCount = feedback?.logs.filter((log) => log.level === "error").length ?? 0;
@@ -294,6 +303,14 @@ function MatchCard({
                     {getRiskLabel(latestSingleCombination.primaryPlan.riskLevel)} · {latestSingleCombination.primaryPlan.stakeUnits} 注
                   </small>
                   <p>{latestSingleCombination.summary}</p>
+                  <button
+                    type="button"
+                    className={`secondary-action parlay-toggle ${selectedForParlay ? "selected" : ""}`}
+                    disabled={!canSelectParlay}
+                    onClick={() => onToggleParlay(match.id)}
+                  >
+                    {selectedForParlay ? "已加入" : "加入串关"}
+                  </button>
                 </div>
               ) : null}
               <div className="prediction-consensus-summary">
@@ -346,7 +363,10 @@ function FixtureDateGroups({
   onOpenPrediction,
   onOpenContext,
   onOpenHistory,
-  onOpenReport
+  onOpenReport,
+  selectedParlayMatchIds,
+  onToggleParlay,
+  canSelectParlay
 }: {
   groups: Array<{ key: string; label: string; matches: MatchDto[] }>;
   predictionFeedbackByMatchId: Record<string, PredictionFeedback>;
@@ -355,6 +375,9 @@ function FixtureDateGroups({
   onOpenContext: (match: MatchDto) => void;
   onOpenHistory?: (match: MatchDto) => void;
   onOpenReport: (feedback: PredictionFeedback) => void;
+  selectedParlayMatchIds: Set<string>;
+  onToggleParlay: (matchId: string) => void;
+  canSelectParlay: boolean;
 }) {
   return (
     <div className="fixture-date-groups">
@@ -375,6 +398,9 @@ function FixtureDateGroups({
                 onOpenContext={onOpenContext}
                 onOpenHistory={onOpenHistory}
                 onOpenReport={onOpenReport}
+                selectedForParlay={selectedParlayMatchIds.has(match.id)}
+                onToggleParlay={onToggleParlay}
+                canSelectParlay={canSelectParlay}
               />
             ))}
           </div>
@@ -392,6 +418,7 @@ export function FixturesPage({
   onRequestPrediction,
   onLoadPredictionRunStatus,
   onLoadPredictionHistory,
+  onCreateParlayCombination,
   predictionPollIntervalMs = 1500
 }: FixturesPageProps) {
   const [activeStatus, setActiveStatus] = useState<FixtureTab>("scheduled");
@@ -407,6 +434,12 @@ export function FixturesPage({
   const [activeContextMatch, setActiveContextMatch] = useState<MatchDto | null>(null);
   const [contextByMatchId, setContextByMatchId] = useState<Record<string, FixtureContextSummaryDto>>({});
   const [contextLoadingMatchIds, setContextLoadingMatchIds] = useState<Set<string>>(() => new Set());
+  const [selectedParlayMatchIds, setSelectedParlayMatchIds] = useState<Set<string>>(() => new Set());
+  const [parlayRiskLevel, setParlayRiskLevel] = useState<BettingRiskLevel>("medium");
+  const [parlayStakeUnits, setParlayStakeUnits] = useState(2);
+  const [parlayGenerating, setParlayGenerating] = useState(false);
+  const [parlayResult, setParlayResult] = useState<ParlayCombinationRunDto | null>(null);
+  const [parlayError, setParlayError] = useState<string | null>(null);
 
   const stages = useMemo(() => Array.from(new Set(matches.map((match) => match.stage))).sort(), [matches]);
   const filteredMatches = useMemo(
@@ -429,6 +462,18 @@ export function FixturesPage({
   );
   const dateGroups = useMemo(() => groupMatchesByDate(primaryMatches), [primaryMatches]);
   const foldedDateGroups = useMemo(() => groupMatchesByDate(foldedMatches), [foldedMatches]);
+  const parlayReadyMatchIds = useMemo(
+    () =>
+      Object.entries(predictionFeedbackByMatchId)
+        .filter(([, feedback]) => Boolean(getLatestSingleCombination(feedback)))
+        .map(([matchId]) => matchId),
+    [predictionFeedbackByMatchId]
+  );
+  const selectedParlayMatches = useMemo(
+    () => parlayReadyMatchIds.filter((matchId) => selectedParlayMatchIds.has(matchId)),
+    [parlayReadyMatchIds, selectedParlayMatchIds]
+  );
+  const canCreateParlay = selectedParlayMatches.length >= 2 && Boolean(onCreateParlayCombination);
   const latestSyncHint = matches.length > 0 ? `${matches.length} 场比赛已载入` : "等待同步赛程数据";
 
   useEffect(() => {
@@ -583,6 +628,40 @@ export function FixturesPage({
     }
   }
 
+  function toggleParlayMatch(matchId: string) {
+    setSelectedParlayMatchIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (nextIds.has(matchId)) {
+        nextIds.delete(matchId);
+      } else {
+        nextIds.add(matchId);
+      }
+      return nextIds;
+    });
+    setParlayResult(null);
+    setParlayError(null);
+  }
+
+  async function handleCreateParlayCombination() {
+    if (!onCreateParlayCombination || !canCreateParlay) {
+      return;
+    }
+    setParlayGenerating(true);
+    setParlayError(null);
+    try {
+      const result = await onCreateParlayCombination({
+        matchIds: selectedParlayMatches,
+        riskLevel: parlayRiskLevel,
+        stakeUnits: parlayStakeUnits
+      });
+      setParlayResult(result);
+    } catch {
+      setParlayError("串关组合生成失败，请检查所选比赛是否都有单场方案。");
+    } finally {
+      setParlayGenerating(false);
+    }
+  }
+
   return (
     <section id="fixtures" className="page-section fixtures-console">
       <div className="fixtures-heading">
@@ -656,11 +735,33 @@ export function FixturesPage({
         <section className="parlay-workspace">
           <div>
             <span>串关工作台</span>
-            <strong>从已生成单场组合的比赛中选择 2 场以上</strong>
+            <strong>{selectedParlayMatches.length > 0 ? `已选 ${selectedParlayMatches.length} 场` : "从已生成单场组合的比赛中选择 2 场以上"}</strong>
+            <small>{selectedParlayMatches.length < 2 ? `还需 ${2 - selectedParlayMatches.length} 场` : "已满足生成条件"}</small>
           </div>
-          <button type="button" disabled>
-            生成串关组合
-          </button>
+          <div className="parlay-controls">
+            <label>
+              <span>风险</span>
+              <select value={parlayRiskLevel} onChange={(event) => setParlayRiskLevel(event.target.value as BettingRiskLevel)}>
+                <option value="low">低风险</option>
+                <option value="medium">中风险</option>
+                <option value="high">高风险</option>
+              </select>
+            </label>
+            <label>
+              <span>注数</span>
+              <input
+                min={1}
+                type="number"
+                value={parlayStakeUnits}
+                onChange={(event) => setParlayStakeUnits(Math.max(1, Number(event.target.value) || 1))}
+              />
+            </label>
+            <button type="button" disabled={!canCreateParlay || parlayGenerating} onClick={handleCreateParlayCombination}>
+              {parlayGenerating ? "生成中" : "生成串关组合"}
+            </button>
+          </div>
+          {parlayResult ? <p className="parlay-result">{parlayResult.summary}</p> : null}
+          {parlayError ? <p className="parlay-error">{parlayError}</p> : null}
         </section>
       ) : null}
 
@@ -672,6 +773,9 @@ export function FixturesPage({
         onOpenContext={handleOpenContext}
         onOpenHistory={onLoadPredictionHistory ? handleOpenPredictionHistory : undefined}
         onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions[0] ?? null)}
+        selectedParlayMatchIds={selectedParlayMatchIds}
+        onToggleParlay={toggleParlayMatch}
+        canSelectParlay={Boolean(onCreateParlayCombination)}
       />
 
       {activeStatus === "scheduled" && foldedMatches.length > 0 ? (
@@ -688,6 +792,9 @@ export function FixturesPage({
               onOpenContext={handleOpenContext}
               onOpenHistory={onLoadPredictionHistory ? handleOpenPredictionHistory : undefined}
               onOpenReport={(feedback) => setActivePredictionReport(feedback.predictions[0] ?? null)}
+              selectedParlayMatchIds={selectedParlayMatchIds}
+              onToggleParlay={toggleParlayMatch}
+              canSelectParlay={Boolean(onCreateParlayCombination)}
             />
           ) : null}
         </section>

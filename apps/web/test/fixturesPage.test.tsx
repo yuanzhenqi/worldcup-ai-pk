@@ -1,6 +1,12 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { MatchDto, PredictionRunHistoryDto, PredictionRunStatusDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
+import type {
+  MatchDto,
+  PredictionRunHistoryDto,
+  PredictionRunPredictionDto,
+  PredictionRunStatusDto,
+  PromptTemplateConfigDto
+} from "@worldcup-ai-pk/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FixturesPage } from "../src/pages/FixturesPage";
 
@@ -37,6 +43,37 @@ function visibleScheduledKickoff(): string {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).toISOString();
 }
 
+function buildPredictionWithSingleCombination(input: { id: string; modelDisplayName: string; planName: string }): PredictionRunPredictionDto {
+  return {
+    id: input.id,
+    modelDisplayName: input.modelDisplayName,
+    predictedResult: "home",
+    predictedHomeScore: 2,
+    predictedAwayScore: 1,
+    confidence: 0.72,
+    shortReason: "主队更稳定。",
+    keyFactors: ["主场"],
+    oddsInterpretation: "体彩选项仅作为投注组合背景。",
+    riskPoints: ["客队反击"],
+    analysisReport: "详细分析报告正文。",
+    singleCombination: {
+      summary: "主队小胜路径更清晰。",
+      primaryPlan: {
+        planName: input.planName,
+        riskLevel: "medium",
+        legs: [{ poolCode: "HAD", selectionCode: "h", selectionLabel: "主胜", reason: "主队更稳。" }],
+        stakeUnits: 2,
+        expectedScenario: "2-1",
+        avoidReason: null
+      },
+      backupPlans: [],
+      passRecommendation: "可低注参与。",
+      riskWarnings: ["临场阵容缺失会提高不确定性"],
+      dataGaps: []
+    }
+  };
+}
+
 describe("FixturesPage", () => {
   afterEach(() => {
     cleanup();
@@ -51,7 +88,7 @@ describe("FixturesPage", () => {
             id: "scheduled-1",
             apiFootballFixtureId: 1,
             stage: "Group Stage - 1",
-            kickoffAt: "2026-06-14T19:00:00.000Z",
+            kickoffAt: visibleScheduledKickoff(),
             status: "scheduled",
             statusLabelZh: "未开始",
             venue: "BMO Field",
@@ -453,6 +490,107 @@ describe("FixturesPage", () => {
     expect(await screen.findByText("综合观点：主胜")).toBeInTheDocument();
     expect(screen.getByText("参考比分：2-1")).toBeInTheDocument();
     expect(screen.getByText("主胜 2 / 平 0 / 客胜 0")).toBeInTheDocument();
+  });
+
+  it("enables parlay generation after selecting two matches with single plans", async () => {
+    const matchOne = {
+      ...buildMatch({
+        id: "scheduled-1",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "美国",
+        homeName: "USA",
+        awayDisplayNameZh: "巴拉圭",
+        awayName: "Paraguay"
+      }),
+      hasAiPrediction: true
+    };
+    const matchTwo = {
+      ...buildMatch({
+        id: "scheduled-2",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "德国",
+        homeName: "Germany",
+        awayDisplayNameZh: "库拉索",
+        awayName: "Curaçao"
+      }),
+      hasAiPrediction: true
+    };
+    const onLoadPredictionHistory = vi
+      .fn()
+      .mockResolvedValueOnce({
+        matchId: "scheduled-1",
+        runs: [
+          {
+            runId: "run-1",
+            matchId: "scheduled-1",
+            status: "completed",
+            message: "已完成 1 个模型预测",
+            predictionsCount: 1,
+            logs: [],
+            predictions: [
+              buildPredictionWithSingleCombination({ id: "prediction-1", modelDisplayName: "Doubao", planName: "主胜小比分" })
+            ]
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        matchId: "scheduled-2",
+        runs: [
+          {
+            runId: "run-2",
+            matchId: "scheduled-2",
+            status: "completed",
+            message: "已完成 1 个模型预测",
+            predictionsCount: 1,
+            logs: [],
+            predictions: [
+              buildPredictionWithSingleCombination({ id: "prediction-2", modelDisplayName: "Qwen", planName: "让球平保护" })
+            ]
+          }
+        ]
+      });
+    const onCreateParlayCombination = vi.fn().mockResolvedValue({
+      id: "parlay-1",
+      matchIds: ["scheduled-1", "scheduled-2"],
+      riskLevel: "medium",
+      stakeUnits: 2,
+      summary: "2 场组合：主胜小比分 + 让球平保护",
+      plans: [],
+      riskWarnings: ["串关会放大单场不确定性，请降低单注预算。"],
+      createdAt: "2026-06-15T08:00:00.000Z"
+    });
+
+    render(
+      <FixturesPage
+        matches={[matchOne, matchTwo]}
+        onLoadPredictionHistory={onLoadPredictionHistory}
+        onCreateParlayCombination={onCreateParlayCombination}
+      />
+    );
+
+    expect(await screen.findByText("主胜小比分")).toBeInTheDocument();
+    expect(await screen.findByText("让球平保护")).toBeInTheDocument();
+
+    const matchOneCard = screen.getByText("美国").closest("article");
+    expect(matchOneCard).not.toBeNull();
+    await userEvent.click(within(matchOneCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    expect(screen.getByText("已选 1 场")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成串关组合" })).toBeDisabled();
+
+    const matchTwoCard = screen.getByText("德国").closest("article");
+    expect(matchTwoCard).not.toBeNull();
+    await userEvent.click(within(matchTwoCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    expect(screen.getByText("已选 2 场")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "生成串关组合" }));
+    expect(onCreateParlayCombination).toHaveBeenCalledWith({
+      matchIds: ["scheduled-1", "scheduled-2"],
+      riskLevel: "medium",
+      stakeUnits: 2
+    });
+    expect(await screen.findByText("2 场组合：主胜小比分 + 让球平保护")).toBeInTheDocument();
   });
 
   it("refreshes match context automatically when opening the data card", async () => {
