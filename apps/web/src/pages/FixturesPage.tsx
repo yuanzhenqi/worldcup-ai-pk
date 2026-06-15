@@ -192,6 +192,10 @@ function getLatestSingleCombination(feedback?: PredictionFeedback) {
   return feedback?.predictions.find((prediction) => prediction.singleCombination)?.singleCombination ?? null;
 }
 
+function normalizeParlayStakeUnits(stakeUnits: number): number {
+  return Math.max(1, Math.floor(Number.isFinite(stakeUnits) ? stakeUnits : 1));
+}
+
 function getUpcomingDateKeys(now = new Date()): Set<string> {
   return new Set([0, 1, 2].map((offset) => getLocalDateKey(addDays(now, offset))));
 }
@@ -464,10 +468,10 @@ export function FixturesPage({
   const foldedDateGroups = useMemo(() => groupMatchesByDate(foldedMatches), [foldedMatches]);
   const parlayReadyMatchIds = useMemo(
     () =>
-      Object.entries(predictionFeedbackByMatchId)
-        .filter(([, feedback]) => Boolean(getLatestSingleCombination(feedback)))
-        .map(([matchId]) => matchId),
-    [predictionFeedbackByMatchId]
+      matches
+        .filter((match) => Boolean(getLatestSingleCombination(predictionFeedbackByMatchId[match.id])))
+        .map((match) => match.id),
+    [matches, predictionFeedbackByMatchId]
   );
   const selectedParlayMatches = useMemo(
     () => parlayReadyMatchIds.filter((matchId) => selectedParlayMatchIds.has(matchId)),
@@ -475,6 +479,15 @@ export function FixturesPage({
   );
   const canCreateParlay = selectedParlayMatches.length >= 2 && Boolean(onCreateParlayCombination);
   const latestSyncHint = matches.length > 0 ? `${matches.length} 场比赛已载入` : "等待同步赛程数据";
+
+  useEffect(() => {
+    const currentMatchIds = new Set(matches.map((match) => match.id));
+
+    setSelectedParlayMatchIds((currentIds) => {
+      const nextIds = new Set([...currentIds].filter((matchId) => currentMatchIds.has(matchId)));
+      return nextIds.size === currentIds.size ? currentIds : nextIds;
+    });
+  }, [matches]);
 
   useEffect(() => {
     if (!onLoadPredictionHistory) {
@@ -649,10 +662,11 @@ export function FixturesPage({
     setParlayGenerating(true);
     setParlayError(null);
     try {
+      const stakeUnits = normalizeParlayStakeUnits(parlayStakeUnits);
       const result = await onCreateParlayCombination({
         matchIds: selectedParlayMatches,
         riskLevel: parlayRiskLevel,
-        stakeUnits: parlayStakeUnits
+        stakeUnits
       });
       setParlayResult(result);
     } catch {
@@ -741,7 +755,14 @@ export function FixturesPage({
           <div className="parlay-controls">
             <label>
               <span>风险</span>
-              <select value={parlayRiskLevel} onChange={(event) => setParlayRiskLevel(event.target.value as BettingRiskLevel)}>
+              <select
+                value={parlayRiskLevel}
+                onChange={(event) => {
+                  setParlayRiskLevel(event.target.value as BettingRiskLevel);
+                  setParlayResult(null);
+                  setParlayError(null);
+                }}
+              >
                 <option value="low">低风险</option>
                 <option value="medium">中风险</option>
                 <option value="high">高风险</option>
@@ -751,9 +772,14 @@ export function FixturesPage({
               <span>注数</span>
               <input
                 min={1}
+                step={1}
                 type="number"
                 value={parlayStakeUnits}
-                onChange={(event) => setParlayStakeUnits(Math.max(1, Number(event.target.value) || 1))}
+                onChange={(event) => {
+                  setParlayStakeUnits(normalizeParlayStakeUnits(Number(event.target.value)));
+                  setParlayResult(null);
+                  setParlayError(null);
+                }}
               />
             </label>
             <button type="button" disabled={!canCreateParlay || parlayGenerating} onClick={handleCreateParlayCombination}>

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
   MatchDto,
@@ -71,6 +71,46 @@ function buildPredictionWithSingleCombination(input: { id: string; modelDisplayN
       riskWarnings: ["临场阵容缺失会提高不确定性"],
       dataGaps: []
     }
+  };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
+function buildPredictionHistory(input: {
+  matchId: string;
+  runId: string;
+  predictionId: string;
+  modelDisplayName: string;
+  planName: string;
+}): PredictionRunHistoryDto {
+  return {
+    matchId: input.matchId,
+    runs: [
+      {
+        runId: input.runId,
+        matchId: input.matchId,
+        status: "completed",
+        message: "已完成 1 个模型预测",
+        predictionsCount: 1,
+        logs: [],
+        predictions: [
+          buildPredictionWithSingleCombination({
+            id: input.predictionId,
+            modelDisplayName: input.modelDisplayName,
+            planName: input.planName
+          })
+        ]
+      }
+    ]
   };
 }
 
@@ -591,6 +631,359 @@ describe("FixturesPage", () => {
       stakeUnits: 2
     });
     expect(await screen.findByText("2 场组合：主胜小比分 + 让球平保护")).toBeInTheDocument();
+  });
+
+  it("submits selected parlay match IDs in visible match order when histories resolve out of order", async () => {
+    const matchOne = {
+      ...buildMatch({
+        id: "scheduled-1",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "美国",
+        homeName: "USA",
+        awayDisplayNameZh: "巴拉圭",
+        awayName: "Paraguay"
+      }),
+      hasAiPrediction: true
+    };
+    const matchTwo = {
+      ...buildMatch({
+        id: "scheduled-2",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "德国",
+        homeName: "Germany",
+        awayDisplayNameZh: "库拉索",
+        awayName: "Curaçao"
+      }),
+      hasAiPrediction: true
+    };
+    const matchOneHistory = createDeferred<PredictionRunHistoryDto>();
+    const matchTwoHistory = createDeferred<PredictionRunHistoryDto>();
+    const onLoadPredictionHistory = vi.fn((matchId: string) => {
+      if (matchId === "scheduled-1") {
+        return matchOneHistory.promise;
+      }
+      if (matchId === "scheduled-2") {
+        return matchTwoHistory.promise;
+      }
+      return Promise.reject(new Error(`Unexpected match id ${matchId}`));
+    });
+    const onCreateParlayCombination = vi.fn().mockResolvedValue({
+      id: "parlay-1",
+      matchIds: ["scheduled-1", "scheduled-2"],
+      riskLevel: "medium",
+      stakeUnits: 2,
+      summary: "2 场组合：主胜小比分 + 让球平保护",
+      plans: [],
+      riskWarnings: [],
+      createdAt: "2026-06-15T08:00:00.000Z"
+    });
+
+    render(
+      <FixturesPage
+        matches={[matchOne, matchTwo]}
+        onLoadPredictionHistory={onLoadPredictionHistory}
+        onCreateParlayCombination={onCreateParlayCombination}
+      />
+    );
+
+    await act(async () => {
+      matchTwoHistory.resolve(
+        buildPredictionHistory({
+          matchId: "scheduled-2",
+          runId: "run-2",
+          predictionId: "prediction-2",
+          modelDisplayName: "Qwen",
+          planName: "让球平保护"
+        })
+      );
+    });
+    expect(await screen.findByText("让球平保护")).toBeInTheDocument();
+
+    await act(async () => {
+      matchOneHistory.resolve(
+        buildPredictionHistory({
+          matchId: "scheduled-1",
+          runId: "run-1",
+          predictionId: "prediction-1",
+          modelDisplayName: "Doubao",
+          planName: "主胜小比分"
+        })
+      );
+    });
+    expect(await screen.findByText("主胜小比分")).toBeInTheDocument();
+
+    const matchOneCard = screen.getByText("美国").closest("article");
+    const matchTwoCard = screen.getByText("德国").closest("article");
+    expect(matchOneCard).not.toBeNull();
+    expect(matchTwoCard).not.toBeNull();
+    await userEvent.click(within(matchOneCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    await userEvent.click(within(matchTwoCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    await userEvent.click(screen.getByRole("button", { name: "生成串关组合" }));
+
+    expect(onCreateParlayCombination).toHaveBeenCalledWith({
+      matchIds: ["scheduled-1", "scheduled-2"],
+      riskLevel: "medium",
+      stakeUnits: 2
+    });
+  });
+
+  it("normalizes decimal parlay stake units before submit", async () => {
+    const matchOne = {
+      ...buildMatch({
+        id: "scheduled-1",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "美国",
+        homeName: "USA",
+        awayDisplayNameZh: "巴拉圭",
+        awayName: "Paraguay"
+      }),
+      hasAiPrediction: true
+    };
+    const matchTwo = {
+      ...buildMatch({
+        id: "scheduled-2",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "德国",
+        homeName: "Germany",
+        awayDisplayNameZh: "库拉索",
+        awayName: "Curaçao"
+      }),
+      hasAiPrediction: true
+    };
+    const onLoadPredictionHistory = vi
+      .fn()
+      .mockResolvedValueOnce(
+        buildPredictionHistory({
+          matchId: "scheduled-1",
+          runId: "run-1",
+          predictionId: "prediction-1",
+          modelDisplayName: "Doubao",
+          planName: "主胜小比分"
+        })
+      )
+      .mockResolvedValueOnce(
+        buildPredictionHistory({
+          matchId: "scheduled-2",
+          runId: "run-2",
+          predictionId: "prediction-2",
+          modelDisplayName: "Qwen",
+          planName: "让球平保护"
+        })
+      );
+    const onCreateParlayCombination = vi.fn().mockResolvedValue({
+      id: "parlay-1",
+      matchIds: ["scheduled-1", "scheduled-2"],
+      riskLevel: "medium",
+      stakeUnits: 1,
+      summary: "2 场组合",
+      plans: [],
+      riskWarnings: [],
+      createdAt: "2026-06-15T08:00:00.000Z"
+    });
+
+    render(
+      <FixturesPage
+        matches={[matchOne, matchTwo]}
+        onLoadPredictionHistory={onLoadPredictionHistory}
+        onCreateParlayCombination={onCreateParlayCombination}
+      />
+    );
+
+    expect(await screen.findByText("主胜小比分")).toBeInTheDocument();
+    expect(await screen.findByText("让球平保护")).toBeInTheDocument();
+
+    const matchOneCard = screen.getByText("美国").closest("article");
+    const matchTwoCard = screen.getByText("德国").closest("article");
+    expect(matchOneCard).not.toBeNull();
+    expect(matchTwoCard).not.toBeNull();
+    await userEvent.click(within(matchOneCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    await userEvent.click(within(matchTwoCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    fireEvent.change(screen.getByLabelText("注数"), { target: { value: "1.5" } });
+    await userEvent.click(screen.getByRole("button", { name: "生成串关组合" }));
+
+    expect(onCreateParlayCombination).toHaveBeenCalledWith({
+      matchIds: ["scheduled-1", "scheduled-2"],
+      riskLevel: "medium",
+      stakeUnits: 1
+    });
+  });
+
+  it("clears rendered parlay result when risk or stake changes", async () => {
+    const matchOne = {
+      ...buildMatch({
+        id: "scheduled-1",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "美国",
+        homeName: "USA",
+        awayDisplayNameZh: "巴拉圭",
+        awayName: "Paraguay"
+      }),
+      hasAiPrediction: true
+    };
+    const matchTwo = {
+      ...buildMatch({
+        id: "scheduled-2",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "德国",
+        homeName: "Germany",
+        awayDisplayNameZh: "库拉索",
+        awayName: "Curaçao"
+      }),
+      hasAiPrediction: true
+    };
+    const onLoadPredictionHistory = vi
+      .fn()
+      .mockResolvedValueOnce(
+        buildPredictionHistory({
+          matchId: "scheduled-1",
+          runId: "run-1",
+          predictionId: "prediction-1",
+          modelDisplayName: "Doubao",
+          planName: "主胜小比分"
+        })
+      )
+      .mockResolvedValueOnce(
+        buildPredictionHistory({
+          matchId: "scheduled-2",
+          runId: "run-2",
+          predictionId: "prediction-2",
+          modelDisplayName: "Qwen",
+          planName: "让球平保护"
+        })
+      );
+    const onCreateParlayCombination = vi.fn().mockResolvedValue({
+      id: "parlay-1",
+      matchIds: ["scheduled-1", "scheduled-2"],
+      riskLevel: "medium",
+      stakeUnits: 2,
+      summary: "旧串关结果",
+      plans: [],
+      riskWarnings: [],
+      createdAt: "2026-06-15T08:00:00.000Z"
+    });
+
+    render(
+      <FixturesPage
+        matches={[matchOne, matchTwo]}
+        onLoadPredictionHistory={onLoadPredictionHistory}
+        onCreateParlayCombination={onCreateParlayCombination}
+      />
+    );
+
+    expect(await screen.findByText("主胜小比分")).toBeInTheDocument();
+    expect(await screen.findByText("让球平保护")).toBeInTheDocument();
+
+    const matchOneCard = screen.getByText("美国").closest("article");
+    const matchTwoCard = screen.getByText("德国").closest("article");
+    expect(matchOneCard).not.toBeNull();
+    expect(matchTwoCard).not.toBeNull();
+    await userEvent.click(within(matchOneCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    await userEvent.click(within(matchTwoCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "生成串关组合" }));
+    expect(await screen.findByText("旧串关结果")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("风险"), { target: { value: "high" } });
+    expect(screen.queryByText("旧串关结果")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "生成串关组合" }));
+    expect(await screen.findByText("旧串关结果")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("注数"), { target: { value: "3" } });
+    expect(screen.queryByText("旧串关结果")).not.toBeInTheDocument();
+  });
+
+  it("prunes selected parlay match IDs when refreshed matches remove a match", async () => {
+    const matchOne = {
+      ...buildMatch({
+        id: "scheduled-1",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "美国",
+        homeName: "USA",
+        awayDisplayNameZh: "巴拉圭",
+        awayName: "Paraguay"
+      }),
+      hasAiPrediction: true
+    };
+    const matchTwo = {
+      ...buildMatch({
+        id: "scheduled-2",
+        kickoffAt: visibleScheduledKickoff(),
+        status: "scheduled",
+        homeDisplayNameZh: "德国",
+        homeName: "Germany",
+        awayDisplayNameZh: "库拉索",
+        awayName: "Curaçao"
+      }),
+      hasAiPrediction: true
+    };
+    const onLoadPredictionHistory = vi
+      .fn()
+      .mockResolvedValueOnce(
+        buildPredictionHistory({
+          matchId: "scheduled-1",
+          runId: "run-1",
+          predictionId: "prediction-1",
+          modelDisplayName: "Doubao",
+          planName: "主胜小比分"
+        })
+      )
+      .mockResolvedValueOnce(
+        buildPredictionHistory({
+          matchId: "scheduled-2",
+          runId: "run-2",
+          predictionId: "prediction-2",
+          modelDisplayName: "Qwen",
+          planName: "让球平保护"
+        })
+      );
+    const onCreateParlayCombination = vi.fn().mockResolvedValue({
+      id: "parlay-1",
+      matchIds: ["scheduled-1", "scheduled-2"],
+      riskLevel: "medium",
+      stakeUnits: 2,
+      summary: "2 场组合",
+      plans: [],
+      riskWarnings: [],
+      createdAt: "2026-06-15T08:00:00.000Z"
+    });
+
+    const { rerender } = render(
+      <FixturesPage
+        matches={[matchOne, matchTwo]}
+        onLoadPredictionHistory={onLoadPredictionHistory}
+        onCreateParlayCombination={onCreateParlayCombination}
+      />
+    );
+
+    expect(await screen.findByText("主胜小比分")).toBeInTheDocument();
+    expect(await screen.findByText("让球平保护")).toBeInTheDocument();
+
+    const matchOneCard = screen.getByText("美国").closest("article");
+    const matchTwoCard = screen.getByText("德国").closest("article");
+    expect(matchOneCard).not.toBeNull();
+    expect(matchTwoCard).not.toBeNull();
+    await userEvent.click(within(matchOneCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    await userEvent.click(within(matchTwoCard as HTMLElement).getByRole("button", { name: "加入串关" }));
+    expect(screen.getByText("已选 2 场")).toBeInTheDocument();
+
+    rerender(
+      <FixturesPage
+        matches={[matchOne]}
+        onLoadPredictionHistory={onLoadPredictionHistory}
+        onCreateParlayCombination={onCreateParlayCombination}
+      />
+    );
+
+    expect(screen.getByText("已选 1 场")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成串关组合" })).toBeDisabled();
   });
 
   it("refreshes match context automatically when opening the data card", async () => {
