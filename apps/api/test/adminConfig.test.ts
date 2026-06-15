@@ -737,6 +737,83 @@ describe("admin config API", () => {
     await app.close();
   });
 
+  it("does not seed built-in prompts that weight betting values for score prediction", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/prompt-templates",
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { promptTemplates: Array<{ fullPrompt: string; enabled: boolean }> };
+    const enabledPromptText = body.promptTemplates
+      .filter((template) => template.enabled)
+      .map((template) => template.fullPrompt)
+      .join("\n");
+
+    expect(enabledPromptText).not.toContain("赔率变化 10%");
+    expect(enabledPromptText).not.toContain("按以下权重评估");
+
+    await app.close();
+  });
+
+  it("disables existing prompt templates that weight betting values for score prediction", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO prompt_templates (
+          id,
+          name,
+          description,
+          full_prompt,
+          prompt_summary,
+          scope,
+          enabled,
+          is_default,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "manual-weighted-betting",
+      "旧权重模板",
+      "旧提示词",
+      "按以下权重评估：赔率变化 10%。请预测 {{homeTeam}} 对阵 {{awayTeam}}。",
+      "旧权重模板",
+      "match_prediction",
+      1,
+      0,
+      "2026-06-13T00:00:00.000Z",
+      "2026-06-13T00:00:00.000Z"
+    );
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/admin/prompt-templates",
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const templates = response.json().promptTemplates as Array<{ id: string; fullPrompt: string; enabled: boolean }>;
+    const legacyTemplate = templates.find((template) => template.id === "manual-weighted-betting");
+    const enabledPromptText = templates
+      .filter((template) => template.enabled)
+      .map((template) => template.fullPrompt)
+      .join("\n");
+
+    expect(legacyTemplate).toMatchObject({ id: "manual-weighted-betting", enabled: false });
+    expect(enabledPromptText).not.toContain("赔率变化 10%");
+    expect(enabledPromptText).not.toContain("按以下权重评估");
+
+    await app.close();
+  });
+
   it("updates existing built-in prompt templates when the app starts", async () => {
     const { db, databasePath } = createTestDatabase();
     db.prepare(

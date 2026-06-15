@@ -200,4 +200,14 @@ export function seedBuiltInPromptTemplates(db: Database, now = new Date()): void
   });
 
   transaction();
+
+  db.prepare(
+    `
+      UPDATE prompt_templates
+      SET enabled = 0,
+          updated_at = ?
+      WHERE full_prompt LIKE '%赔率变化 10%'
+         OR full_prompt LIKE '%按以下权重评估%'
+    `
+  ).run(createdAt);
 }
