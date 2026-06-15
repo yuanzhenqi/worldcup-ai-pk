@@ -116,6 +116,34 @@ CREATE TABLE IF NOT EXISTS prediction_run_logs (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS prediction_agent_outputs (
+  id TEXT PRIMARY KEY,
+  prediction_run_id TEXT NOT NULL REFERENCES prediction_runs(id) ON DELETE CASCADE,
+  match_id TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  model_id TEXT NOT NULL REFERENCES ai_models(id) ON DELETE CASCADE,
+  agent_role TEXT NOT NULL,
+  output_json TEXT NOT NULL,
+  raw_response TEXT NOT NULL,
+  parse_status TEXT NOT NULL,
+  error TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_agent_outputs_run
+  ON prediction_agent_outputs(prediction_run_id, model_id, agent_role);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_agent_outputs_match_role_status
+  ON prediction_agent_outputs(match_id, agent_role, parse_status, created_at);
+
+CREATE TABLE IF NOT EXISTS parlay_combination_runs (
+  id TEXT PRIMARY KEY,
+  match_ids_json TEXT NOT NULL,
+  risk_level TEXT NOT NULL,
+  stake_units INTEGER NOT NULL,
+  output_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS ai_predictions (
   id TEXT PRIMARY KEY,
   prediction_run_id TEXT NOT NULL REFERENCES prediction_runs(id),

@@ -145,4 +145,70 @@ describe("schema migration on app startup", () => {
 
     db.close();
   });
+
+  it("creates prediction agent output and parlay run tables", () => {
+    const { db } = createTestDatabase();
+
+    expect(
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("prediction_agent_outputs")
+    ).toMatchObject({ name: "prediction_agent_outputs" });
+    expect(
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get("parlay_combination_runs")
+    ).toMatchObject({ name: "parlay_combination_runs" });
+
+    const agentOutputColumns = db.prepare("PRAGMA table_info(prediction_agent_outputs)").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
+    expect(
+      agentOutputColumns.map((column) => ({
+        name: column.name,
+        type: column.type,
+        notnull: column.notnull
+      }))
+    ).toEqual([
+      { name: "id", type: "TEXT", notnull: 0 },
+      { name: "prediction_run_id", type: "TEXT", notnull: 1 },
+      { name: "match_id", type: "TEXT", notnull: 1 },
+      { name: "model_id", type: "TEXT", notnull: 1 },
+      { name: "agent_role", type: "TEXT", notnull: 1 },
+      { name: "output_json", type: "TEXT", notnull: 1 },
+      { name: "raw_response", type: "TEXT", notnull: 1 },
+      { name: "parse_status", type: "TEXT", notnull: 1 },
+      { name: "error", type: "TEXT", notnull: 0 },
+      { name: "created_at", type: "TEXT", notnull: 1 }
+    ]);
+
+    const agentOutputIndexes = db.prepare("PRAGMA index_list(prediction_agent_outputs)").all() as Array<{ name: string }>;
+    expect(agentOutputIndexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining([
+        "idx_prediction_agent_outputs_run",
+        "idx_prediction_agent_outputs_match_role_status"
+      ])
+    );
+
+    const parlayColumns = db.prepare("PRAGMA table_info(parlay_combination_runs)").all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+    }>;
+    expect(
+      parlayColumns.map((column) => ({
+        name: column.name,
+        type: column.type,
+        notnull: column.notnull
+      }))
+    ).toEqual([
+      { name: "id", type: "TEXT", notnull: 0 },
+      { name: "match_ids_json", type: "TEXT", notnull: 1 },
+      { name: "risk_level", type: "TEXT", notnull: 1 },
+      { name: "stake_units", type: "INTEGER", notnull: 1 },
+      { name: "output_json", type: "TEXT", notnull: 1 },
+      { name: "created_at", type: "TEXT", notnull: 1 }
+    ]);
+
+    expect(() => applySchema(db)).not.toThrow();
+    db.close();
+  });
 });
