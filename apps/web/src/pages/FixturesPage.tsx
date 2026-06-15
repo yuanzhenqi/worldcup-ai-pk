@@ -179,6 +179,16 @@ function buildPredictionConsensus(predictions: PredictionRunPredictionDto[], fai
   };
 }
 
+function getRiskLabel(riskLevel: "low" | "medium" | "high") {
+  if (riskLevel === "low") return "低风险";
+  if (riskLevel === "high") return "高风险";
+  return "中风险";
+}
+
+function getLatestSingleCombination(feedback?: PredictionFeedback) {
+  return feedback?.predictions.find((prediction) => prediction.singleCombination)?.singleCombination ?? null;
+}
+
 function getUpcomingDateKeys(now = new Date()): Set<string> {
   return new Set([0, 1, 2].map((offset) => getLocalDateKey(addDays(now, offset))));
 }
@@ -231,6 +241,7 @@ function MatchCard({
   const hasHistory = match.hasAiPrediction || Boolean(feedback?.predictions.length);
   const failedPredictionCount = feedback?.logs.filter((log) => log.level === "error").length ?? 0;
   const consensus = feedback ? buildPredictionConsensus(feedback.predictions, failedPredictionCount) : null;
+  const latestSingleCombination = getLatestSingleCombination(feedback);
 
   return (
     <article className={`match-card match-card-shell status-${match.status}`}>
@@ -275,6 +286,16 @@ function MatchCard({
           <span className={`prediction-feedback ${feedback.tone}`}>{feedback.message}</span>
           {feedback.predictions.length > 0 ? (
             <>
+              {latestSingleCombination ? (
+                <div className="match-betting-summary">
+                  <span>最新组合方案</span>
+                  <strong>{latestSingleCombination.primaryPlan.planName}</strong>
+                  <small>
+                    {getRiskLabel(latestSingleCombination.primaryPlan.riskLevel)} · {latestSingleCombination.primaryPlan.stakeUnits} 注
+                  </small>
+                  <p>{latestSingleCombination.summary}</p>
+                </div>
+              ) : null}
               <div className="prediction-consensus-summary">
                 <span>{`综合观点：${consensus?.topResultText ?? "未形成共识"}`}</span>
                 <span>{`参考比分：${consensus?.topScore ?? "未形成共识"}`}</span>

@@ -446,6 +446,40 @@ a {
   color: #b64225;
 }
 
+.match-betting-summary {
+  background: #f7fbf9;
+  border: 1px solid rgba(18, 61, 54, 0.14);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  max-width: 520px;
+  padding: 10px 12px;
+}
+
+.match-betting-summary span {
+  color: #51635f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.match-betting-summary strong {
+  color: #123d36;
+  font-size: 15px;
+}
+
+.match-betting-summary small {
+  color: #315a52;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.match-betting-summary p {
+  color: #243a36;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 2px 0 0;
+}
+
 .prediction-log-list {
   color: #4d5b63;
   display: grid;

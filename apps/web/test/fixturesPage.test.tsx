@@ -32,6 +32,11 @@ function buildMatch(input: {
   };
 }
 
+function visibleScheduledKickoff(): string {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).toISOString();
+}
+
 describe("FixturesPage", () => {
   afterEach(() => {
     cleanup();
@@ -206,13 +211,46 @@ describe("FixturesPage", () => {
           keyFactors: ["赔率", "主场"],
           oddsInterpretation: "主胜赔率更低。",
           riskPoints: ["客队反击"],
-          analysisReport: "详细分析报告正文。"
+          analysisReport: "详细分析报告正文。",
+          matchAnalysis: {
+            predictedResult: "home",
+            predictedHomeScore: 2,
+            predictedAwayScore: 1,
+            confidence: 0.72,
+            shortReason: "主队更稳定。",
+            keyFactors: ["主场"],
+            riskPoints: ["客队反击"],
+            analysisReport: "详细分析报告正文。",
+            dataGaps: ["未获取首发名单"]
+          },
+          singleCombination: {
+            summary: "主队小胜路径更清晰，单场组合以主胜保护为主。",
+            primaryPlan: {
+              planName: "主胜小比分",
+              riskLevel: "medium",
+              legs: [
+                {
+                  poolCode: "HAD",
+                  selectionCode: "h",
+                  selectionLabel: "主胜",
+                  reason: "Agent A 判断主队胜面更高。"
+                }
+              ],
+              stakeUnits: 2,
+              expectedScenario: "美国 2-1。",
+              avoidReason: null
+            },
+            backupPlans: [],
+            passRecommendation: "可低注参与。",
+            riskWarnings: ["临场阵容缺失会提高不确定性"],
+            dataGaps: ["未获取首发名单"]
+          }
         }
       ]
     });
     const match = buildMatch({
       id: "scheduled-1",
-      kickoffAt: "2026-06-14T12:00:00.000Z",
+      kickoffAt: visibleScheduledKickoff(),
       status: "scheduled",
       homeDisplayNameZh: "美国",
       homeName: "USA",
@@ -226,7 +264,7 @@ describe("FixturesPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "开始预测" }));
 
     expect(onRequestPrediction).toHaveBeenCalledWith(match, {
-      taskTypes: ["result_1x2", "scoreline"],
+      taskTypes: ["match_analysis", "scoreline", "single_bet_combo"],
       dataOptions: {
         useOdds: false,
         useApiFootballPrediction: false,
@@ -241,6 +279,10 @@ describe("FixturesPage", () => {
       refreshContext: true
     });
     expect(await screen.findByText("已完成 1 个模型预测")).toBeInTheDocument();
+    expect(screen.getByText("最新组合方案")).toBeInTheDocument();
+    expect(screen.getByText("主胜小比分")).toBeInTheDocument();
+    expect(screen.getByText("中风险 · 2 注")).toBeInTheDocument();
+    expect(screen.getByText("主队小胜路径更清晰，单场组合以主胜保护为主。")).toBeInTheDocument();
     expect(screen.getByText("综合观点：主胜")).toBeInTheDocument();
     expect(screen.getByText("参考比分：2-1")).toBeInTheDocument();
     expect(screen.getByText("主胜 1 / 平 0 / 客胜 0")).toBeInTheDocument();
@@ -262,7 +304,7 @@ describe("FixturesPage", () => {
     const match = {
       ...buildMatch({
         id: "scheduled-1",
-        kickoffAt: "2026-06-14T12:00:00.000Z",
+        kickoffAt: visibleScheduledKickoff(),
         status: "scheduled",
         homeDisplayNameZh: "美国",
         homeName: "USA",
@@ -353,7 +395,7 @@ describe("FixturesPage", () => {
     const match = {
       ...buildMatch({
         id: "scheduled-1",
-        kickoffAt: "2026-06-14T12:00:00.000Z",
+        kickoffAt: visibleScheduledKickoff(),
         status: "scheduled",
         homeDisplayNameZh: "美国",
         homeName: "USA",
@@ -414,7 +456,7 @@ describe("FixturesPage", () => {
   it("refreshes match context automatically when opening the data card", async () => {
     const match = buildMatch({
       id: "scheduled-1",
-      kickoffAt: "2026-06-14T12:00:00.000Z",
+      kickoffAt: visibleScheduledKickoff(),
       status: "scheduled",
       homeDisplayNameZh: "美国",
       homeName: "USA",
@@ -455,7 +497,7 @@ describe("FixturesPage", () => {
   it("polls prediction run status while models are still running", async () => {
     const match = buildMatch({
       id: "scheduled-1",
-      kickoffAt: "2026-06-14T12:00:00.000Z",
+      kickoffAt: visibleScheduledKickoff(),
       status: "scheduled",
       homeDisplayNameZh: "美国",
       homeName: "USA",
