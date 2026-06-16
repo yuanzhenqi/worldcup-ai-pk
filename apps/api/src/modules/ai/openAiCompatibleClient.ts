@@ -92,9 +92,9 @@ function getJsonErrorMessage(rawResponse: string): string | null {
 
 function buildHttpErrorMessage(prefix: string, status: number, rawResponse: string): string {
   let message =
-    prefix === "AI prediction" && status === 429
+    status === 429
       ? `${prefix} rate limited with HTTP ${status}`
-      : prefix === "AI prediction" && status === 503
+      : status === 503
         ? `${prefix} upstream unavailable with HTTP ${status}`
         : `${prefix} failed with HTTP ${status}`;
   const errorMessage = getJsonErrorMessage(rawResponse);

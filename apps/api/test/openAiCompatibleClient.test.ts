@@ -126,4 +126,26 @@ describe("OpenAI-compatible client response normalization", () => {
       '{"predicted_result":"home","predicted_home_score":2,"predicted_away_score":1,"confidence":0.61,"data_gaps":[]}'
     );
   });
+
+  it("testOpenAiCompatibleModel reports HTTP 429 as rate limited", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ error: { message: "quota exhausted" } }, 429));
+
+    await expect(testOpenAiCompatibleModel(config, () => 100)).resolves.toEqual({
+      ok: false,
+      status: 429,
+      message: "模型测试失败：rate limited with HTTP 429：quota exhausted",
+      latencyMs: 0
+    });
+  });
+
+  it("testOpenAiCompatibleModel reports HTTP 503 as upstream unavailable", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(jsonResponse({ error: { message: "maintenance" } }, 503));
+
+    await expect(testOpenAiCompatibleModel(config, () => 100)).resolves.toEqual({
+      ok: false,
+      status: 503,
+      message: "模型测试失败：upstream unavailable with HTTP 503：maintenance",
+      latencyMs: 0
+    });
+  });
 });
