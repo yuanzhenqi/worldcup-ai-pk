@@ -188,12 +188,16 @@ function getRiskLabel(riskLevel: "low" | "medium" | "high") {
   return "中风险";
 }
 
+function getPrimaryLeg(prediction: PredictionRunPredictionDto) {
+  return prediction.singleCombination?.primaryPlan.legs[0] ?? null;
+}
+
 function getLatestSingleCombination(feedback?: PredictionFeedback) {
-  return feedback?.predictions.find((prediction) => prediction.singleCombination)?.singleCombination ?? null;
+  return feedback?.predictions.find((prediction) => getPrimaryLeg(prediction))?.singleCombination ?? null;
 }
 
 function getPrimaryLegText(prediction: PredictionRunPredictionDto): string {
-  const leg = prediction.singleCombination?.primaryPlan.legs[0];
+  const leg = getPrimaryLeg(prediction);
   if (!leg) {
     return "未生成";
   }
@@ -201,7 +205,7 @@ function getPrimaryLegText(prediction: PredictionRunPredictionDto): string {
 }
 
 function getPredictionStatusText(prediction: PredictionRunPredictionDto): string {
-  return prediction.singleCombination ? "已生成组合" : "仅赛果";
+  return getPrimaryLeg(prediction) ? "已生成组合" : "仅赛果";
 }
 
 function normalizeParlayStakeUnits(stakeUnits: number): number {

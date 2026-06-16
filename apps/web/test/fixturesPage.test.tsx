@@ -404,6 +404,47 @@ describe("FixturesPage", () => {
     expect(screen.getByText("详细分析报告正文。")).toBeInTheDocument();
   });
 
+  it("does not treat empty-leg single combinations as generated parlay plans", async () => {
+    const prediction = buildPredictionWithSingleCombination({
+      id: "prediction-empty-leg",
+      modelDisplayName: "GPT-4o mini",
+      planName: "空玩法方案"
+    });
+    prediction.singleCombination!.primaryPlan.legs = [];
+
+    const onRequestPrediction = vi.fn().mockResolvedValue({
+      matchId: "scheduled-1",
+      status: "completed",
+      message: "已完成 1 个模型预测",
+      scheduledFor: null,
+      context: null,
+      runId: "run-empty-leg",
+      predictionsCount: 1,
+      logs: [],
+      predictions: [prediction]
+    });
+    const match = buildMatch({
+      id: "scheduled-1",
+      kickoffAt: visibleScheduledKickoff(),
+      status: "scheduled",
+      homeDisplayNameZh: "美国",
+      homeName: "USA",
+      awayDisplayNameZh: "巴拉圭",
+      awayName: "Paraguay"
+    });
+
+    render(<FixturesPage matches={[match]} onRequestPrediction={onRequestPrediction} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "预测" }));
+    await userEvent.click(screen.getByRole("button", { name: "开始预测" }));
+
+    expect(await screen.findByText("已完成 1 个模型预测")).toBeInTheDocument();
+    expect(screen.getAllByText("未生成").length).toBeGreaterThan(0);
+    expect(screen.getByText("仅赛果")).toBeInTheDocument();
+    expect(screen.queryByText("最新组合方案")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "加入串关" })).not.toBeInTheDocument();
+  });
+
   it("opens historical prediction runs from a match card", async () => {
     const match = {
       ...buildMatch({
