@@ -104,6 +104,44 @@ a {
   padding: 18px;
 }
 
+.app-button {
+  align-items: center;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  justify-content: center;
+  line-height: 1;
+  min-height: 38px;
+  padding: 8px 12px;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, opacity 140ms ease;
+  white-space: nowrap;
+}
+
+.app-button-primary {
+  background: #123d35;
+  color: #ffffff;
+}
+
+.app-button-secondary {
+  background: #edf4f1;
+  color: #123d35;
+}
+
+.app-button-selected,
+.parlay-toggle.selected {
+  background: #123d35;
+  color: #ffffff;
+}
+
+.app-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .match-row,
 .prediction-card,
 .detail-grid article {
@@ -347,24 +385,6 @@ a {
   width: 76px;
 }
 
-.parlay-workspace button {
-  background: #173f35;
-  border: 0;
-  border-radius: 6px;
-  color: #ffffff;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 700;
-  min-height: 38px;
-  padding: 8px 12px;
-}
-
-.parlay-workspace button:disabled {
-  background: #dfe8e4;
-  color: #64736f;
-  cursor: not-allowed;
-}
-
 .parlay-result,
 .parlay-error {
   flex-basis: 100%;
@@ -470,29 +490,8 @@ a {
   justify-items: stretch;
 }
 
-.match-action button {
-  background: #173f35;
-  border: 0;
-  border-radius: 6px;
-  color: #ffffff;
-  cursor: pointer;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  min-height: 38px;
-  padding: 8px 10px;
-  white-space: nowrap;
+.match-action .app-button {
   width: 100%;
-}
-
-.match-action button.secondary-action {
-  background: #eef3f1;
-  color: #173f35;
-}
-
-.match-action button:disabled {
-  background: #a6b2af;
-  cursor: not-allowed;
 }
 
 .score-pill {
@@ -599,29 +598,10 @@ a {
 }
 
 .match-betting-summary .parlay-toggle {
-  background: #eef3f1;
-  border: 0;
-  border-radius: 6px;
-  color: #173f35;
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
   justify-self: start;
   margin-top: 4px;
   min-height: 32px;
   padding: 6px 10px;
-}
-
-.match-betting-summary .parlay-toggle.selected {
-  background: #173f35;
-  color: #ffffff;
-}
-
-.match-betting-summary .parlay-toggle:disabled {
-  background: #dfe8e4;
-  color: #64736f;
-  cursor: not-allowed;
 }
 
 .prediction-log-list {
@@ -1620,9 +1600,37 @@ td {
 }
 
 @media (max-width: 720px) {
+  .topbar {
+    padding: 16px 20px;
+  }
+
+  .intro {
+    margin: 24px auto 22px;
+    padding: 0 14px;
+  }
+
+  .intro h2 {
+    font-size: 28px;
+    line-height: 1.16;
+    margin-bottom: 10px;
+  }
+
+  .intro p {
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .page-section {
+    padding: 0 14px;
+  }
+
   .fixtures-heading {
     align-items: flex-start;
     display: grid;
+  }
+
+  .fixtures-heading h2 {
+    font-size: 22px;
   }
 
   .sync-chip {
@@ -1644,9 +1652,9 @@ td {
 
   .match-card {
     align-items: start;
-    gap: 12px;
+    gap: 10px;
     grid-template-columns: 1fr;
-    padding: 16px;
+    padding: 12px;
   }
 
   .match-time-block {
@@ -1654,6 +1662,10 @@ td {
     display: flex;
     justify-content: space-between;
     width: 100%;
+  }
+
+  .match-time-block time {
+    font-size: 18px;
   }
 
   .match-status-block {
@@ -1670,6 +1682,15 @@ td {
     grid-column: 2;
   }
 
+  .team-line strong {
+    font-size: 15px;
+  }
+
+  .team-line small,
+  .match-status-block span {
+    font-size: 12px;
+  }
+
   .match-action {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1681,11 +1702,17 @@ td {
   }
 
   .prediction-feedback-block {
+    font-size: 13px;
     width: 100%;
   }
 
   .prediction-consensus-summary {
     justify-content: flex-start;
+  }
+
+  .prediction-consensus-summary span {
+    font-size: 11px;
+    padding: 4px 7px;
   }
 
   .betting-plan-grid {

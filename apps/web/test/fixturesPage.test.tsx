@@ -180,6 +180,9 @@ describe("FixturesPage", () => {
     expect(container.querySelector(".match-card-shell")).toBeInTheDocument();
     expect(container.querySelector(".match-status-block")).toBeInTheDocument();
     expect(container.querySelector(".match-action-stack")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "预测" })).toHaveClass("app-button", "app-button-primary");
+    expect(screen.getByRole("button", { name: "数据" })).toHaveClass("app-button", "app-button-secondary");
+    expect(screen.getByRole("button", { name: "生成串关组合" })).toHaveClass("app-button", "app-button-primary");
 
     await userEvent.click(screen.getByRole("button", { name: "已结束" }));
     expect(screen.getByText("墨西哥")).toBeInTheDocument();
@@ -395,6 +398,8 @@ describe("FixturesPage", () => {
     expect(screen.getByText("72%")).toBeInTheDocument();
     expect(screen.getByText("HAD · 主胜")).toBeInTheDocument();
     expect(screen.getByText("已生成组合")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "加入串关" })).toHaveClass("app-button", "app-button-secondary");
+    expect(screen.getByRole("button", { name: "查看报告" })).toHaveClass("app-button", "app-button-secondary");
     expect(screen.queryByText("预测请求已创建")).not.toBeInTheDocument();
     expect(screen.queryByText("GPT-4o mini：模型预测完成：GPT-4o mini")).not.toBeInTheDocument();
 
@@ -510,6 +515,7 @@ describe("FixturesPage", () => {
 
     render(<FixturesPage matches={[match]} onLoadPredictionHistory={onLoadPredictionHistory} />);
 
+    expect(screen.getByRole("button", { name: "历史" })).toHaveClass("app-button", "app-button-secondary");
     await userEvent.click(screen.getByRole("button", { name: "历史" }));
 
     expect(onLoadPredictionHistory).toHaveBeenCalledWith("scheduled-1");

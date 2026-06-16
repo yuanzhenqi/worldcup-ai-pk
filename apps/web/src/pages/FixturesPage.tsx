@@ -297,15 +297,20 @@ function MatchCard({
       </div>
       <div className="match-action match-action-stack">
         {match.status === "scheduled" ? (
-          <button disabled={!match.canRequestPrediction || isRequesting} type="button" onClick={() => onOpenPrediction(match)}>
+          <button
+            className="app-button app-button-primary"
+            disabled={!match.canRequestPrediction || isRequesting}
+            type="button"
+            onClick={() => onOpenPrediction(match)}
+          >
             {isRequesting ? "请求中" : "预测"}
           </button>
         ) : null}
-        <button type="button" className="secondary-action" onClick={() => onOpenContext(match)}>
+        <button type="button" className="app-button app-button-secondary" onClick={() => onOpenContext(match)}>
           数据
         </button>
         {hasHistory && onOpenHistory ? (
-          <button type="button" className="secondary-action" onClick={() => onOpenHistory(match)}>
+          <button type="button" className="app-button app-button-secondary" onClick={() => onOpenHistory(match)}>
             历史
           </button>
         ) : null}
@@ -342,7 +347,7 @@ function MatchCard({
                   </dl>
                   <button
                     type="button"
-                    className={`secondary-action parlay-toggle ${selectedForParlay ? "selected" : ""}`}
+                    className={`app-button app-button-secondary parlay-toggle ${selectedForParlay ? "selected" : ""}`}
                     disabled={!canSelectParlay}
                     onClick={() => onToggleParlay(match.id)}
                   >
@@ -382,7 +387,7 @@ function MatchCard({
                   </tbody>
                 </table>
               </div>
-              <button type="button" className="secondary-action" onClick={() => onOpenReport(feedback)}>
+              <button type="button" className="app-button app-button-secondary" onClick={() => onOpenReport(feedback)}>
                 查看报告
               </button>
             </>
@@ -839,7 +844,12 @@ export function FixturesPage({
                 }}
               />
             </label>
-            <button type="button" disabled={!canCreateParlay || parlayGenerating} onClick={handleCreateParlayCombination}>
+            <button
+              type="button"
+              className="app-button app-button-primary"
+              disabled={!canCreateParlay || parlayGenerating}
+              onClick={handleCreateParlayCombination}
+            >
               {parlayGenerating ? "生成中" : "生成串关组合"}
             </button>
           </div>
