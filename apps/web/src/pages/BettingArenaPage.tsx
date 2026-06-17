@@ -1,4 +1,4 @@
-import type { BettingArenaDto, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
+import type { BettingArenaDto, BettingArenaRoundStatus, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
 import { useState } from "react";
 
 interface BettingArenaPageProps {
@@ -33,14 +33,36 @@ function statusLabel(status: BettingArenaSlipDto["status"]): string {
   return labels[status];
 }
 
+function roundStatusLabel(status: BettingArenaRoundStatus | null | undefined): string {
+  const labels: Record<BettingArenaRoundStatus, string> = {
+    draft: "待生成",
+    generating: "生成中",
+    locked: "已锁定",
+    settling: "结算中",
+    settled: "已结算",
+    failed: "生成失败"
+  };
+  return status ? labels[status] : "待启动";
+}
+
 export function BettingArenaPage({ arena, loading, error, onTriggerRound, onSettleRound }: BettingArenaPageProps) {
   const [selectedSlip, setSelectedSlip] = useState<BettingArenaSlipDto | null>(null);
   const [busy, setBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const roundGenerating = arena?.currentRound?.status === "generating";
 
   async function triggerRound() {
     setBusy(true);
+    setActionError(null);
+    setActionMessage("已发送出单请求，模型正在生成投注方案。");
     try {
       await onTriggerRound();
+      setActionMessage("出单请求已返回，列表已刷新。");
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "生成今日出单失败";
+      setActionError(message);
+      setActionMessage(null);
     } finally {
       setBusy(false);
     }
@@ -49,8 +71,15 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onSett
   async function settleRound() {
     if (!arena?.currentRound) return;
     setBusy(true);
+    setActionError(null);
+    setActionMessage("正在结算当前轮。");
     try {
       await onSettleRound(arena.currentRound.id);
+      setActionMessage("当前轮结算完成，榜单已刷新。");
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "结算当前轮失败";
+      setActionError(message);
+      setActionMessage(null);
     } finally {
       setBusy(false);
     }
@@ -64,8 +93,8 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onSett
           <h2>AI 实盘投注场</h2>
         </div>
         <div className="section-actions">
-          <button className="app-button app-button-primary" type="button" onClick={triggerRound} disabled={busy}>
-            {busy ? "处理中" : "生成今日出单"}
+          <button className="app-button app-button-primary" type="button" onClick={triggerRound} disabled={busy || roundGenerating}>
+            {busy || roundGenerating ? "生成中" : "生成今日出单"}
           </button>
           <button className="app-button app-button-secondary" type="button" onClick={settleRound} disabled={busy || !arena?.currentRound}>
             结算当前轮
@@ -75,6 +104,9 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onSett
 
       {loading ? <p className="status-line">正在加载实盘投注场...</p> : null}
       {error ? <p className="status-line error">{error}</p> : null}
+      {roundGenerating ? <p className="status-line">当前轮正在生成，页面会自动刷新模型出单进度。</p> : null}
+      {actionMessage ? <p className="status-line">{actionMessage}</p> : null}
+      {actionError ? <p className="status-line error">{actionError}</p> : null}
 
       <div className="arena-overview">
         <div>
@@ -83,7 +115,7 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onSett
         </div>
         <div>
           <span>状态</span>
-          <strong>{arena?.currentRound?.status ?? "待启动"}</strong>
+          <strong>{roundStatusLabel(arena?.currentRound?.status)}</strong>
         </div>
         <div>
           <span>今日投入</span>

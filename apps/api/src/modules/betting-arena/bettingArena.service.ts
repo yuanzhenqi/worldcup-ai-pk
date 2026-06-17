@@ -35,9 +35,9 @@ function listEnabledModels(db: Database): EnabledModelRow[] {
     .all() as EnabledModelRow[];
 }
 
-function countRoundSlips(db: Database, roundId: string): number {
-  const row = db.prepare("SELECT COUNT(*) AS count FROM betting_arena_slips WHERE round_id = ?").get(roundId) as { count: number };
-  return Number(row.count ?? 0);
+function listRoundSlipModelIds(db: Database, roundId: string): Set<string> {
+  const rows = db.prepare("SELECT model_id FROM betting_arena_slips WHERE round_id = ?").all(roundId) as Array<{ model_id: string }>;
+  return new Set(rows.map((row) => row.model_id));
 }
 
 export function getBettingArena(db: Database): BettingArenaDto {
@@ -52,14 +52,21 @@ export async function triggerBettingArenaRound(db: Database, now = new Date()): 
   const battleContext = buildBattleContext(db, { roundDate, lockTime, externalIntel });
   const round = createBettingArenaRound(db, { roundDate, lockTime, battleContext, externalIntel, now });
   const timestamp = now.toISOString();
+  const models = listEnabledModels(db);
+  const processedModelIds = listRoundSlipModelIds(db, round.id);
 
-  if (countRoundSlips(db, round.id) > 0) {
+  if (models.length > 0 && processedModelIds.size >= models.length) {
+    if (round.status === "generating") {
+      db.prepare("UPDATE betting_arena_rounds SET status = ?, updated_at = ? WHERE id = ?").run("locked", timestamp, round.id);
+    }
     return getBettingArenaSummary(db);
   }
 
   db.prepare("UPDATE betting_arena_rounds SET status = ?, updated_at = ? WHERE id = ?").run("generating", timestamp, round.id);
 
-  for (const model of listEnabledModels(db)) {
+  for (const model of models) {
+    if (processedModelIds.has(model.model_id)) continue;
+
     const accountContext = buildAccountContext(db, model.model_id);
     try {
       const result = await runOpenAiCompatiblePrediction(

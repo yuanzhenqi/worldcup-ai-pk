@@ -94,6 +94,31 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (bettingArena?.currentRound?.status !== "generating") return undefined;
+
+    let cancelled = false;
+    const interval = window.setInterval(() => {
+      void getBettingArena()
+        .then((nextArena) => {
+          if (!cancelled) {
+            setBettingArena(nextArena);
+            setBettingArenaStatus("loaded");
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setBettingArenaStatus("failed");
+          }
+        });
+    }, 5_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [bettingArena?.currentRound?.id, bettingArena?.currentRound?.status]);
+
   async function handleRequestPrediction(match: MatchDto, input: PredictionRequestInputDto) {
     const response = await requestMatchPrediction(match.id, input);
     try {

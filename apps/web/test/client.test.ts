@@ -11,6 +11,7 @@ import {
   getAdminSummary,
   getMatchContext,
   getMatchPredictionHistory,
+  getBettingArena,
   getPublicHealth,
   getPublicLeaderboard,
   listAdminAiModels,
@@ -28,9 +29,11 @@ import {
   saveAdminTeamDisplayName,
   requestMatchPrediction,
   getPredictionRunStatus,
+  settleBettingArenaRound,
   syncAdminSportteryMappings,
   syncApiFootballFixtures,
   testAdminAiModel,
+  triggerBettingArenaRound,
   updateAdminPromptTemplate
 } from "../src/api/client";
 
@@ -400,6 +403,51 @@ describe("web API client", () => {
 
     await expect(getPublicLeaderboard()).resolves.toEqual(leaderboard);
     expect(fetchMock).toHaveBeenCalledWith("/api/public/leaderboard", {
+      cache: "no-store"
+    });
+  });
+
+  it("triggers a betting arena round without an empty JSON request body", async () => {
+    const arena = { accounts: [], currentRound: null, slips: [], history: [] };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(arena), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(triggerBettingArenaRound()).resolves.toEqual(arena);
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/betting-arena/rounds", {
+      method: "POST"
+    });
+  });
+
+  it("settles a betting arena round without an empty JSON request body", async () => {
+    const arena = { accounts: [], currentRound: null, slips: [], history: [] };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(arena), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(settleBettingArenaRound("round-1")).resolves.toEqual(arena);
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/betting-arena/rounds/round-1/settle", {
+      method: "POST"
+    });
+  });
+
+  it("loads the betting arena summary without browser caching", async () => {
+    const arena = { accounts: [], currentRound: null, slips: [], history: [] };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(arena), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(getBettingArena()).resolves.toEqual(arena);
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/betting-arena", {
       cache: "no-store"
     });
   });

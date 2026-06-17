@@ -162,8 +162,7 @@ export async function getBettingArena(): Promise<BettingArenaDto> {
 
 export async function triggerBettingArenaRound(): Promise<BettingArenaDto> {
   const response = await request(`${apiBaseUrl}/api/public/betting-arena/rounds`, {
-    method: "POST",
-    headers: { "content-type": "application/json" }
+    method: "POST"
   });
   if (!response.ok) {
     throw new Error(`Public betting arena round request failed with status ${response.status}`);
@@ -173,8 +172,7 @@ export async function triggerBettingArenaRound(): Promise<BettingArenaDto> {
 
 export async function settleBettingArenaRound(roundId: string): Promise<BettingArenaDto> {
   const response = await request(`${apiBaseUrl}/api/public/betting-arena/rounds/${roundId}/settle`, {
-    method: "POST",
-    headers: { "content-type": "application/json" }
+    method: "POST"
   });
   if (!response.ok) {
     throw new Error(`Public betting arena settlement request failed with status ${response.status}`);
