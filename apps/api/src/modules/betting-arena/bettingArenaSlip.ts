@@ -95,10 +95,55 @@ function assertRiskLevel(value: unknown): BettingArenaRiskLevel {
 }
 
 function extractJsonObject(content: string): JsonRecord {
-  const startIndex = content.indexOf("{");
-  const endIndex = content.lastIndexOf("}");
+  const startIndex = content.search(/\S/);
 
-  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+  if (startIndex === -1) {
+    throw new Error("Betting arena slip JSON parse failed: object braces not found");
+  }
+
+  if (content[startIndex] !== "{") {
+    throw new Error("Betting arena slip JSON must start with an object");
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let endIndex = -1;
+
+  for (let index = startIndex; index < content.length; index += 1) {
+    const char = content[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        endIndex = index;
+        break;
+      }
+    }
+  }
+
+  if (endIndex === -1) {
     throw new Error("Betting arena slip JSON parse failed: object braces not found");
   }
 

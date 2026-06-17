@@ -31,25 +31,40 @@ const accountContext = {
   availableBankroll: 10000
 };
 
+const holdSlipJson = JSON.stringify({
+  action: "hold",
+  total_stake: 0,
+  singles: [],
+  parlays: [],
+  strategy_summary: "今日信息不足，保留资金。",
+  risk_level: "low",
+  bankroll_plan: "不投入。",
+  skip_reasons: ["缺少阵容"],
+  data_gaps: ["首发未确认"]
+});
+
 describe("betting arena slip parser", () => {
   it("accepts hold output", () => {
     expect(
       parseBettingArenaSlip(
-        JSON.stringify({
-          action: "hold",
-          total_stake: 0,
-          singles: [],
-          parlays: [],
-          strategy_summary: "今日信息不足，保留资金。",
-          risk_level: "low",
-          bankroll_plan: "不投入。",
-          skip_reasons: ["缺少阵容"],
-          data_gaps: ["首发未确认"]
-        }),
+        holdSlipJson,
         battleContext,
         accountContext
       )
     ).toMatchObject({ action: "hold", totalStake: 0, singles: [], parlays: [] });
+  });
+
+  it("rejects array-wrapped output instead of extracting an inner object", () => {
+    expect(() => parseBettingArenaSlip(`[${holdSlipJson}]`, battleContext, accountContext)).toThrow(
+      "Betting arena slip JSON must start with an object"
+    );
+  });
+
+  it("extracts only the first complete JSON object", () => {
+    expect(parseBettingArenaSlip(`${holdSlipJson}\nextra { "ignored": true }`, battleContext, accountContext)).toMatchObject({
+      action: "hold",
+      totalStake: 0
+    });
   });
 
   it("accepts a valid single bet within the 50 percent daily limit", () => {
