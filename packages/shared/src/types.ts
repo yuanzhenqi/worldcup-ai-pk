@@ -115,9 +115,10 @@ export interface PredictionDataOptionsDto {
   usePlayerLineupInjuries: boolean;
   useDongqiudiIntel: boolean;
   useSporttery: boolean;
+  useTeamProfile: boolean;
 }
 
-export type FixtureContextDomain = "odds" | "api_prediction" | "head_to_head" | "squad" | "dongqiudi_intel" | "sporttery";
+export type FixtureContextDomain = "odds" | "api_prediction" | "head_to_head" | "squad" | "dongqiudi_intel" | "sporttery" | "team_profile";
 
 export type FixtureContextDomainStatus = "cached" | "unavailable" | "refresh_failed" | "not_requested";
 

@@ -31,6 +31,7 @@ interface FixtureContextSnapshotRow {
   squad_summary_json: string;
   dongqiudi_intel_summary_json: string;
   sporttery_summary_json: string;
+  team_profile_summary_json: string;
   completeness: FixtureContextSummaryDto["completeness"];
   created_at: string;
 }
@@ -48,7 +49,8 @@ const emptyDomainSummaries: FixtureContextSummaryDto["domains"] = [
   { domain: "head_to_head", status: "not_requested", summary: "未请求", lastSyncedAt: null, error: null },
   { domain: "squad", status: "not_requested", summary: "未请求", lastSyncedAt: null, error: null },
   { domain: "dongqiudi_intel", status: "not_requested", summary: "未请求", lastSyncedAt: null, error: null },
-  { domain: "sporttery", status: "not_requested", summary: "未请求", lastSyncedAt: null, error: null }
+  { domain: "sporttery", status: "not_requested", summary: "未请求", lastSyncedAt: null, error: null },
+  { domain: "team_profile", status: "not_requested", summary: "未请求", lastSyncedAt: null, error: null }
 ];
 
 function getDomainSummary(domains: FixtureContextSummaryDto["domains"], domain: FixtureContextDomain) {
@@ -70,10 +72,11 @@ export function saveFixtureContextSnapshot(db: Database, input: FixtureContextSn
         squad_summary_json,
         dongqiudi_intel_summary_json,
         sporttery_summary_json,
+        team_profile_summary_json,
         completeness,
         raw_json,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     id,
@@ -84,6 +87,7 @@ export function saveFixtureContextSnapshot(db: Database, input: FixtureContextSn
     JSON.stringify(getDomainSummary(input.domains, "squad")),
     JSON.stringify(getDomainSummary(input.domains, "dongqiudi_intel")),
     JSON.stringify(getDomainSummary(input.domains, "sporttery")),
+    JSON.stringify(getDomainSummary(input.domains, "team_profile")),
     input.completeness,
     JSON.stringify(input.raw),
     createdAt
@@ -105,6 +109,7 @@ export function getLatestFixtureContextSummary(db: Database, matchId: string): F
           squad_summary_json,
           dongqiudi_intel_summary_json,
           sporttery_summary_json,
+          team_profile_summary_json,
           completeness,
           created_at
         FROM fixture_context_snapshots
@@ -129,7 +134,8 @@ export function getLatestFixtureContextSummary(db: Database, matchId: string): F
       JSON.parse(row.head_to_head_summary_json),
       JSON.parse(row.squad_summary_json),
       JSON.parse(row.dongqiudi_intel_summary_json),
-      JSON.parse(row.sporttery_summary_json)
+      JSON.parse(row.sporttery_summary_json),
+      JSON.parse(row.team_profile_summary_json)
     ]
   };
 }

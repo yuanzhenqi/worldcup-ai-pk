@@ -491,7 +491,8 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
         useHeadToHead: false,
         usePlayerLineupInjuries: false,
         useDongqiudiIntel: false,
-        useSporttery: true
+        useSporttery: true,
+        useTeamProfile: true
       }
     });
   });

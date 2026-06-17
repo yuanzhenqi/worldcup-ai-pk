@@ -37,7 +37,8 @@ const defaultDataOptions: PredictionDataOptionsDto = {
   useHeadToHead: false,
   usePlayerLineupInjuries: false,
   useDongqiudiIntel: false,
-  useSporttery: true
+  useSporttery: true,
+  useTeamProfile: true
 };
 
 export function PredictionRequestDrawer({
@@ -85,7 +86,8 @@ export function PredictionRequestDrawer({
       useHeadToHead: false,
       usePlayerLineupInjuries: false,
       useDongqiudiIntel: false,
-      useSporttery: value
+      useSporttery: value,
+      useTeamProfile: true
     });
   }
 

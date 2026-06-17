@@ -33,7 +33,8 @@ const predictionDataOptionsSchema = z.object({
   useHeadToHead: z.boolean(),
   usePlayerLineupInjuries: z.boolean(),
   useDongqiudiIntel: z.boolean(),
-  useSporttery: z.boolean()
+  useSporttery: z.boolean(),
+  useTeamProfile: z.boolean()
 });
 
 const contextRefreshSchema = z.object({
@@ -81,7 +82,8 @@ const defaultPredictionRequestInput: PredictionRequestInputDto = {
     useHeadToHead: false,
     usePlayerLineupInjuries: false,
     useDongqiudiIntel: false,
-    useSporttery: true
+    useSporttery: true,
+    useTeamProfile: true
   },
   promptTemplateId: null,
   customPrompt: "",

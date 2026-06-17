@@ -241,7 +241,8 @@ describe("web API client", () => {
         useHeadToHead: true,
         usePlayerLineupInjuries: true,
         useDongqiudiIntel: true,
-        useSporttery: true
+        useSporttery: true,
+        useTeamProfile: true
       },
       promptTemplateId: "prompt-1",
       customPrompt: "偏重上半场节奏。",
@@ -434,7 +435,8 @@ describe("web API client", () => {
       useHeadToHead: true,
       usePlayerLineupInjuries: true,
       useDongqiudiIntel: true,
-      useSporttery: true
+      useSporttery: true,
+      useTeamProfile: true
     };
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(context), {

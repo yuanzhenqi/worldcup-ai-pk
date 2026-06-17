@@ -233,7 +233,8 @@ describe("fixture context API", () => {
           useHeadToHead: true,
           usePlayerLineupInjuries: true,
           useDongqiudiIntel: false,
-          useSporttery: false
+          useSporttery: false,
+          useTeamProfile: false
         }
       }
     });
@@ -373,7 +374,8 @@ describe("fixture context API", () => {
           useHeadToHead: false,
           usePlayerLineupInjuries: false,
           useDongqiudiIntel: false,
-          useSporttery: true
+          useSporttery: true,
+          useTeamProfile: false
         }
       }
     });
@@ -455,7 +457,8 @@ describe("fixture context API", () => {
           useHeadToHead: false,
           usePlayerLineupInjuries: false,
           useDongqiudiIntel: false,
-          useSporttery: true
+          useSporttery: true,
+          useTeamProfile: false
         }
       }
     });
@@ -506,7 +509,8 @@ describe("fixture context API", () => {
           useHeadToHead: false,
           usePlayerLineupInjuries: false,
           useDongqiudiIntel: false,
-          useSporttery: true
+          useSporttery: true,
+          useTeamProfile: false
         }
       }
     });

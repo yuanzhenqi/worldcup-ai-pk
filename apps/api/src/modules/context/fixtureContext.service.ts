@@ -6,6 +6,7 @@ import { parseDongqiudiIntelSummary } from "./dongqiudiContextParsers";
 import type { DongqiudiClient } from "../football/dongqiudiClient";
 import { extractOddsForMatch, parseSportteryOddsPools, parseSportterySummary } from "./sportteryContextParsers";
 import type { SportteryClient } from "../football/sportteryClient";
+import { buildTeamProfileSummary } from "./teamProfileContext";
 import { ensureSportteryMappingForFixture } from "../football/sportteryMapping.repository";
 import { getLatestFixtureContextSummary, saveFixtureContextSnapshot, writeFixtureDataSyncLog } from "./fixtureContext.repository";
 
@@ -67,7 +68,8 @@ export function getFixtureContextSummary(db: Database, matchId: string): Fixture
         notRequestedSummary("head_to_head"),
         notRequestedSummary("squad"),
         notRequestedSummary("dongqiudi_intel"),
-        notRequestedSummary("sporttery")
+        notRequestedSummary("sporttery"),
+        notRequestedSummary("team_profile")
       ]
     }
   );
@@ -208,6 +210,21 @@ export async function refreshFixtureContext(input: RefreshFixtureContextInput): 
     }
   } else {
     domains.push(notRequestedSummary("sporttery"));
+  }
+
+  if (input.dataOptions.useTeamProfile) {
+    try {
+      const parsed = buildTeamProfileSummary(input.homeTeamName, input.awayTeamName);
+      raw.teamProfile = parsed.raw;
+      domains.push({ domain: "team_profile", status: parsed.status, summary: parsed.summary, lastSyncedAt: now.toISOString(), error: null });
+      writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "team_profile", status: parsed.status, error: null, now });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Team profile refresh failed";
+      domains.push({ domain: "team_profile", status: "refresh_failed", summary: "未获取球队资料", lastSyncedAt: now.toISOString(), error: message });
+      writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "team_profile", status: "refresh_failed", error: message, now });
+    }
+  } else {
+    domains.push(notRequestedSummary("team_profile"));
   }
 
   const completeness = getCompleteness(domains);

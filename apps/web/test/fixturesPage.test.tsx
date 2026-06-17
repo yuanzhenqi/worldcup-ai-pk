@@ -367,7 +367,8 @@ describe("FixturesPage", () => {
         useHeadToHead: false,
         usePlayerLineupInjuries: false,
         useDongqiudiIntel: false,
-        useSporttery: true
+        useSporttery: true,
+        useTeamProfile: true
       },
       promptTemplateId: "prompt-1",
       customPrompt: "",
@@ -1190,7 +1191,8 @@ describe("FixturesPage", () => {
       useHeadToHead: false,
       usePlayerLineupInjuries: false,
       useDongqiudiIntel: false,
-      useSporttery: true
+      useSporttery: true,
+      useTeamProfile: true
     });
     expect(await screen.findByText("历史交锋")).toBeInTheDocument();
     expect(screen.getByText("6场")).toBeInTheDocument();

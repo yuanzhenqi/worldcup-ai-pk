@@ -242,7 +242,8 @@ describe("Sporttery fixture context refresh", () => {
         useHeadToHead: false,
         usePlayerLineupInjuries: false,
         useDongqiudiIntel: false,
-        useSporttery: true
+        useSporttery: true,
+        useTeamProfile: false
       },
       now: new Date("2026-06-15T10:00:00.000Z")
     });

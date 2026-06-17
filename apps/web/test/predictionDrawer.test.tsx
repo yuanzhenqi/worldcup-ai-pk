@@ -49,7 +49,8 @@ describe("PredictionRequestDrawer", () => {
         useHeadToHead: false,
         usePlayerLineupInjuries: false,
         useDongqiudiIntel: false,
-        useSporttery: true
+        useSporttery: true,
+        useTeamProfile: true
       },
       promptTemplateId: "prompt-1",
       customPrompt: "",

@@ -57,7 +57,8 @@ const defaultContextDataOptions: PredictionDataOptionsDto = {
   useHeadToHead: false,
   usePlayerLineupInjuries: false,
   useDongqiudiIntel: false,
-  useSporttery: true
+  useSporttery: true,
+  useTeamProfile: true
 };
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
