@@ -256,3 +256,78 @@ CREATE TABLE IF NOT EXISTS fixture_sporttery_mappings (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS betting_arena_accounts (
+  model_id TEXT PRIMARY KEY REFERENCES ai_models(id) ON DELETE CASCADE,
+  initial_bankroll REAL NOT NULL,
+  available_bankroll REAL NOT NULL,
+  frozen_stake REAL NOT NULL,
+  total_staked REAL NOT NULL,
+  total_returned REAL NOT NULL,
+  order_count INTEGER NOT NULL,
+  settled_order_count INTEGER NOT NULL,
+  hit_count INTEGER NOT NULL,
+  failed_generation_count INTEGER NOT NULL,
+  last_review TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS betting_arena_rounds (
+  id TEXT PRIMARY KEY,
+  round_date TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL,
+  lock_time TEXT NOT NULL,
+  battle_context_json TEXT NOT NULL,
+  external_intel_json TEXT NOT NULL,
+  failure_reason TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS betting_arena_slips (
+  id TEXT PRIMARY KEY,
+  round_id TEXT NOT NULL REFERENCES betting_arena_rounds(id) ON DELETE CASCADE,
+  model_id TEXT NOT NULL REFERENCES ai_models(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  status TEXT NOT NULL,
+  total_stake REAL NOT NULL,
+  potential_return REAL NOT NULL,
+  risk_level TEXT NOT NULL,
+  raw_response TEXT NOT NULL,
+  output_json TEXT NOT NULL,
+  parsed_slip_json TEXT NOT NULL,
+  account_context_json TEXT NOT NULL,
+  validation_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(round_id, model_id)
+);
+
+CREATE TABLE IF NOT EXISTS betting_arena_settlements (
+  id TEXT PRIMARY KEY,
+  slip_id TEXT NOT NULL REFERENCES betting_arena_slips(id) ON DELETE CASCADE,
+  round_id TEXT NOT NULL REFERENCES betting_arena_rounds(id) ON DELETE CASCADE,
+  model_id TEXT NOT NULL REFERENCES ai_models(id) ON DELETE CASCADE,
+  stake REAL NOT NULL,
+  returned_amount REAL NOT NULL,
+  profit REAL NOT NULL,
+  status TEXT NOT NULL,
+  settlement_json TEXT NOT NULL,
+  settled_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS betting_arena_logs (
+  id TEXT PRIMARY KEY,
+  round_id TEXT REFERENCES betting_arena_rounds(id) ON DELETE CASCADE,
+  model_id TEXT REFERENCES ai_models(id) ON DELETE CASCADE,
+  level TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_betting_arena_slips_round_status
+  ON betting_arena_slips(round_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_betting_arena_settlements_round
+  ON betting_arena_settlements(round_id, model_id);

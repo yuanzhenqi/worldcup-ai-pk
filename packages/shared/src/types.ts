@@ -212,6 +212,107 @@ export interface ParlayCombinationRunDto {
   createdAt: string;
 }
 
+export type BettingArenaRoundStatus = "draft" | "generating" | "locked" | "settling" | "settled" | "failed";
+export type BettingArenaSlipAction = "bet" | "hold";
+export type BettingArenaSlipStatus = "pending" | "accepted" | "invalid" | "generation_failed" | "settled" | "void";
+export type BettingArenaRiskLevel = "low" | "medium" | "high";
+
+export interface BettingArenaAccountDto {
+  modelId: string;
+  modelDisplayName: string;
+  initialBankroll: number;
+  availableBankroll: number;
+  frozenStake: number;
+  totalAssetValue: number;
+  totalStaked: number;
+  totalReturned: number;
+  returnRate: number;
+  orderCount: number;
+  settledOrderCount: number;
+  hitCount: number;
+  hitRate: number;
+  failedGenerationCount: number;
+  orderRate: number;
+  failureRate: number;
+  rank: number;
+  lastReview: string;
+}
+
+export interface BettingArenaLegDto {
+  matchId: string;
+  poolCode: string;
+  selectionCode: string;
+  selectionLabel: string;
+  lockedOdds: number;
+}
+
+export interface BettingArenaSingleDto extends BettingArenaLegDto {
+  stake: number;
+  confidence: number;
+  rationale: string;
+}
+
+export interface BettingArenaParlayDto {
+  parlayName: string;
+  stake: number;
+  legs: BettingArenaLegDto[];
+  combinedOdds: number;
+  confidence: number;
+  rationale: string;
+}
+
+export interface BettingArenaSlipDto {
+  id: string;
+  roundId: string;
+  modelId: string;
+  modelDisplayName: string;
+  action: BettingArenaSlipAction;
+  status: BettingArenaSlipStatus;
+  totalStake: number;
+  potentialReturn: number;
+  riskLevel: BettingArenaRiskLevel;
+  strategySummary: string;
+  bankrollPlan: string;
+  singles: BettingArenaSingleDto[];
+  parlays: BettingArenaParlayDto[];
+  skipReasons: string[];
+  dataGaps: string[];
+  validationError: string | null;
+  settlementSummary: string | null;
+  createdAt: string;
+}
+
+export interface BettingArenaRoundDto {
+  id: string;
+  roundDate: string;
+  status: BettingArenaRoundStatus;
+  lockTime: string;
+  eligibleMatchCount: number;
+  modelsCount: number;
+  totalStaked: number;
+  potentialReturn: number;
+  settledReturn: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BettingArenaDailySummaryDto {
+  roundId: string;
+  roundDate: string;
+  status: BettingArenaRoundStatus;
+  totalStaked: number;
+  totalReturned: number;
+  bestModelDisplayName: string | null;
+  worstModelDisplayName: string | null;
+}
+
+export interface BettingArenaDto {
+  accounts: BettingArenaAccountDto[];
+  currentRound: BettingArenaRoundDto | null;
+  slips: BettingArenaSlipDto[];
+  history: BettingArenaDailySummaryDto[];
+}
+
 export interface PredictionRequestInputDto {
   taskTypes: PredictionTaskType[];
   dataOptions: PredictionDataOptionsDto;

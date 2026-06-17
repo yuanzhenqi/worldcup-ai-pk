@@ -211,4 +211,64 @@ describe("schema migration on app startup", () => {
     expect(() => applySchema(db)).not.toThrow();
     db.close();
   });
+
+  it("creates betting arena tables", () => {
+    const { db } = createTestDatabase();
+
+    for (const tableName of [
+      "betting_arena_accounts",
+      "betting_arena_rounds",
+      "betting_arena_slips",
+      "betting_arena_settlements",
+      "betting_arena_logs"
+    ]) {
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName)).toMatchObject({ name: tableName });
+    }
+
+    const accountColumns = db.prepare("PRAGMA table_info(betting_arena_accounts)").all() as Array<{ name: string; type: string; notnull: number; pk: number }>;
+    expect(accountColumns.map((column) => ({ name: column.name, type: column.type, notnull: column.notnull, pk: column.pk }))).toEqual([
+      { name: "model_id", type: "TEXT", notnull: 0, pk: 1 },
+      { name: "initial_bankroll", type: "REAL", notnull: 1, pk: 0 },
+      { name: "available_bankroll", type: "REAL", notnull: 1, pk: 0 },
+      { name: "frozen_stake", type: "REAL", notnull: 1, pk: 0 },
+      { name: "total_staked", type: "REAL", notnull: 1, pk: 0 },
+      { name: "total_returned", type: "REAL", notnull: 1, pk: 0 },
+      { name: "order_count", type: "INTEGER", notnull: 1, pk: 0 },
+      { name: "settled_order_count", type: "INTEGER", notnull: 1, pk: 0 },
+      { name: "hit_count", type: "INTEGER", notnull: 1, pk: 0 },
+      { name: "failed_generation_count", type: "INTEGER", notnull: 1, pk: 0 },
+      { name: "last_review", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "created_at", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "updated_at", type: "TEXT", notnull: 1, pk: 0 }
+    ]);
+
+    const roundColumns = db.prepare("PRAGMA table_info(betting_arena_rounds)").all() as Array<{ name: string }>;
+    expect(roundColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["id", "round_date", "status", "lock_time", "battle_context_json", "external_intel_json", "created_at", "updated_at"])
+    );
+
+    const slipColumns = db.prepare("PRAGMA table_info(betting_arena_slips)").all() as Array<{ name: string }>;
+    expect(slipColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "id",
+        "round_id",
+        "model_id",
+        "action",
+        "status",
+        "total_stake",
+        "potential_return",
+        "risk_level",
+        "raw_response",
+        "output_json",
+        "parsed_slip_json",
+        "account_context_json",
+        "validation_error",
+        "created_at",
+        "updated_at"
+      ])
+    );
+
+    expect(() => applySchema(db)).not.toThrow();
+    db.close();
+  });
 });
