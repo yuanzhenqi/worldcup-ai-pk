@@ -22,6 +22,7 @@ import { getSportteryMappingByFixtureId } from "../football/sportteryMapping.rep
 import { getApiFootballKey, isDongqiudiEnabled, isSportteryEnabled } from "../settings/settings.repository";
 import { settleFinishedMatchPredictions } from "../predictions/predictionSettlement.service";
 import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
+import { getBettingArena, getBettingArenaRound, settleBettingArenaRound, triggerBettingArenaRound } from "../betting-arena/bettingArena.service";
 
 export interface PublicRoutesOptions {
   db: Database;
@@ -114,6 +115,18 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
     settleFinishedMatchPredictions(options.db);
     return listPublicLeaderboard(options.db);
   });
+
+  app.get("/betting-arena", async () => getBettingArena(options.db));
+
+  app.post("/betting-arena/rounds", async () => triggerBettingArenaRound(options.db));
+
+  app.get<{ Params: { roundId: string } }>("/betting-arena/rounds/:roundId", async (request) =>
+    getBettingArenaRound(options.db, request.params.roundId)
+  );
+
+  app.post<{ Params: { roundId: string } }>("/betting-arena/rounds/:roundId/settle", async (request) =>
+    settleBettingArenaRound(options.db, request.params.roundId)
+  );
 
   app.post("/parlay-combinations", async (request, reply) => {
     const parsed = parlayCombinationSchema.safeParse(request.body);

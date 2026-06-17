@@ -5,6 +5,17 @@ export interface ExternalIntelInput {
   dataGaps: string[];
 }
 
+export interface BattleContextSportteryOption {
+  code: string;
+  label: string;
+  value: string;
+}
+
+export interface BattleContextSportteryPool {
+  poolCode: string;
+  options: BattleContextSportteryOption[];
+}
+
 export interface BattleContextMatch {
   matchId: string;
   stage: string;
@@ -13,7 +24,7 @@ export interface BattleContextMatch {
   venue: string | null;
   homeTeamName: string;
   awayTeamName: string;
-  sportteryPools: unknown[];
+  sportteryPools: BattleContextSportteryPool[];
   dataGaps: string[];
 }
 

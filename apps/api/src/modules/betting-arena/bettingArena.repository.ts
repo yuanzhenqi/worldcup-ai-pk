@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
-import type { BettingArenaAccountDto, BettingArenaDto, BettingArenaRoundDto } from "@worldcup-ai-pk/shared";
+import type { BettingArenaAccountDto, BettingArenaDto, BettingArenaRoundDto, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
 
 export const INITIAL_BANKROLL = 10000;
 
@@ -38,6 +38,21 @@ interface CreateBettingArenaRoundInput {
   battleContext: unknown;
   externalIntel: unknown;
   now?: Date;
+}
+
+interface SlipRow {
+  id: string;
+  round_id: string;
+  model_id: string;
+  model_display_name: string;
+  action: BettingArenaSlipDto["action"];
+  status: BettingArenaSlipDto["status"];
+  total_stake: number;
+  potential_return: number;
+  risk_level: BettingArenaSlipDto["riskLevel"];
+  parsed_slip_json: string;
+  validation_error: string | null;
+  created_at: string;
 }
 
 function toNumber(value: unknown): number {
@@ -107,6 +122,58 @@ function toRoundDto(row: RoundRow, modelsCount: number): BettingArenaRoundDto {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function toSlipDto(row: SlipRow): BettingArenaSlipDto {
+  const parsed = JSON.parse(row.parsed_slip_json || "{}") as Partial<BettingArenaSlipDto>;
+  return {
+    id: row.id,
+    roundId: row.round_id,
+    modelId: row.model_id,
+    modelDisplayName: row.model_display_name,
+    action: row.action,
+    status: row.status,
+    totalStake: toNumber(row.total_stake),
+    potentialReturn: toNumber(row.potential_return),
+    riskLevel: row.risk_level,
+    strategySummary: typeof parsed.strategySummary === "string" ? parsed.strategySummary : "",
+    bankrollPlan: typeof parsed.bankrollPlan === "string" ? parsed.bankrollPlan : "",
+    singles: Array.isArray(parsed.singles) ? parsed.singles : [],
+    parlays: Array.isArray(parsed.parlays) ? parsed.parlays : [],
+    skipReasons: Array.isArray(parsed.skipReasons) ? parsed.skipReasons : [],
+    dataGaps: Array.isArray(parsed.dataGaps) ? parsed.dataGaps : [],
+    validationError: row.validation_error,
+    settlementSummary: null,
+    createdAt: row.created_at
+  };
+}
+
+function listRoundSlips(db: Database, roundId: string): BettingArenaSlipDto[] {
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          betting_arena_slips.id,
+          betting_arena_slips.round_id,
+          betting_arena_slips.model_id,
+          ai_models.display_name AS model_display_name,
+          betting_arena_slips.action,
+          betting_arena_slips.status,
+          betting_arena_slips.total_stake,
+          betting_arena_slips.potential_return,
+          betting_arena_slips.risk_level,
+          betting_arena_slips.parsed_slip_json,
+          betting_arena_slips.validation_error,
+          betting_arena_slips.created_at
+        FROM betting_arena_slips
+        INNER JOIN ai_models ON ai_models.id = betting_arena_slips.model_id
+        WHERE betting_arena_slips.round_id = ?
+        ORDER BY betting_arena_slips.created_at ASC, ai_models.display_name ASC
+      `
+    )
+    .all(roundId) as SlipRow[];
+
+  return rows.map(toSlipDto);
 }
 
 function getRoundById(db: Database, id: string): BettingArenaRoundDto {
@@ -368,7 +435,7 @@ export function getBettingArenaSummary(db: Database): BettingArenaDto {
   return {
     accounts,
     currentRound,
-    slips: [],
+    slips: currentRound ? listRoundSlips(db, currentRound.id) : [],
     history: currentRound
       ? [
           {
