@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { LeaderboardDto, MatchDto, PredictionRequestInputDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
+import type { BettingArenaDto, LeaderboardDto, MatchDto, PredictionRequestInputDto, PromptTemplateConfigDto } from "@worldcup-ai-pk/shared";
 import {
   createParlayCombination,
+  getBettingArena,
   getMatchContext,
   getMatchPredictionHistory,
   getPredictionRunStatus,
@@ -10,9 +11,12 @@ import {
   listAdminPromptTemplates,
   refreshMatchContext,
   requestMatchPrediction,
-  syncApiFootballFixtures
+  settleBettingArenaRound,
+  syncApiFootballFixtures,
+  triggerBettingArenaRound
 } from "./api/client";
 import { AdminPage } from "./pages/AdminPage";
+import { BettingArenaPage } from "./pages/BettingArenaPage";
 import { FixturesPage } from "./pages/FixturesPage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 import "./styles.css";
@@ -20,39 +24,52 @@ import "./styles.css";
 export function App() {
   const [matches, setMatches] = useState<MatchDto[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardDto>({ settledRows: [], activeRows: [] });
+  const [bettingArena, setBettingArena] = useState<BettingArenaDto | null>(null);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateConfigDto[]>([]);
   const [matchesStatus, setMatchesStatus] = useState<"loading" | "loaded" | "failed">("loading");
+  const [bettingArenaStatus, setBettingArenaStatus] = useState<"loading" | "loaded" | "failed">("loading");
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadInitialData() {
       try {
-        const [nextMatches, nextPromptTemplates, nextLeaderboard] = await Promise.all([getPublicMatches(), listAdminPromptTemplates(), getPublicLeaderboard()]);
+        const [nextMatches, nextPromptTemplates, nextLeaderboard, nextBettingArena] = await Promise.all([
+          getPublicMatches(),
+          listAdminPromptTemplates(),
+          getPublicLeaderboard(),
+          getBettingArena()
+        ]);
         if (!cancelled) {
           setMatches(nextMatches);
           setPromptTemplates(nextPromptTemplates);
           setLeaderboard(nextLeaderboard);
+          setBettingArena(nextBettingArena);
           setMatchesStatus("loaded");
+          setBettingArenaStatus("loaded");
         }
       } catch {
         if (!cancelled) {
           setMatchesStatus("failed");
+          setBettingArenaStatus("failed");
         }
       }
     }
 
     async function loadMatches() {
       try {
-        const [nextMatches, nextLeaderboard] = await Promise.all([getPublicMatches(), getPublicLeaderboard()]);
+        const [nextMatches, nextLeaderboard, nextBettingArena] = await Promise.all([getPublicMatches(), getPublicLeaderboard(), getBettingArena()]);
         if (!cancelled) {
           setMatches(nextMatches);
           setLeaderboard(nextLeaderboard);
+          setBettingArena(nextBettingArena);
           setMatchesStatus("loaded");
+          setBettingArenaStatus("loaded");
         }
       } catch {
         if (!cancelled) {
           setMatchesStatus("failed");
+          setBettingArenaStatus("failed");
         }
       }
     }
@@ -98,6 +115,7 @@ export function App() {
         <nav>
           <a href="#fixtures">赛程</a>
           <a href="#leaderboard">排行榜</a>
+          <a href="#betting-arena">实盘投注场</a>
           <a href="#admin">后台</a>
         </nav>
       </header>
@@ -118,6 +136,21 @@ export function App() {
         onCreateParlayCombination={createParlayCombination}
       />
       <LeaderboardPage leaderboard={leaderboard} />
+      <BettingArenaPage
+        arena={bettingArena}
+        loading={bettingArenaStatus === "loading"}
+        error={bettingArenaStatus === "failed" ? "实盘投注场加载失败，请确认 API 服务正在运行。" : null}
+        onTriggerRound={async () => {
+          const nextArena = await triggerBettingArenaRound();
+          setBettingArena(nextArena);
+          return nextArena;
+        }}
+        onSettleRound={async (roundId) => {
+          const nextArena = await settleBettingArenaRound(roundId);
+          setBettingArena(nextArena);
+          return nextArena;
+        }}
+      />
       <AdminPage />
     </main>
   );

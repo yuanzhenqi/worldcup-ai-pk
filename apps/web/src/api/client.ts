@@ -2,6 +2,7 @@ import type {
   AdminSummaryDto,
   AiModelConfigDto,
   AiProviderConfigDto,
+  BettingArenaDto,
   FixtureContextSummaryDto,
   LeaderboardDto,
   MatchDto,
@@ -149,6 +150,36 @@ export async function getPublicLeaderboard(): Promise<LeaderboardDto> {
     throw new Error(`Public leaderboard request failed with status ${response.status}`);
   }
   return (await response.json()) as LeaderboardDto;
+}
+
+export async function getBettingArena(): Promise<BettingArenaDto> {
+  const response = await request(`${apiBaseUrl}/api/public/betting-arena`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Public betting arena request failed with status ${response.status}`);
+  }
+  return (await response.json()) as BettingArenaDto;
+}
+
+export async function triggerBettingArenaRound(): Promise<BettingArenaDto> {
+  const response = await request(`${apiBaseUrl}/api/public/betting-arena/rounds`, {
+    method: "POST",
+    headers: { "content-type": "application/json" }
+  });
+  if (!response.ok) {
+    throw new Error(`Public betting arena round request failed with status ${response.status}`);
+  }
+  return (await response.json()) as BettingArenaDto;
+}
+
+export async function settleBettingArenaRound(roundId: string): Promise<BettingArenaDto> {
+  const response = await request(`${apiBaseUrl}/api/public/betting-arena/rounds/${roundId}/settle`, {
+    method: "POST",
+    headers: { "content-type": "application/json" }
+  });
+  if (!response.ok) {
+    throw new Error(`Public betting arena settlement request failed with status ${response.status}`);
+  }
+  return (await response.json()) as BettingArenaDto;
 }
 
 export async function getMatchContext(matchId: string): Promise<FixtureContextSummaryDto> {

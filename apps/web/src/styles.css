@@ -1784,3 +1784,145 @@ td {
     width: min(960px, calc(100vw - 48px));
   }
 }
+
+.betting-arena {
+  display: grid;
+  gap: 18px;
+}
+
+.betting-arena .section-heading,
+.betting-arena .section-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.betting-arena .section-actions {
+  justify-content: flex-end;
+}
+
+.arena-overview {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.arena-overview > div,
+.arena-panel,
+.arena-account-row,
+.arena-slip-row {
+  background: #ffffff;
+  border: 1px solid #d8dee4;
+  border-radius: 8px;
+}
+
+.arena-overview > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+}
+
+.arena-overview span,
+.arena-account-row span,
+.arena-slip-row span,
+.betting-arena .muted {
+  color: #52645f;
+  font-size: 13px;
+}
+
+.arena-overview strong {
+  font-size: 22px;
+}
+
+.arena-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+}
+
+.arena-panel {
+  padding: 14px;
+}
+
+.arena-panel h3 {
+  margin: 0 0 12px;
+}
+
+.arena-account-list,
+.arena-slip-list,
+.arena-detail-table {
+  display: grid;
+  gap: 8px;
+}
+
+.arena-account-row,
+.arena-slip-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(120px, 1.4fr) repeat(3, minmax(70px, 0.8fr));
+  padding: 10px;
+  text-align: left;
+}
+
+.arena-slip-row {
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  width: 100%;
+}
+
+.arena-slip-row:hover {
+  border-color: #9db5ad;
+}
+
+.arena-detail-drawer {
+  background: rgba(18, 31, 29, 0.3);
+  display: grid;
+  inset: 0;
+  padding: 20px;
+  place-items: center;
+  position: fixed;
+  z-index: 40;
+}
+
+.arena-detail-panel {
+  background: #ffffff;
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+  max-height: 86vh;
+  overflow: auto;
+  padding: 18px;
+  width: min(760px, 100%);
+}
+
+.arena-detail-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.arena-detail-header h3 {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .betting-arena .section-heading,
+  .betting-arena .section-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .arena-overview,
+  .arena-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .arena-account-row,
+  .arena-slip-row {
+    font-size: 13px;
+    grid-template-columns: 1fr 1fr;
+  }
+}
