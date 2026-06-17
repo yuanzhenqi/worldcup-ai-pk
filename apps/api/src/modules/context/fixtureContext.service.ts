@@ -214,7 +214,9 @@ export async function refreshFixtureContext(input: RefreshFixtureContextInput): 
 
   if (input.dataOptions.useTeamProfile) {
     try {
-      const parsed = buildTeamProfileSummary(input.homeTeamName, input.awayTeamName);
+      const homeOriginal = input.db.prepare("SELECT original_name FROM team_display_names WHERE api_football_team_id = ?").get(input.homeTeamId) as { original_name: string } | undefined;
+      const awayOriginal = input.db.prepare("SELECT original_name FROM team_display_names WHERE api_football_team_id = ?").get(input.awayTeamId) as { original_name: string } | undefined;
+      const parsed = buildTeamProfileSummary(homeOriginal?.original_name ?? input.homeTeamName, awayOriginal?.original_name ?? input.awayTeamName);
       raw.teamProfile = parsed.raw;
       domains.push({ domain: "team_profile", status: parsed.status, summary: parsed.summary, lastSyncedAt: now.toISOString(), error: null });
       writeFixtureDataSyncLog(input.db, { matchId: input.matchId, domain: "team_profile", status: parsed.status, error: null, now });
