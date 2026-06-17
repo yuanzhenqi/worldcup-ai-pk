@@ -1,8 +1,17 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { MatchDto } from "@worldcup-ai-pk/shared";
+import type { BettingArenaDto, MatchDto } from "@worldcup-ai-pk/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
-import { getPublicLeaderboard, getPublicMatches, listAdminPromptTemplates, syncApiFootballFixtures } from "../src/api/client";
+import {
+  createParlayCombination,
+  getBettingArena,
+  getPublicLeaderboard,
+  getPublicMatches,
+  listAdminPromptTemplates,
+  settleBettingArenaRound,
+  syncApiFootballFixtures,
+  triggerBettingArenaRound
+} from "../src/api/client";
 
 vi.mock("../src/pages/AdminPage", () => ({
   AdminPage: () => null
@@ -13,6 +22,8 @@ vi.mock("../src/pages/LeaderboardPage", () => ({
 }));
 
 vi.mock("../src/api/client", () => ({
+  createParlayCombination: vi.fn(),
+  getBettingArena: vi.fn(),
   getMatchContext: vi.fn(),
   getMatchPredictionHistory: vi.fn(),
   getPredictionRunStatus: vi.fn(),
@@ -21,8 +32,17 @@ vi.mock("../src/api/client", () => ({
   listAdminPromptTemplates: vi.fn(),
   refreshMatchContext: vi.fn(),
   requestMatchPrediction: vi.fn(),
-  syncApiFootballFixtures: vi.fn()
+  settleBettingArenaRound: vi.fn(),
+  syncApiFootballFixtures: vi.fn(),
+  triggerBettingArenaRound: vi.fn()
 }));
+
+const emptyBettingArena: BettingArenaDto = {
+  accounts: [],
+  currentRound: null,
+  slips: [],
+  history: []
+};
 
 function buildMatch(input: { status: MatchDto["status"]; homeScore: number | null; awayScore: number | null }): MatchDto {
   return {
@@ -75,6 +95,10 @@ describe("App", () => {
       });
     vi.mocked(listAdminPromptTemplates).mockResolvedValue([]);
     vi.mocked(syncApiFootballFixtures).mockResolvedValue({ synced: true, imported: 1 });
+    vi.mocked(getBettingArena).mockResolvedValue(emptyBettingArena);
+    vi.mocked(createParlayCombination).mockRejectedValue(new Error("not used in this test"));
+    vi.mocked(triggerBettingArenaRound).mockResolvedValue(emptyBettingArena);
+    vi.mocked(settleBettingArenaRound).mockResolvedValue(emptyBettingArena);
 
     render(<App />);
 
