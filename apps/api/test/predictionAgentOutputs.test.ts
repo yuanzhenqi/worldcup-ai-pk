@@ -70,6 +70,24 @@ describe("prediction agent output parsers", () => {
     ).toMatchObject({ predictedResult: "away", predictedHomeScore: 0, predictedAwayScore: 1 });
   });
 
+  it("coerces string data_gaps in match analysis output", () => {
+    expect(
+      parseMatchAnalysisOutput(
+        JSON.stringify({
+          predicted_result: "home",
+          predicted_home_score: 2,
+          predicted_away_score: 1,
+          confidence: 0.66,
+          short_reason: "主队更稳。",
+          key_factors: ["状态"],
+          risk_points: ["反击"],
+          analysis_report: "主队更稳。",
+          data_gaps: "未获取首发名单"
+        })
+      )
+    ).toMatchObject({ dataGaps: ["未获取首发名单"] });
+  });
+
   it("throws a clear error for malformed JSON", () => {
     expect(() => parseMatchAnalysisOutput("not json")).toThrow("AI response JSON parse failed: object braces not found");
     expect(() => parseMatchAnalysisOutput("{bad json}")).toThrow(/AI response JSON parse failed:/);
@@ -134,6 +152,35 @@ describe("prediction agent output parsers", () => {
       riskWarnings: ["临场阵容缺失会提高不确定性"],
       dataGaps: ["未获取首发名单"]
     });
+  });
+
+  it("coerces string data_gaps in single combination output", () => {
+    expect(
+      parseSingleCombinationOutput(
+        JSON.stringify({
+          summary: "主队方向更清晰。",
+          primary_plan: {
+            plan_name: "稳健单场",
+            risk_level: "medium",
+            legs: [
+              {
+                pool_code: "HAD",
+                selection_code: "h",
+                selection_label: "主胜",
+                reason: "赛果判断支持主队。"
+              }
+            ],
+            stake_units: 2,
+            expected_scenario: "主队小胜。",
+            avoid_reason: null
+          },
+          backup_plans: [],
+          pass_recommendation: "低注参与。",
+          risk_warnings: ["阵容未确认"],
+          data_gaps: "缺少临场首发"
+        })
+      )
+    ).toMatchObject({ dataGaps: ["缺少临场首发"] });
   });
 
   it("parses non-empty backup plans", () => {

@@ -65,6 +65,10 @@ function requireInteger(value: unknown, fieldName: string): number {
 }
 
 function requireStringArray(value: unknown, fieldName: string): string[] {
+  if (fieldName === "data_gaps" && typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  }
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new Error(`AI response field ${fieldName} must be a string array`);
   }
