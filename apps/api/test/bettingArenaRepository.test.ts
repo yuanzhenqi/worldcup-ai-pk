@@ -94,6 +94,53 @@ describe("betting arena repository and context", () => {
     db.close();
   });
 
+  it("returns an existing daily round when the same round date is created again", () => {
+    const { db } = createTestDatabase();
+    insertModel(db, "model-1", "Model One");
+    insertMatch(db, "match-1");
+    ensureBettingArenaAccounts(db, new Date("2026-06-17T00:00:00.000Z"));
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+
+    const first = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T00:00:00.000Z")
+    });
+    const second = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T01:00:00.000Z")
+    });
+    const rowCount = db.prepare("SELECT COUNT(*) AS count FROM betting_arena_rounds").get() as { count: number };
+
+    expect(second.id).toBe(first.id);
+    expect(rowCount.count).toBe(1);
+    db.close();
+  });
+
+  it("orders zero initial bankroll accounts with the guarded return rate", () => {
+    const { db } = createTestDatabase();
+    insertModel(db, "model-1", "Model One");
+    insertModel(db, "model-2", "Model Two");
+    ensureBettingArenaAccounts(db, new Date("2026-06-17T00:00:00.000Z"));
+    db.prepare("UPDATE betting_arena_accounts SET initial_bankroll = 0 WHERE model_id = ?").run("model-1");
+    db.prepare("UPDATE betting_arena_accounts SET available_bankroll = 9000 WHERE model_id = ?").run("model-2");
+
+    expect(listBettingArenaAccounts(db)).toMatchObject([
+      { modelId: "model-1", returnRate: 0, rank: 1 },
+      { modelId: "model-2", returnRate: -0.1, rank: 2 }
+    ]);
+    db.close();
+  });
+
   it("builds distinct account context per model while sharing battle context", () => {
     const { db } = createTestDatabase();
     insertModel(db, "model-1", "Model One");

@@ -152,6 +152,45 @@ function getRoundById(db: Database, id: string): BettingArenaRoundDto {
   return toRoundDto(row, countAccounts(db));
 }
 
+function getRoundByDate(db: Database, roundDate: string): BettingArenaRoundDto | null {
+  const row = db
+    .prepare(
+      `
+        SELECT
+          betting_arena_rounds.id,
+          betting_arena_rounds.round_date,
+          betting_arena_rounds.status,
+          betting_arena_rounds.lock_time,
+          betting_arena_rounds.battle_context_json,
+          betting_arena_rounds.created_at,
+          betting_arena_rounds.updated_at,
+          COALESCE(slip_totals.total_staked, 0) AS total_staked,
+          COALESCE(slip_totals.potential_return, 0) AS potential_return,
+          COALESCE(settlement_totals.settled_return, 0) AS settled_return
+        FROM betting_arena_rounds
+        LEFT JOIN (
+          SELECT
+            round_id,
+            SUM(total_stake) AS total_staked,
+            SUM(potential_return) AS potential_return
+          FROM betting_arena_slips
+          GROUP BY round_id
+        ) AS slip_totals ON slip_totals.round_id = betting_arena_rounds.id
+        LEFT JOIN (
+          SELECT
+            round_id,
+            SUM(returned_amount) AS settled_return
+          FROM betting_arena_settlements
+          GROUP BY round_id
+        ) AS settlement_totals ON settlement_totals.round_id = betting_arena_rounds.id
+        WHERE betting_arena_rounds.round_date = ?
+      `
+    )
+    .get(roundDate) as RoundRow | undefined;
+
+  return row ? toRoundDto(row, countAccounts(db)) : null;
+}
+
 function getLatestRound(db: Database): BettingArenaRoundDto | null {
   const row = db
     .prepare(
@@ -261,7 +300,15 @@ export function listBettingArenaAccounts(db: Database): BettingArenaAccountDto[]
         FROM betting_arena_accounts
         INNER JOIN ai_models ON ai_models.id = betting_arena_accounts.model_id
         ORDER BY
-          ((betting_arena_accounts.available_bankroll + betting_arena_accounts.frozen_stake - betting_arena_accounts.initial_bankroll) / betting_arena_accounts.initial_bankroll) DESC,
+          CASE
+            WHEN betting_arena_accounts.initial_bankroll > 0 THEN
+              (
+                betting_arena_accounts.available_bankroll +
+                betting_arena_accounts.frozen_stake -
+                betting_arena_accounts.initial_bankroll
+              ) / betting_arena_accounts.initial_bankroll
+            ELSE 0
+          END DESC,
           ai_models.display_name ASC
       `
     )
@@ -276,6 +323,11 @@ export function createBettingArenaRound(db: Database, input: CreateBettingArenaR
   const id = randomUUID();
 
   ensureBettingArenaAccounts(db, now);
+
+  const existingRound = getRoundByDate(db, input.roundDate);
+  if (existingRound) {
+    return existingRound;
+  }
 
   db.prepare(
     `
