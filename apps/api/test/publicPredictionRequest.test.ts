@@ -139,7 +139,8 @@ describe("public prediction request API", () => {
       useHeadToHead: false,
       usePlayerLineupInjuries: false,
       useDongqiudiIntel: false,
-      useSporttery: true
+      useSporttery: true,
+      useTeamProfile: true
     });
     expect(verifyDb.prepare("SELECT match_id, status FROM prediction_runs").all()).toEqual([
       {
@@ -234,7 +235,8 @@ describe("public prediction request API", () => {
           useHeadToHead: true,
           usePlayerLineupInjuries: false,
           useDongqiudiIntel: false,
-          useSporttery: false
+          useSporttery: false,
+          useTeamProfile: false
         },
         promptTemplateId: "prompt-1",
         customPrompt: "偏重上半场节奏。",
@@ -375,7 +377,8 @@ describe("public prediction request API", () => {
           useHeadToHead: false,
           usePlayerLineupInjuries: false,
           useDongqiudiIntel: false,
-          useSporttery: true
+          useSporttery: true,
+          useTeamProfile: true
         },
         promptTemplateId: "prompt-1",
         customPrompt: "",
@@ -773,7 +776,8 @@ describe("public prediction request API", () => {
           useHeadToHead: true,
           usePlayerLineupInjuries: false,
           useDongqiudiIntel: false,
-          useSporttery: false
+          useSporttery: false,
+          useTeamProfile: false
         },
         promptTemplateId: "builtin-prompt-scoreline",
         customPrompt: "偏重上半场节奏。",
@@ -812,7 +816,8 @@ describe("public prediction request API", () => {
       useHeadToHead: true,
       usePlayerLineupInjuries: false,
       useDongqiudiIntel: false,
-      useSporttery: false
+      useSporttery: false,
+      useTeamProfile: false
     });
     expect(row.prompt_template_id).toBe("builtin-prompt-scoreline");
     expect(row.custom_prompt).toBe("偏重上半场节奏。");
