@@ -386,14 +386,30 @@ describe("admin config API", () => {
     });
     const model = modelResponse.json() as { id: string };
 
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [{ message: { content: "ok" } }]
-        }),
-        { status: 200, headers: { "content-type": "application/json" } }
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "ok" } }]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
       )
-    );
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '{"predicted_result":"home","predicted_home_score":2,"predicted_away_score":1,"confidence":0.61,"data_gaps":[]}'
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      );
 
     const testResponse = await app.inject({
       method: "POST",
@@ -461,6 +477,21 @@ describe("admin config API", () => {
           }),
           { status: 200, headers: { "content-type": "application/json" } }
         )
+      )
+      .mockResolvedValueOnce(new Response("<!doctype html><html></html>", { status: 200, headers: { "content-type": "text/html" } }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '{"predicted_result":"home","predicted_home_score":2,"predicted_away_score":1,"confidence":0.61,"data_gaps":[]}'
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
       );
 
     const testResponse = await app.inject({
@@ -473,6 +504,8 @@ describe("admin config API", () => {
     expect(testResponse.json()).toMatchObject({ ok: true, message: "模型测试成功" });
     expect(fetchMock).toHaveBeenNthCalledWith(1, "https://newapi.example.com/chat/completions", expect.objectContaining({ method: "POST" }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, "https://newapi.example.com/v1/chat/completions", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "https://newapi.example.com/chat/completions", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "https://newapi.example.com/v1/chat/completions", expect.objectContaining({ method: "POST" }));
 
     await app.close();
   });
@@ -526,7 +559,7 @@ describe("admin config API", () => {
     expect(testResponse.json()).toMatchObject({
       ok: false,
       status: 200,
-      message: "模型测试失败：接口返回 event-stream，当前需要普通 JSON 响应"
+      message: "模型测试失败：response was empty event-stream"
     });
 
     await app.close();
@@ -583,8 +616,71 @@ describe("admin config API", () => {
     expect(testResponse.json()).toMatchObject({
       ok: false,
       status: 200,
-      message: "模型测试失败：模型返回内容为空"
+      message: "模型测试失败：response was truncated"
     });
+
+    await app.close();
+  });
+
+  it("reports JSON-shape model test failures without returning provider secrets", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const providerResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-providers",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        name: "newapi",
+        displayName: "NewAPI",
+        baseUrl: "https://newapi.example.com/v1",
+        apiKey: "secret-provider-key",
+        enabled: true
+      }
+    });
+    const provider = providerResponse.json() as { id: string };
+
+    const modelResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/ai-models",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        providerId: provider.id,
+        modelName: "gemini-3.5-flash",
+        displayName: "Gemini 3.5 Flash",
+        enabled: true
+      }
+    });
+    const model = modelResponse.json() as { id: string };
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: "OK" }, finish_reason: "stop" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: "{" }, finish_reason: "length" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      );
+
+    const testResponse = await app.inject({
+      method: "POST",
+      url: `/api/admin/ai-models/${model.id}/test`,
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(testResponse.statusCode).toBe(200);
+    expect(testResponse.json()).toMatchObject({
+      ok: false,
+      status: 200,
+      message: "模型测试失败：response was truncated"
+    });
+    expect(JSON.stringify(testResponse.json())).not.toContain("secret-provider-key");
 
     await app.close();
   });
