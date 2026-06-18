@@ -58,6 +58,12 @@ function assertString(value: unknown, fieldName: string): string {
   return value;
 }
 
+function coerceString(value: unknown, fieldName: string): string {
+  if (typeof value === "string") return value;
+  if (isRecord(value)) return JSON.stringify(value);
+  throw new Error(`${fieldName} must be a string`);
+}
+
 function assertNumber(value: unknown, fieldName: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`${fieldName} must be a number`);
@@ -79,30 +85,46 @@ function assertStringArray(value: unknown, fieldName: string): string[] {
 }
 
 function assertAction(value: unknown): BettingArenaSlipAction {
-  if (value !== "bet" && value !== "hold") {
+  const normalizedValue = typeof value === "string" ? value.toLowerCase() : value;
+
+  if (normalizedValue === "skip") return "hold";
+
+  if (normalizedValue !== "bet" && normalizedValue !== "hold") {
     throw new Error("action must be bet or hold");
   }
 
-  return value;
+  return normalizedValue;
 }
 
 function assertRiskLevel(value: unknown): BettingArenaRiskLevel {
-  if (value !== "low" && value !== "medium" && value !== "high") {
+  const normalizedValue = typeof value === "string" ? value.toLowerCase() : value;
+
+  if (normalizedValue === "none" || normalizedValue === "n/a" || normalizedValue === "无（空仓）" || normalizedValue === "无风险" || normalizedValue === "zero") {
+    return "low";
+  }
+
+  if (normalizedValue !== "low" && normalizedValue !== "medium" && normalizedValue !== "high") {
     throw new Error("risk_level must be low, medium, or high");
   }
 
-  return value;
+  return normalizedValue;
 }
 
 function extractJsonObject(content: string): JsonRecord {
-  const startIndex = content.search(/\S/);
+  const firstNonWhitespaceIndex = content.search(/\S/);
 
-  if (startIndex === -1) {
+  if (firstNonWhitespaceIndex === -1) {
     throw new Error("Betting arena slip JSON parse failed: object braces not found");
   }
 
-  if (content[startIndex] !== "{") {
+  if (content[firstNonWhitespaceIndex] === "[") {
     throw new Error("Betting arena slip JSON must start with an object");
+  }
+
+  const startIndex = content.indexOf("{", firstNonWhitespaceIndex);
+
+  if (startIndex === -1) {
+    throw new Error("Betting arena slip JSON parse failed: object braces not found");
   }
 
   let depth = 0;
@@ -306,7 +328,7 @@ export function parseBettingArenaSlip(
   const parlaysInput = assertArray(slip.parlays, "parlays");
   const strategySummary = assertString(slip.strategy_summary, "strategy_summary");
   const riskLevel = assertRiskLevel(slip.risk_level);
-  const bankrollPlan = assertString(slip.bankroll_plan, "bankroll_plan");
+  const bankrollPlan = coerceString(slip.bankroll_plan, "bankroll_plan");
   const skipReasons = assertStringArray(slip.skip_reasons, "skip_reasons");
   const dataGaps = assertStringArray(slip.data_gaps, "data_gaps");
 

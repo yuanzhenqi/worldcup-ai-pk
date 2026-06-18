@@ -7,6 +7,7 @@ import {
   listBettingArenaAccounts
 } from "../src/modules/betting-arena/bettingArena.repository";
 import { buildBattleContext, buildAccountContext } from "../src/modules/betting-arena/bettingArena.context";
+import { saveFixtureContextSnapshot } from "../src/modules/context/fixtureContext.repository";
 
 function insertModel(db: ReturnType<typeof createTestDatabase>["db"], id: string, displayName: string) {
   db.prepare(
@@ -161,6 +162,68 @@ describe("betting arena repository and context", () => {
     expect(second.modelId).toBe("model-2");
     expect(first.availableBankroll).toBe(10000);
     expect(second.availableBankroll).toBe(10000);
+    db.close();
+  });
+
+  it("injects latest available sporttery pools into battle context", () => {
+    const { db } = createTestDatabase();
+    insertModel(db, "model-1", "Model One");
+    insertMatch(db, "match-1");
+    saveFixtureContextSnapshot(db, {
+      matchId: "match-1",
+      completeness: "partial",
+      domains: [
+        {
+          domain: "sporttery",
+          status: "cached",
+          summary: "官方指数：胜平负 主2.04/平3.03/客3.23",
+          lastSyncedAt: "2026-06-17T08:00:00.000Z",
+          error: null
+        }
+      ],
+      raw: {
+        sporttery: {
+          oddsPools: [
+            {
+              poolCode: "HAD",
+              status: "available",
+              options: [
+                { code: "h", label: "主胜", value: "2.04" },
+                { code: "d", label: "平", value: "3.03" },
+                { code: "a", label: "客胜", value: "3.23" }
+              ]
+            },
+            {
+              poolCode: "CRS",
+              status: "unavailable",
+              options: []
+            }
+          ]
+        }
+      },
+      now: new Date("2026-06-17T08:00:00.000Z")
+    });
+
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+
+    expect(battleContext.matches[0]).toMatchObject({
+      matchId: "match-1",
+      sportteryPools: [
+        {
+          poolCode: "HAD",
+          options: [
+            { code: "h", label: "主胜", value: "2.04" },
+            { code: "d", label: "平", value: "3.03" },
+            { code: "a", label: "客胜", value: "3.23" }
+          ]
+        }
+      ],
+      dataGaps: []
+    });
     db.close();
   });
 });

@@ -60,6 +60,96 @@ describe("betting arena slip parser", () => {
     );
   });
 
+  it("accepts code-fenced skip output as a hold slip", () => {
+    expect(
+      parseBettingArenaSlip(
+        [
+          "```json",
+          JSON.stringify({
+            action: "skip",
+            total_stake: 0,
+            singles: [],
+            parlays: [],
+            strategy_summary: "缺少可用玩法，空仓。",
+            risk_level: "none",
+            bankroll_plan: {
+              reserved: 10000,
+              reason: "等待完整玩法快照"
+            },
+            skip_reasons: ["sportteryPools 为空"],
+            data_gaps: ["未注入完整体彩玩法快照"]
+          }),
+          "```"
+        ].join("\n"),
+        battleContext,
+        accountContext
+      )
+    ).toMatchObject({
+      action: "hold",
+      totalStake: 0,
+      riskLevel: "low",
+      bankrollPlan: JSON.stringify({ reserved: 10000, reason: "等待完整玩法快照" })
+    });
+  });
+
+  it("normalizes zero-risk hold output", () => {
+    expect(
+      parseBettingArenaSlip(
+        JSON.stringify({
+          action: "skip",
+          total_stake: 0,
+          singles: [],
+          parlays: [],
+          strategy_summary: "缺少可用玩法，空仓。",
+          risk_level: "无风险",
+          bankroll_plan: "保留全部资金。",
+          skip_reasons: ["sportteryPools 为空"],
+          data_gaps: ["未注入完整体彩玩法快照"]
+        }),
+        battleContext,
+        accountContext
+      )
+    ).toMatchObject({ action: "hold", riskLevel: "low" });
+
+    expect(
+      parseBettingArenaSlip(
+        JSON.stringify({
+          action: "skip",
+          total_stake: 0,
+          singles: [],
+          parlays: [],
+          strategy_summary: "缺少可用玩法，空仓。",
+          risk_level: "zero",
+          bankroll_plan: "保留全部资金。",
+          skip_reasons: ["sportteryPools 为空"],
+          data_gaps: ["未注入完整体彩玩法快照"]
+        }),
+        battleContext,
+        accountContext
+      )
+    ).toMatchObject({ action: "hold", riskLevel: "low" });
+  });
+
+  it("normalizes uppercase skip output", () => {
+    expect(
+      parseBettingArenaSlip(
+        JSON.stringify({
+          action: "SKIP",
+          total_stake: 0,
+          singles: [],
+          parlays: [],
+          strategy_summary: "缺少可用玩法，空仓。",
+          risk_level: "NONE",
+          bankroll_plan: "保留全部资金。",
+          skip_reasons: ["sportteryPools 为空"],
+          data_gaps: ["未注入完整体彩玩法快照"]
+        }),
+        battleContext,
+        accountContext
+      )
+    ).toMatchObject({ action: "hold", riskLevel: "low" });
+  });
+
   it("extracts only the first complete JSON object", () => {
     expect(parseBettingArenaSlip(`${holdSlipJson}\nextra { "ignored": true }`, battleContext, accountContext)).toMatchObject({
       action: "hold",

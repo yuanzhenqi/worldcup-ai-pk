@@ -15,6 +15,23 @@ interface EnabledModelRow {
   api_key: string;
 }
 
+interface SaveSlipInput {
+  id: string;
+  roundId: string;
+  modelId: string;
+  action: string;
+  status: string;
+  totalStake: number;
+  potentialReturn: number;
+  riskLevel: string;
+  rawResponse: string;
+  outputJson: string;
+  parsedSlipJson: string;
+  accountContextJson: string;
+  validationError: string | null;
+  timestamp: string;
+}
+
 function listEnabledModels(db: Database): EnabledModelRow[] {
   return db
     .prepare(
@@ -35,9 +52,63 @@ function listEnabledModels(db: Database): EnabledModelRow[] {
     .all() as EnabledModelRow[];
 }
 
-function listRoundSlipModelIds(db: Database, roundId: string): Set<string> {
-  const rows = db.prepare("SELECT model_id FROM betting_arena_slips WHERE round_id = ?").all(roundId) as Array<{ model_id: string }>;
+function listCompletedRoundSlipModelIds(db: Database, roundId: string): Set<string> {
+  const rows = db.prepare("SELECT model_id FROM betting_arena_slips WHERE round_id = ? AND status != ?").all(roundId, "generation_failed") as Array<{
+    model_id: string;
+  }>;
   return new Set(rows.map((row) => row.model_id));
+}
+
+function saveRoundSlip(db: Database, input: SaveSlipInput): void {
+  db.prepare(
+    `
+      INSERT INTO betting_arena_slips (
+        id,
+        round_id,
+        model_id,
+        action,
+        status,
+        total_stake,
+        potential_return,
+        risk_level,
+        raw_response,
+        output_json,
+        parsed_slip_json,
+        account_context_json,
+        validation_error,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(round_id, model_id) DO UPDATE SET
+        action = excluded.action,
+        status = excluded.status,
+        total_stake = excluded.total_stake,
+        potential_return = excluded.potential_return,
+        risk_level = excluded.risk_level,
+        raw_response = excluded.raw_response,
+        output_json = excluded.output_json,
+        parsed_slip_json = excluded.parsed_slip_json,
+        account_context_json = excluded.account_context_json,
+        validation_error = excluded.validation_error,
+        updated_at = excluded.updated_at
+    `
+  ).run(
+    input.id,
+    input.roundId,
+    input.modelId,
+    input.action,
+    input.status,
+    input.totalStake,
+    input.potentialReturn,
+    input.riskLevel,
+    input.rawResponse,
+    input.outputJson,
+    input.parsedSlipJson,
+    input.accountContextJson,
+    input.validationError,
+    input.timestamp,
+    input.timestamp
+  );
 }
 
 export function getBettingArena(db: Database): BettingArenaDto {
@@ -53,9 +124,9 @@ export async function triggerBettingArenaRound(db: Database, now = new Date()): 
   const round = createBettingArenaRound(db, { roundDate, lockTime, battleContext, externalIntel, now });
   const timestamp = now.toISOString();
   const models = listEnabledModels(db);
-  const processedModelIds = listRoundSlipModelIds(db, round.id);
+  const completedModelIds = listCompletedRoundSlipModelIds(db, round.id);
 
-  if (models.length > 0 && processedModelIds.size >= models.length) {
+  if (models.length > 0 && completedModelIds.size >= models.length) {
     if (round.status === "generating") {
       db.prepare("UPDATE betting_arena_rounds SET status = ?, updated_at = ? WHERE id = ?").run("locked", timestamp, round.id);
     }
@@ -65,52 +136,35 @@ export async function triggerBettingArenaRound(db: Database, now = new Date()): 
   db.prepare("UPDATE betting_arena_rounds SET status = ?, updated_at = ? WHERE id = ?").run("generating", timestamp, round.id);
 
   for (const model of models) {
-    if (processedModelIds.has(model.model_id)) continue;
+    if (completedModelIds.has(model.model_id)) continue;
 
     const accountContext = buildAccountContext(db, model.model_id);
+    let rawResponse = "";
+    let outputJson = "{}";
     try {
       const result = await runOpenAiCompatiblePrediction(
         { baseUrl: model.base_url, apiKey: model.api_key, modelName: model.model_name },
         buildBettingArenaPrompt({ battleContext, accountContext })
       );
+      rawResponse = result.rawResponse;
+      outputJson = result.content;
       const parsed = parseBettingArenaSlip(result.content, battleContext, accountContext);
-      db.prepare(
-        `
-          INSERT INTO betting_arena_slips (
-            id,
-            round_id,
-            model_id,
-            action,
-            status,
-            total_stake,
-            potential_return,
-            risk_level,
-            raw_response,
-            output_json,
-            parsed_slip_json,
-            account_context_json,
-            validation_error,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `
-      ).run(
-        randomUUID(),
-        round.id,
-        model.model_id,
-        parsed.action,
-        "accepted",
-        parsed.totalStake,
-        parsed.potentialReturn,
-        parsed.riskLevel,
-        result.rawResponse,
-        result.content,
-        JSON.stringify(parsed),
-        JSON.stringify(accountContext),
-        null,
-        timestamp,
+      saveRoundSlip(db, {
+        id: randomUUID(),
+        roundId: round.id,
+        modelId: model.model_id,
+        action: parsed.action,
+        status: "accepted",
+        totalStake: parsed.totalStake,
+        potentialReturn: parsed.potentialReturn,
+        riskLevel: parsed.riskLevel,
+        rawResponse,
+        outputJson,
+        parsedSlipJson: JSON.stringify(parsed),
+        accountContextJson: JSON.stringify(accountContext),
+        validationError: null,
         timestamp
-      );
+      });
 
       if (parsed.totalStake > 0) {
         db.prepare(
@@ -127,27 +181,22 @@ export async function triggerBettingArenaRound(db: Database, now = new Date()): 
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Betting arena generation failed";
-      db.prepare(
-        `
-          INSERT INTO betting_arena_slips (
-            id,
-            round_id,
-            model_id,
-            action,
-            status,
-            total_stake,
-            potential_return,
-            risk_level,
-            raw_response,
-            output_json,
-            parsed_slip_json,
-            account_context_json,
-            validation_error,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `
-      ).run(randomUUID(), round.id, model.model_id, "hold", "generation_failed", 0, 0, "low", "", "{}", "{}", JSON.stringify(accountContext), message, timestamp, timestamp);
+      saveRoundSlip(db, {
+        id: randomUUID(),
+        roundId: round.id,
+        modelId: model.model_id,
+        action: "hold",
+        status: "generation_failed",
+        totalStake: 0,
+        potentialReturn: 0,
+        riskLevel: "low",
+        rawResponse,
+        outputJson,
+        parsedSlipJson: "{}",
+        accountContextJson: JSON.stringify(accountContext),
+        validationError: message,
+        timestamp
+      });
       db.prepare("UPDATE betting_arena_accounts SET failed_generation_count = failed_generation_count + 1, updated_at = ? WHERE model_id = ?").run(timestamp, model.model_id);
     }
   }

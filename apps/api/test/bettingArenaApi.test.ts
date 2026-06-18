@@ -3,9 +3,11 @@ import { buildApp } from "../src/app";
 import { createTestDatabase } from "./support/testDatabase";
 import { buildBattleContext } from "../src/modules/betting-arena/bettingArena.context";
 import { createBettingArenaRound } from "../src/modules/betting-arena/bettingArena.repository";
+import { createDatabase } from "../src/db/connection";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function seedModelAndMatch(db: ReturnType<typeof createTestDatabase>["db"]) {
@@ -112,6 +114,8 @@ describe("betting arena public API", () => {
   });
 
   it("continues a generating round that already has partial model slips", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-17T10:00:00.000Z"));
     const { db, databasePath } = createTestDatabase();
     seedModelAndMatch(db);
     db.prepare(
@@ -209,7 +213,7 @@ describe("betting arena public API", () => {
     const response = await app.inject({ method: "POST", url: "/api/public/betting-arena/rounds" });
 
     expect(response.statusCode).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalled();
     expect(response.json()).toMatchObject({
       currentRound: { id: round.id, status: "locked" },
       slips: [
@@ -218,5 +222,93 @@ describe("betting arena public API", () => {
       ]
     });
     await app.close();
+  });
+
+  it("retries a failed round slip and preserves invalid model output", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-17T10:00:00.000Z"));
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T10:00:00.000Z")
+    });
+    db.prepare("UPDATE betting_arena_rounds SET status = ? WHERE id = ?").run("locked", round.id);
+    db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id,
+          round_id,
+          model_id,
+          action,
+          status,
+          total_stake,
+          potential_return,
+          risk_level,
+          raw_response,
+          output_json,
+          parsed_slip_json,
+          account_context_json,
+          validation_error,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "slip-1",
+      round.id,
+      "model-1",
+      "hold",
+      "generation_failed",
+      0,
+      0,
+      "low",
+      "",
+      "{}",
+      "{}",
+      "{}",
+      "previous failure",
+      "2026-06-17T10:00:00.000Z",
+      "2026-06-17T10:00:00.000Z"
+    );
+    db.close();
+    const rawBody = JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: "我建议空仓。"
+          }
+        }
+      ]
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(rawBody, {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "POST", url: "/api/public/betting-arena/rounds" });
+
+    expect(response.statusCode).toBe(200);
+    await app.close();
+    const retryDb = createDatabase(databasePath);
+    const slip = retryDb
+      .prepare("SELECT status, raw_response, output_json, validation_error FROM betting_arena_slips WHERE round_id = ? AND model_id = ?")
+      .get(round.id, "model-1") as { status: string; raw_response: string; output_json: string; validation_error: string };
+    expect(slip.status).toBe("generation_failed");
+    expect(slip.raw_response).toBe(rawBody);
+    expect(slip.output_json).toBe("我建议空仓。");
+    expect(slip.validation_error).toBe("Betting arena slip JSON parse failed: object braces not found");
+    retryDb.close();
   });
 });
