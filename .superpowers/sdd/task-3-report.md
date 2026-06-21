@@ -44,3 +44,10 @@ AssertionError: expected { matchId: 'match-1', …(14) } to match object { exter
 
 ## Result
 Both the targeted tests and typecheck passed after implementation.
+
+## Review Follow-up
+Reviewer raised a concern that string-form `externalIntel.dataGaps` might be dropped during battle context rehydration. Verified against the implementation: `readStructuredDataGaps` already preserves strings and structured `{ source, code, message }` gaps. Added a regression assertion to `bettingArenaRepository.test.ts` covering both shapes.
+
+Verification:
+- `corepack pnpm --filter @worldcup-ai-pk/api test -- bettingArenaRepository.test.ts`
+  - Passed.

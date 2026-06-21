@@ -575,7 +575,7 @@ describe("betting arena repository and context", () => {
         riskSignals: ["轮换幅度不明"],
         sourceLinks: [{ title: "Team news", url: "https://example.com/news", sourceDomain: "example.com", publishedAt: null }],
         confidence: "medium",
-        dataGaps: [],
+        dataGaps: ["阵容消息仍需二次确认", { source: "external_intel", code: "lineup_unclear", message: "首发名单尚未公布" }],
         collectedAt: "2026-06-21T10:00:00.000Z"
       }),
       "cached",
@@ -595,9 +595,13 @@ describe("betting arena repository and context", () => {
       externalIntel: {
         status: "cached",
         summary: "德国赛前发布会确认主力前锋可出场。",
-        sourceLinks: [{ url: "https://example.com/news" }]
+        sourceLinks: [{ url: "https://example.com/news" }],
+        dataGaps: ["阵容消息仍需二次确认", { source: "external_intel", code: "lineup_unclear", message: "首发名单尚未公布" }]
       }
     });
+    expect(battleContext.matches[0].dataGaps).toEqual(
+      expect.arrayContaining(["阵容消息仍需二次确认", expect.objectContaining({ source: "external_intel", code: "lineup_unclear" })])
+    );
     db.close();
   });
 });
