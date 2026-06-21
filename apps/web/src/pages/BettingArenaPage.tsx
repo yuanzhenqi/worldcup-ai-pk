@@ -152,9 +152,19 @@ function summarizeSourceDomains(
     .join("；");
 }
 
+function summarizeExternalIntelSource(externalIntel: { status: string; summary: string; collectedAt: string }): string {
+  if (!externalIntel.status && !externalIntel.summary) {
+    return "当前模型可基于自身联网能力补充公开情报；本地统一采集源尚未配置";
+  }
+  const statusText = externalIntel.status ? domainStatusLabel(externalIntel.status) : "已采集";
+  const summary = externalIntel.summary || "暂无摘要";
+  return `统一采集${statusText}：${summary}`;
+}
+
 function buildSourceBreakdown(input: {
   contextDomains: Array<{ domain: string; status: string; summary: string; error: string }>;
   sportteryPoolsCount: number;
+  externalIntel: { status: string; summary: string; collectedAt: string };
 }) {
   return [
     {
@@ -178,7 +188,7 @@ function buildSourceBreakdown(input: {
     },
     {
       source: "外部联网情报",
-      detail: "当前模型可基于自身联网能力补充公开情报；本地统一采集源尚未配置"
+      detail: summarizeExternalIntelSource(input.externalIntel)
     }
   ];
 }
@@ -258,6 +268,12 @@ function getBattleContextSummary(round: BettingArenaRoundDto | null | undefined)
         })
       : [];
     const externalIntel = isRecord(match.externalIntel) ? match.externalIntel : null;
+    const externalIntelSummary = {
+      status: readString(externalIntel?.status),
+      summary: readString(externalIntel?.summary),
+      sourceLinks: readSourceLinks(externalIntel?.sourceLinks),
+      collectedAt: readString(externalIntel?.collectedAt)
+    };
     const optionsCount = sportteryPools.reduce((total, pool) => {
       if (!isRecord(pool) || !Array.isArray(pool.options)) return total;
       return total + pool.options.length;
@@ -282,13 +298,8 @@ function getBattleContextSummary(round: BettingArenaRoundDto | null | undefined)
         awayTeamProfile: formatTeamProfile(match.awayTeamProfile),
         historicalMatchup: formatHistoricalMatchup(match.historicalMatchup),
         contextDomains,
-        externalIntel: {
-          status: readString(externalIntel?.status),
-          summary: readString(externalIntel?.summary),
-          sourceLinks: readSourceLinks(externalIntel?.sourceLinks),
-          collectedAt: readString(externalIntel?.collectedAt)
-        },
-        sourceBreakdown: buildSourceBreakdown({ contextDomains, sportteryPoolsCount: sportteryPools.length })
+        externalIntel: externalIntelSummary,
+        sourceBreakdown: buildSourceBreakdown({ contextDomains, sportteryPoolsCount: sportteryPools.length, externalIntel: externalIntelSummary })
       }
     ];
   });

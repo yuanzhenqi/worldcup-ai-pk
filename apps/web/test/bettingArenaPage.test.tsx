@@ -177,6 +177,7 @@ describe("BettingArenaPage", () => {
     expect(screen.getAllByText(/懂球帝/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/本地资料/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/外部联网情报/).length).toBeGreaterThan(0);
+    expect(screen.getByText((_text, element) => element?.textContent === "外部联网情报：统一采集已缓存：德国主力前锋可出场。")).toBeInTheDocument();
     expect(screen.getByText("外部情报")).toBeInTheDocument();
     expect(screen.getByText("德国主力前锋可出场。")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Team news" })).toHaveAttribute("href", "https://example.com/news");
