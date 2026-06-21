@@ -329,6 +329,21 @@ function getReplaceableSlip(db: Database, input: { roundId: string; modelId: str
   return row ?? null;
 }
 
+function hasRoundSlipForModel(db: Database, input: { roundId: string; modelId: string }): boolean {
+  const row = db
+    .prepare(
+      `
+        SELECT id
+        FROM betting_arena_slips
+        WHERE round_id = ?
+          AND model_id = ?
+        LIMIT 1
+      `
+    )
+    .get(input.roundId, input.modelId) as { id: string } | undefined;
+  return Boolean(row);
+}
+
 function rollbackReplaceableSlipStake(db: Database, input: { roundId: string; modelId: string; timestamp: string }): boolean {
   const existing = getReplaceableSlip(db, input);
   if (!existing) {
@@ -358,6 +373,24 @@ function rollbackReplaceableSlipStake(db: Database, input: { roundId: string; mo
     ).run(stake, stake, stake, stake, stake, input.timestamp, input.modelId);
   }
   return true;
+}
+
+function updateRoundStatusFromSlips(db: Database, roundId: string, timestamp: string): void {
+  const pending = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM betting_arena_slips
+        WHERE round_id = ?
+          AND status = ?
+      `
+    )
+    .get(roundId, "pending") as { count: number };
+  db.prepare("UPDATE betting_arena_rounds SET status = ?, updated_at = ? WHERE id = ?").run(
+    Number(pending.count ?? 0) > 0 ? "generating" : "locked",
+    timestamp,
+    roundId
+  );
 }
 
 function applyAcceptedStake(db: Database, input: { modelId: string; totalStake: number; timestamp: string }): void {
@@ -752,9 +785,13 @@ export async function triggerBettingArenaModel(db: Database, input: { roundId: s
     throw new Error(`Betting arena model not found: ${input.modelId}`);
   }
   const timestamp = now.toISOString();
+  if (hasRoundSlipForModel(db, { roundId: input.roundId, modelId: input.modelId })) {
+    updateRoundStatusFromSlips(db, input.roundId, timestamp);
+    return getBettingArenaSummary(db);
+  }
   const battleContext = getRoundBattleContext(db, input.roundId);
   await generateRoundSlipForModel(db, { roundId: input.roundId, model, battleContext, timestamp });
-  db.prepare("UPDATE betting_arena_rounds SET status = ?, updated_at = ? WHERE id = ?").run("locked", timestamp, input.roundId);
+  updateRoundStatusFromSlips(db, input.roundId, timestamp);
   return getBettingArenaSummary(db);
 }
 

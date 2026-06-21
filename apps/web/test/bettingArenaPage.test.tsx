@@ -1,0 +1,313 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { BettingArenaDto } from "@worldcup-ai-pk/shared";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { BettingArenaPage } from "../src/pages/BettingArenaPage";
+
+const arena: BettingArenaDto = {
+  accounts: [
+    {
+      modelId: "model-1",
+      modelDisplayName: "Model One",
+      initialBankroll: 10000,
+      availableBankroll: 9800,
+      frozenStake: 200,
+      totalAssetValue: 10000,
+      totalStaked: 200,
+      totalReturned: 0,
+      returnRate: 0,
+      orderCount: 1,
+      settledOrderCount: 0,
+      hitCount: 0,
+      hitRate: 0,
+      failedGenerationCount: 0,
+      orderRate: 1,
+      failureRate: 0,
+      rank: 1,
+      lastReview: ""
+    }
+  ],
+  currentRound: {
+    id: "round-1",
+    roundDate: "2026-06-20",
+    status: "locked",
+    lockTime: "2026-06-20T10:00:00.000Z",
+    eligibleMatchCount: 1,
+    modelsCount: 1,
+    totalStaked: 200,
+    potentialReturn: 370,
+    settledReturn: 0,
+    battleContext: {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: [] },
+      matches: [
+        {
+          matchId: "match-1",
+          stage: "Group Stage - 1",
+          kickoffAt: "2026-06-21T12:00:00.000Z",
+          status: "scheduled",
+          homeScore: null,
+          awayScore: null,
+          venue: "Test Stadium",
+          homeTeamName: "德国",
+          awayTeamName: "科特迪瓦",
+          homeTeamProfile: {
+            wc26TeamId: "home",
+            coach: "Home Coach",
+            playingStyle: "High press",
+            keyPlayers: [{ name: "Home Star", position: "FW", club: "Home Club" }],
+            worldCupHistory: { appearances: 3, bestResult: "Quarter-finals", titles: 0 },
+            qualifyingSummary: "Qualified strongly.",
+            injuries: [{ player: "Home Defender", status: "Doubtful", injury: "Knock" }],
+            marketValue: null
+          },
+          awayTeamProfile: {
+            wc26TeamId: "away",
+            coach: "Away Coach",
+            playingStyle: "Compact block",
+            keyPlayers: [{ name: "Away Star", position: "MF", club: "Away Club" }],
+            worldCupHistory: { appearances: 1, bestResult: "Group stage", titles: 0 },
+            qualifyingSummary: "Qualified through playoffs.",
+            injuries: [],
+            marketValue: null
+          },
+          historicalMatchup: {
+            totalMatches: 2,
+            homeWins: 1,
+            draws: 1,
+            awayWins: 0,
+            homeGoals: 3,
+            awayGoals: 1,
+            summary: "Home have the edge.",
+            meetings: []
+          },
+          contextDomains: [
+            { domain: "dongqiudi_intel", status: "cached", summary: "懂球帝情报已缓存", error: null },
+            { domain: "sporttery", status: "cached", summary: "体彩数据已缓存", error: null },
+            { domain: "team_profile", status: "cached", summary: "球队资料已缓存", error: null }
+          ],
+          sportteryPools: [{ poolCode: "HAD", options: [{ code: "h", label: "主胜", value: "1.85" }] }],
+          dataGaps: ["暂无球队身价数据源"]
+        }
+      ]
+    },
+    createdAt: "2026-06-20T10:00:00.000Z",
+    updatedAt: "2026-06-20T10:00:00.000Z"
+  },
+  slips: [
+    {
+      id: "slip-1",
+      roundId: "round-1",
+      modelId: "model-1",
+      modelDisplayName: "Model One",
+      action: "bet",
+      status: "accepted",
+      totalStake: 200,
+      potentialReturn: 370,
+      riskLevel: "medium",
+      strategySummary: "小额单场。",
+      bankrollPlan: "保留大部分资金。",
+      singles: [
+        {
+          matchId: "match-1",
+          poolCode: "HAD",
+          selectionCode: "h",
+          selectionLabel: "主胜",
+          lockedOdds: 1.85,
+          stake: 200,
+          confidence: 0.62,
+          rationale: "主队更稳定。"
+        }
+      ],
+      parlays: [],
+      skipReasons: [],
+      dataGaps: [],
+      validationError: null,
+      accountContext: { modelId: "model-1", availableBankroll: 10000 },
+      prompt: "account_context={}\nbattle_context={}",
+      rawResponse: '{"choices":[]}',
+      outputJson: '{"action":"bet"}',
+      portfolioBuckets: [],
+      settlementSummary: null,
+      createdAt: "2026-06-20T10:00:00.000Z"
+    }
+  ],
+  history: []
+};
+
+describe("BettingArenaPage", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("shows betting input audit data and per-model input output details", () => {
+    render(
+      <BettingArenaPage
+        arena={arena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "投注输入面板" }));
+    expect(screen.getByRole("heading", { name: "投注输入面板" })).toBeInTheDocument();
+    expect(screen.getAllByText("德国 对 科特迪瓦").length).toBeGreaterThan(0);
+    expect(screen.getByText("玩法 1 · 选项 1 · 缺口 1")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("德国 对 科特迪瓦"));
+    expect(screen.getByText("主队资料")).toBeInTheDocument();
+    expect(screen.getByText("数据来源拆解")).toBeInTheDocument();
+    expect(screen.getAllByText((_text, element) => element?.textContent?.includes("API-Football：仅赛程") ?? false).length).toBeGreaterThan(0);
+    expect(screen.getAllByText((_text, element) => element?.textContent?.includes("体彩：投注玩法与赔率") ?? false).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/懂球帝/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/本地资料/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/外部联网情报/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Home Star/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/暂无球队身价数据源/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
+    expect(screen.getByRole("heading", { name: "Model One" })).toBeInTheDocument();
+    expect(screen.getByText("输入 / 输出审计")).toBeInTheDocument();
+    expect(screen.getByText("提示词拆解")).toBeInTheDocument();
+    expect(screen.getByText("提示规则")).toBeInTheDocument();
+    expect(screen.getByText("账户上下文")).toBeInTheDocument();
+    expect(screen.getByText("比赛数据")).toBeInTheDocument();
+    expect(screen.getByText("完整原文")).toBeInTheDocument();
+  });
+
+  it("shows readable match names and locked odds in model slip details", () => {
+    render(
+      <BettingArenaPage
+        arena={arena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
+
+    expect(screen.getAllByText("德国 对 科特迪瓦").length).toBeGreaterThan(0);
+    expect(screen.getByText("胜平负 · 主胜 · 赔率 1.85 · 投入 200 · 潜在 370")).toBeInTheDocument();
+    expect(screen.queryByText("match-1 · HAD · 主胜 · 200")).not.toBeInTheDocument();
+  });
+
+  it("shows readable parlay structure in model slip details", () => {
+    const parlayArena: BettingArenaDto = {
+      ...arena,
+      slips: [
+        {
+          ...arena.slips[0],
+          singles: [],
+          parlays: [
+            {
+              parlayName: "稳健双关",
+              legs: [
+                { matchId: "match-1", poolCode: "HAD", selectionCode: "h", selectionLabel: "主胜", lockedOdds: 1.85 },
+                { matchId: "match-1", poolCode: "HHAD", selectionCode: "a", selectionLabel: "让负", lockedOdds: 1.72 }
+              ],
+              combinedOdds: 3.18,
+              stake: 100,
+              confidence: 0.58,
+              rationale: "两项方向互补。"
+            }
+          ]
+        }
+      ]
+    };
+
+    render(
+      <BettingArenaPage
+        arena={parlayArena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
+
+    expect(screen.getByText("2 串 1 · 稳健双关 · 组合赔率 3.18 · 投入 100 · 潜在 318")).toBeInTheDocument();
+    expect(screen.getByText("德国 对 科特迪瓦 · 胜平负 · 主胜 · 赔率 1.85")).toBeInTheDocument();
+    expect(screen.getByText("德国 对 科特迪瓦 · 让球胜平负 · 让负 · 赔率 1.72")).toBeInTheDocument();
+  });
+
+  it("lets one model generate a slip and shows result progress", async () => {
+    const battleContext = arena.currentRound?.battleContext as Record<string, unknown> & { matches: Array<Record<string, unknown>> };
+    const match = battleContext.matches[0];
+    const onTriggerModel = vi.fn().mockResolvedValue(arena);
+    render(
+      <BettingArenaPage
+        arena={{
+          ...arena,
+          currentRound: arena.currentRound
+            ? {
+                ...arena.currentRound,
+                battleContext: {
+                  ...battleContext,
+                  matches: [{ ...match, status: "finished", homeScore: 2, awayScore: 1 }]
+                }
+              }
+            : null
+        }}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={onTriggerModel}
+        onSettleRound={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "单独生成 Model One" }));
+
+    expect(onTriggerModel).toHaveBeenCalledWith("round-1", "model-1");
+    fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
+    expect(screen.getByText("赛果进度 1/1 已出")).toBeInTheDocument();
+    expect(screen.getByText("已完赛 2-1")).toBeInTheDocument();
+  });
+
+  it("allows multiple model generation buttons to be busy at the same time", async () => {
+    let resolveFirst: (value: BettingArenaDto) => void = () => {};
+    let resolveSecond: (value: BettingArenaDto) => void = () => {};
+    const arenaWithTwoModels: BettingArenaDto = {
+      ...arena,
+      accounts: [
+        arena.accounts[0],
+        { ...arena.accounts[0], modelId: "model-2", modelDisplayName: "Model Two", rank: 2 }
+      ],
+      slips: []
+    };
+    const first = new Promise<BettingArenaDto>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise<BettingArenaDto>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const onTriggerModel = vi.fn((roundId: string, modelId: string) => (modelId === "model-1" ? first : second));
+    render(
+      <BettingArenaPage
+        arena={arenaWithTwoModels}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={onTriggerModel}
+        onSettleRound={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "单独生成 Model One" }));
+    fireEvent.click(screen.getByRole("button", { name: "单独生成 Model Two" }));
+
+    expect(screen.getAllByText("生成中").length).toBe(2);
+    expect(screen.getByText("正在生成 2 个模型")).toBeInTheDocument();
+
+    resolveFirst(arenaWithTwoModels);
+    resolveSecond(arenaWithTwoModels);
+  });
+});
