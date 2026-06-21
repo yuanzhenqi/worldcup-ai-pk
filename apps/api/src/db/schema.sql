@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS ai_providers (
   base_url TEXT NOT NULL,
   api_key TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
+  deleted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -71,6 +72,11 @@ CREATE TABLE IF NOT EXISTS ai_models (
   model_name TEXT NOT NULL,
   display_name TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
+  context_window_tokens INTEGER NOT NULL DEFAULT 0,
+  max_output_tokens INTEGER NOT NULL DEFAULT 0,
+  request_timeout_ms INTEGER NOT NULL DEFAULT 90000,
+  request_retry_count INTEGER NOT NULL DEFAULT 1,
+  deleted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -205,6 +211,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 ALTER TABLE ai_providers ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE ai_providers ADD COLUMN base_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE ai_providers ADD COLUMN deleted_at TEXT;
 ALTER TABLE prompt_templates ADD COLUMN description TEXT NOT NULL DEFAULT '';
 ALTER TABLE prompt_templates ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0;
 
@@ -232,6 +239,23 @@ CREATE TABLE IF NOT EXISTS fixture_data_sync_logs (
   synced_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS fixture_external_intel_snapshots (
+  id TEXT PRIMARY KEY,
+  match_id TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  query_json TEXT NOT NULL,
+  search_results_json TEXT NOT NULL,
+  summary_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT,
+  collected_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fixture_external_intel_match_expires
+  ON fixture_external_intel_snapshots(match_id, expires_at, created_at);
+
 ALTER TABLE prediction_requests ADD COLUMN context_snapshot_id TEXT REFERENCES fixture_context_snapshots(id);
 ALTER TABLE prediction_requests ADD COLUMN task_types_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE prediction_requests ADD COLUMN data_options_json TEXT NOT NULL DEFAULT '{}';
@@ -252,6 +276,16 @@ CREATE TABLE IF NOT EXISTS fixture_dongqiudi_mappings (
 ALTER TABLE fixture_context_snapshots ADD COLUMN sporttery_summary_json TEXT NOT NULL DEFAULT '{}';
 
 ALTER TABLE fixture_context_snapshots ADD COLUMN team_profile_summary_json TEXT NOT NULL DEFAULT '{}';
+
+ALTER TABLE ai_models ADD COLUMN context_window_tokens INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE ai_models ADD COLUMN max_output_tokens INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE ai_models ADD COLUMN request_timeout_ms INTEGER NOT NULL DEFAULT 90000;
+
+ALTER TABLE ai_models ADD COLUMN request_retry_count INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE ai_models ADD COLUMN deleted_at TEXT;
 
 CREATE TABLE IF NOT EXISTS fixture_sporttery_mappings (
   api_football_fixture_id INTEGER PRIMARY KEY,

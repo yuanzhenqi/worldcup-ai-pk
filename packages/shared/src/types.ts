@@ -217,6 +217,61 @@ export type BettingArenaRoundStatus = "draft" | "generating" | "locked" | "settl
 export type BettingArenaSlipAction = "bet" | "hold";
 export type BettingArenaSlipStatus = "pending" | "accepted" | "invalid" | "generation_failed" | "settled" | "void";
 export type BettingArenaRiskLevel = "low" | "medium" | "high";
+export type ExternalIntelStatus = "cached" | "not_configured" | "failed" | "summary_failed";
+
+export interface StructuredDataGapDto {
+  source: string;
+  code: string;
+  message: string;
+}
+
+export interface ExternalIntelSourceLinkDto {
+  title: string;
+  url: string;
+  sourceDomain: string;
+  publishedAt: string | null;
+}
+
+export interface ExternalIntelSummaryDto {
+  status: ExternalIntelStatus;
+  summary: string;
+  injuryNews: string[];
+  lineupNews: string[];
+  motivation: string[];
+  recentFormNews: string[];
+  riskSignals: string[];
+  sourceLinks: ExternalIntelSourceLinkDto[];
+  confidence: "low" | "medium" | "high";
+  dataGaps: Array<string | StructuredDataGapDto>;
+  collectedAt: string | null;
+}
+
+export interface ExternalIntelSettingsDto {
+  enabled: boolean;
+  provider: "duckduckgo_html";
+  summarizerModelId: string;
+  cacheMinutes: number;
+  maxResultsPerQuery: number;
+  maxQueriesPerMatch: number;
+}
+
+export interface ExternalIntelSnapshotDto {
+  id: string;
+  matchId: string;
+  provider: string;
+  status: ExternalIntelStatus;
+  searchResults: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+    sourceDomain: string;
+    publishedAt: string | null;
+  }>;
+  summary: ExternalIntelSummaryDto;
+  error: string | null;
+  collectedAt: string;
+  expiresAt: string;
+}
 
 export interface BettingArenaAccountDto {
   modelId: string;
@@ -262,6 +317,14 @@ export interface BettingArenaParlayDto {
   rationale: string;
 }
 
+export interface BettingArenaPortfolioBucketDto {
+  bucket: "safe" | "value" | "hedge" | "upset" | "avoid";
+  label: string;
+  stake: number;
+  rationale: string;
+  items: string[];
+}
+
 export interface BettingArenaSlipDto {
   id: string;
   roundId: string;
@@ -276,9 +339,14 @@ export interface BettingArenaSlipDto {
   bankrollPlan: string;
   singles: BettingArenaSingleDto[];
   parlays: BettingArenaParlayDto[];
+  portfolioBuckets: BettingArenaPortfolioBucketDto[];
   skipReasons: string[];
   dataGaps: string[];
   validationError: string | null;
+  accountContext: unknown | null;
+  prompt: string;
+  rawResponse: string;
+  outputJson: string;
   settlementSummary: string | null;
   createdAt: string;
 }
@@ -293,6 +361,7 @@ export interface BettingArenaRoundDto {
   totalStaked: number;
   potentialReturn: number;
   settledReturn: number;
+  battleContext: unknown | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -410,6 +479,10 @@ export interface AiModelConfigDto {
   modelName: string;
   displayName: string;
   enabled: boolean;
+  contextWindowTokens: number;
+  maxOutputTokens: number;
+  requestTimeoutMs: number;
+  requestRetryCount: number;
 }
 
 export interface PromptTemplateConfigDto {
