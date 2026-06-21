@@ -1,6 +1,7 @@
 import type {
   BettingArenaParlayDto,
   BettingArenaRiskLevel,
+  BettingArenaPortfolioBucketDto,
   BettingArenaSingleDto,
   BettingArenaSlipAction
 } from "@worldcup-ai-pk/shared";
@@ -42,6 +43,7 @@ export interface ParsedBettingArenaSlip {
   bankrollPlan: string;
   singles: BettingArenaSingleDto[];
   parlays: BettingArenaParlayDto[];
+  portfolioBuckets: BettingArenaPortfolioBucketDto[];
   skipReasons: string[];
   dataGaps: string[];
 }
@@ -64,12 +66,45 @@ function coerceString(value: unknown, fieldName: string): string {
   throw new Error(`${fieldName} must be a string`);
 }
 
+function coerceStringListEntry(value: unknown, fieldName: string): string {
+  if (typeof value === "string") return value;
+  if (isRecord(value) || Array.isArray(value)) return JSON.stringify(value);
+  throw new Error(`${fieldName} must be a string`);
+}
+
 function assertNumber(value: unknown, fieldName: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`${fieldName} must be a number`);
   }
 
   return value;
+}
+
+function coerceNumber(value: unknown, fieldName: string): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  throw new Error(`${fieldName} must be a number`);
+}
+
+function optionalNumber(value: unknown, fieldName: string, defaultValue: number): number {
+  return value === undefined ? defaultValue : coerceNumber(value, fieldName);
+}
+
+function coerceConfidence(value: unknown, fieldName: string): number {
+  if (typeof value === "string") {
+    const normalizedValue = value.toLowerCase();
+    if (normalizedValue === "low" || normalizedValue === "低") return 0.4;
+    if (normalizedValue === "medium" || normalizedValue === "中") return 0.6;
+    if (normalizedValue === "high" || normalizedValue === "高") return 0.8;
+  }
+  return coerceNumber(value, fieldName);
+}
+
+function optionalConfidence(value: unknown, fieldName: string, defaultValue: number): number {
+  return value === undefined ? defaultValue : coerceConfidence(value, fieldName);
 }
 
 function assertArray(value: unknown, fieldName: string): unknown[] {
@@ -81,7 +116,42 @@ function assertArray(value: unknown, fieldName: string): unknown[] {
 }
 
 function assertStringArray(value: unknown, fieldName: string): string[] {
-  return assertArray(value, fieldName).map((entry, index) => assertString(entry, `${fieldName}[${index}]`));
+  return assertArray(value, fieldName).map((entry, index) => coerceStringListEntry(entry, `${fieldName}[${index}]`));
+}
+
+function readStringField(record: JsonRecord, fieldNames: string[], fieldName: string): string {
+  for (const name of fieldNames) {
+    if (typeof record[name] === "string") return record[name];
+  }
+  throw new Error(`${fieldName} must be a string`);
+}
+
+function readOptionalStringField(record: JsonRecord, fieldNames: string[]): string | null {
+  for (const name of fieldNames) {
+    if (typeof record[name] === "string") return record[name];
+  }
+  return null;
+}
+
+function readNumberField(record: JsonRecord, fieldNames: string[], fieldName: string): number {
+  for (const name of fieldNames) {
+    if (record[name] !== undefined) return coerceNumber(record[name], fieldName);
+  }
+  throw new Error(`${fieldName} must be a number`);
+}
+
+function readOptionalNumberField(record: JsonRecord, fieldNames: string[], fieldName: string, defaultValue: number): number {
+  for (const name of fieldNames) {
+    if (record[name] !== undefined) return coerceNumber(record[name], fieldName);
+  }
+  return defaultValue;
+}
+
+function readOptionalConfidenceField(record: JsonRecord, fieldNames: string[], fieldName: string, defaultValue: number): number {
+  for (const name of fieldNames) {
+    if (record[name] !== undefined) return coerceConfidence(record[name], fieldName);
+  }
+  return defaultValue;
 }
 
 function assertAction(value: unknown): BettingArenaSlipAction {
@@ -99,9 +169,24 @@ function assertAction(value: unknown): BettingArenaSlipAction {
 function assertRiskLevel(value: unknown): BettingArenaRiskLevel {
   const normalizedValue = typeof value === "string" ? value.toLowerCase() : value;
 
-  if (normalizedValue === "none" || normalizedValue === "n/a" || normalizedValue === "无（空仓）" || normalizedValue === "无风险" || normalizedValue === "zero") {
+  if (
+    normalizedValue === "none" ||
+    normalizedValue === "n/a" ||
+    normalizedValue === "无" ||
+    normalizedValue === "无（空仓）" ||
+    normalizedValue === "无风险" ||
+    normalizedValue === "zero"
+  ) {
     return "low";
   }
+
+  if (normalizedValue === "medium-low" || normalizedValue === "low-medium" || normalizedValue === "中低" || normalizedValue === "稳健") {
+    return "medium";
+  }
+
+  if (normalizedValue === "低") return "low";
+  if (normalizedValue === "中") return "medium";
+  if (normalizedValue === "高") return "high";
 
   if (normalizedValue !== "low" && normalizedValue !== "medium" && normalizedValue !== "high") {
     throw new Error("risk_level must be low, medium, or high");
@@ -210,28 +295,24 @@ function validateLeg(
   battleContext: BattleContextInput,
   fieldName: string
 ): BettingArenaSingleDto {
-  const matchId = assertString(rawLeg.match_id, `${fieldName}.match_id`);
-  const poolCode = assertString(rawLeg.pool_code, `${fieldName}.pool_code`);
-  const selectionCode = assertString(rawLeg.selection_code, `${fieldName}.selection_code`);
-  const selectionLabel = assertString(rawLeg.selection_label, `${fieldName}.selection_label`);
-  const lockedOdds = assertNumber(rawLeg.locked_odds, `${fieldName}.locked_odds`);
+  const matchId = readStringField(rawLeg, ["match_id", "matchId"], `${fieldName}.match_id`);
+  const poolCode = readStringField(rawLeg, ["pool_code", "poolCode"], `${fieldName}.pool_code`);
+  const selectionCode = readStringField(rawLeg, ["selection_code", "selectionCode", "option_code", "optionCode", "option", "selection"], `${fieldName}.selection_code`);
+  readOptionalStringField(rawLeg, ["selection_label", "selectionLabel", "option_label", "optionLabel", "label"]);
   const option = findLockedOption(battleContext, matchId, poolCode, selectionCode);
   const lockedOptionOdds = Number(option.value);
+  const providedLockedOdds = readOptionalNumberField(rawLeg, ["locked_odds", "lockedOdds", "odds"], `${fieldName}.locked_odds`, lockedOptionOdds);
 
-  if (!Number.isFinite(lockedOptionOdds) || Math.abs(lockedOptionOdds - lockedOdds) > NUMBER_TOLERANCE) {
+  if (!Number.isFinite(lockedOptionOdds) || Math.abs(lockedOptionOdds - providedLockedOdds) > NUMBER_TOLERANCE) {
     throw new Error(`locked_odds mismatch for ${matchId}/${poolCode}/${selectionCode}`);
-  }
-
-  if (option.label !== selectionLabel) {
-    throw new Error(`selection_label mismatch for ${matchId}/${poolCode}/${selectionCode}`);
   }
 
   return {
     matchId,
     poolCode,
     selectionCode,
-    selectionLabel,
-    lockedOdds,
+    selectionLabel: option.label,
+    lockedOdds: lockedOptionOdds,
     stake: 0,
     confidence: 0,
     rationale: ""
@@ -244,7 +325,7 @@ function parseSingle(rawSingle: unknown, battleContext: BattleContextInput, inde
   }
 
   const leg = validateLeg(rawSingle, battleContext, `singles[${index}]`);
-  const stake = assertNumber(rawSingle.stake, `singles[${index}].stake`);
+  const stake = coerceNumber(rawSingle.stake, `singles[${index}].stake`);
 
   if (stake <= 0) {
     throw new Error(`singles[${index}].stake must be positive`);
@@ -253,23 +334,24 @@ function parseSingle(rawSingle: unknown, battleContext: BattleContextInput, inde
   return {
     ...leg,
     stake,
-    confidence: assertNumber(rawSingle.confidence, `singles[${index}].confidence`),
-    rationale: assertString(rawSingle.rationale, `singles[${index}].rationale`)
+    confidence: optionalConfidence(rawSingle.confidence, `singles[${index}].confidence`, 0),
+    rationale: readOptionalStringField(rawSingle, ["rationale", "reason", "reasoning"]) ?? ""
   };
 }
 
-function parseParlay(rawParlay: unknown, battleContext: BattleContextInput, index: number): BettingArenaParlayDto {
+function parseParlay(rawParlay: unknown, battleContext: BattleContextInput, index: number): BettingArenaParlayDto | null {
   if (!isRecord(rawParlay)) {
     throw new Error(`parlays[${index}] must be an object`);
   }
 
-  const stake = assertNumber(rawParlay.stake, `parlays[${index}].stake`);
+  const stake = coerceNumber(rawParlay.stake, `parlays[${index}].stake`);
 
   if (stake <= 0) {
-    throw new Error(`parlays[${index}].stake must be positive`);
+    return null;
   }
 
-  const legs = assertArray(rawParlay.legs, `parlays[${index}].legs`).map((rawLeg, legIndex) => {
+  const rawLegs = rawParlay.legs ?? rawParlay.matches;
+  const legs = assertArray(rawLegs, `parlays[${index}].legs`).map((rawLeg, legIndex) => {
     if (!isRecord(rawLeg)) {
       throw new Error(`parlays[${index}].legs[${legIndex}] must be an object`);
     }
@@ -285,28 +367,50 @@ function parseParlay(rawParlay: unknown, battleContext: BattleContextInput, inde
     };
   });
 
-  const combinedOdds = assertNumber(rawParlay.combined_odds, `parlays[${index}].combined_odds`);
+  const computedCombinedOdds = Number(legs.reduce((product, leg) => product * leg.lockedOdds, 1).toFixed(4));
+  const combinedOdds = readOptionalNumberField(rawParlay, ["combined_odds", "combinedOdds", "odds"], `parlays[${index}].combined_odds`, computedCombinedOdds);
 
   if (combinedOdds <= 0) {
     throw new Error(`parlays[${index}].combined_odds must be positive`);
   }
 
   return {
-    parlayName: assertString(rawParlay.parlay_name, `parlays[${index}].parlay_name`),
+    parlayName: readOptionalStringField(rawParlay, ["parlay_name", "parlayName", "parlay_id", "parlayId", "label"]) ?? `串关 ${index + 1}`,
     stake,
     legs,
     combinedOdds,
-    confidence: assertNumber(rawParlay.confidence, `parlays[${index}].confidence`),
-    rationale: assertString(rawParlay.rationale, `parlays[${index}].rationale`)
+    confidence: readOptionalConfidenceField(rawParlay, ["confidence"], `parlays[${index}].confidence`, 0),
+    rationale: readOptionalStringField(rawParlay, ["rationale", "reason", "reasoning"]) ?? ""
   };
 }
 
-function assertStakeEqualsTotal(totalStake: number, singles: BettingArenaSingleDto[], parlays: BettingArenaParlayDto[]): void {
-  const computedStake = [...singles, ...parlays].reduce((sum, entry) => sum + entry.stake, 0);
+function parsePortfolioBuckets(rawBuckets: unknown): BettingArenaPortfolioBucketDto[] {
+  if (!Array.isArray(rawBuckets)) return [];
 
-  if (Math.abs(computedStake - totalStake) > NUMBER_TOLERANCE) {
-    throw new Error("total_stake must equal singles and parlays stake sum");
-  }
+  return rawBuckets.flatMap((rawBucket): BettingArenaPortfolioBucketDto[] => {
+    if (!isRecord(rawBucket)) return [];
+
+    const bucket = readOptionalStringField(rawBucket, ["bucket"]);
+    if (bucket !== "safe" && bucket !== "value" && bucket !== "hedge" && bucket !== "upset" && bucket !== "avoid") {
+      return [];
+    }
+
+    const items = Array.isArray(rawBucket.items) ? rawBucket.items.flatMap((item) => (typeof item === "string" ? [item] : [])) : [];
+
+    return [
+      {
+        bucket,
+        label: readOptionalStringField(rawBucket, ["label"]) ?? bucket,
+        stake: readOptionalNumberField(rawBucket, ["stake"], "portfolio_buckets[].stake", 0),
+        rationale: readOptionalStringField(rawBucket, ["rationale", "reason"]) ?? "",
+        items
+      }
+    ];
+  });
+}
+
+function calculateTotalStake(singles: BettingArenaSingleDto[], parlays: BettingArenaParlayDto[]): number {
+  return [...singles, ...parlays].reduce((sum, entry) => sum + entry.stake, 0);
 }
 
 function calculatePotentialReturn(singles: BettingArenaSingleDto[], parlays: BettingArenaParlayDto[]): number {
@@ -323,7 +427,7 @@ export function parseBettingArenaSlip(
 ): ParsedBettingArenaSlip {
   const slip = extractJsonObject(content);
   const action = assertAction(slip.action);
-  const totalStake = assertNumber(slip.total_stake, "total_stake");
+  const declaredTotalStake = assertNumber(slip.total_stake, "total_stake");
   const singlesInput = assertArray(slip.singles, "singles");
   const parlaysInput = assertArray(slip.parlays, "parlays");
   const strategySummary = assertString(slip.strategy_summary, "strategy_summary");
@@ -331,9 +435,10 @@ export function parseBettingArenaSlip(
   const bankrollPlan = coerceString(slip.bankroll_plan, "bankroll_plan");
   const skipReasons = assertStringArray(slip.skip_reasons, "skip_reasons");
   const dataGaps = assertStringArray(slip.data_gaps, "data_gaps");
+  const portfolioBuckets = parsePortfolioBuckets(slip.portfolio_buckets ?? slip.portfolioBuckets);
 
   if (action === "hold") {
-    if (totalStake !== 0) {
+    if (declaredTotalStake !== 0) {
       throw new Error("hold action requires total_stake 0");
     }
 
@@ -343,30 +448,34 @@ export function parseBettingArenaSlip(
 
     return {
       action,
-      totalStake,
+      totalStake: declaredTotalStake,
       potentialReturn: 0,
       riskLevel,
       strategySummary,
       bankrollPlan,
       singles: [],
       parlays: [],
+      portfolioBuckets,
       skipReasons,
       dataGaps
     };
   }
 
-  if (totalStake < 0) {
+  if (declaredTotalStake < 0) {
     throw new Error("total_stake must be non-negative");
   }
 
-  if (totalStake - accountContext.availableBankroll * 0.5 > NUMBER_TOLERANCE) {
+  const singles = singlesInput.map((rawSingle, index) => parseSingle(rawSingle, battleContext, index));
+  const parlays = parlaysInput.flatMap((rawParlay, index) => {
+    const parsedParlay = parseParlay(rawParlay, battleContext, index);
+    return parsedParlay ? [parsedParlay] : [];
+  });
+  const totalStake = calculateTotalStake(singles, parlays);
+  const maxStakeExposure = Math.max(declaredTotalStake, totalStake);
+
+  if (maxStakeExposure - accountContext.availableBankroll * 0.5 > NUMBER_TOLERANCE) {
     throw new Error("total_stake exceeds max daily stake");
   }
-
-  const singles = singlesInput.map((rawSingle, index) => parseSingle(rawSingle, battleContext, index));
-  const parlays = parlaysInput.map((rawParlay, index) => parseParlay(rawParlay, battleContext, index));
-
-  assertStakeEqualsTotal(totalStake, singles, parlays);
 
   return {
     action,
@@ -377,6 +486,7 @@ export function parseBettingArenaSlip(
     bankrollPlan,
     singles,
     parlays,
+    portfolioBuckets,
     skipReasons,
     dataGaps
   };

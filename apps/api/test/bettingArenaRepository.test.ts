@@ -172,6 +172,81 @@ describe("betting arena repository and context", () => {
     db.close();
   });
 
+  it("hydrates portfolio buckets into betting arena slip dto", () => {
+    const { db } = createTestDatabase();
+    insertModel(db, "model-1", "Model One");
+    insertMatch(db, "match-1");
+    ensureBettingArenaAccounts(db, new Date("2026-06-17T00:00:00.000Z"));
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T00:00:00.000Z")
+    });
+    db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id,
+          round_id,
+          model_id,
+          action,
+          status,
+          total_stake,
+          potential_return,
+          risk_level,
+          raw_response,
+          output_json,
+          parsed_slip_json,
+          account_context_json,
+          validation_error,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "slip-portfolio",
+      round.id,
+      "model-1",
+      "bet",
+      "accepted",
+      100,
+      185,
+      "medium",
+      "{}",
+      "{}",
+      JSON.stringify({
+        strategySummary: "分桶出单。",
+        bankrollPlan: "投入 1%。",
+        singles: [],
+        parlays: [],
+        portfolioBuckets: [
+          { bucket: "safe", label: "稳胆", stake: 100, rationale: "主队基本面更稳。", items: ["match-1 HAD h"] }
+        ],
+        skipReasons: [],
+        dataGaps: []
+      }),
+      "{}",
+      null,
+      "2026-06-17T10:00:00.000Z",
+      "2026-06-17T10:00:00.000Z"
+    );
+
+    const summary = getBettingArenaSummary(db);
+
+    expect(summary.slips[0]).toMatchObject({
+      portfolioBuckets: [
+        { bucket: "safe", label: "稳胆", stake: 100, rationale: "主队基本面更稳。", items: ["match-1 HAD h"] }
+      ]
+    });
+    db.close();
+  });
+
   it("returns an existing daily round when the same round date is created again", () => {
     const { db } = createTestDatabase();
     insertModel(db, "model-1", "Model One");

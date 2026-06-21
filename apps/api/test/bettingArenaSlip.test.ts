@@ -188,6 +188,245 @@ describe("betting arena slip parser", () => {
     expect(parsed).toMatchObject({ action: "bet", totalStake: 1000, potentialReturn: 1800 });
   });
 
+  it("accepts common model aliases for betting legs and structured reason arrays", () => {
+    const parsed = parseBettingArenaSlip(
+      JSON.stringify({
+        action: "bet",
+        total_stake: 1200,
+        singles: [
+          {
+            matchId: "match-1",
+            poolCode: "HAD",
+            selection: "h",
+            label: "Home 主胜",
+            odds: 1.8,
+            stake: 1000,
+            reasoning: "主胜方向更清晰。"
+          }
+        ],
+        parlays: [
+          {
+            matches: [
+              {
+                matchId: "match-1",
+                poolCode: "HAD",
+                selection: "h",
+                label: "Home 主胜",
+                odds: 1.8
+              },
+              {
+                matchId: "match-2",
+                poolCode: "HAD",
+                optionCode: "a",
+                optionLabel: "客胜",
+                odds: 2.1
+              }
+            ],
+            stake: 200,
+            confidence: "low",
+            rationale: "小额串关。"
+          }
+        ],
+        strategy_summary: "单关为主，小额串关补充。",
+        risk_level: "medium-low",
+        bankroll_plan: {
+          availableBankroll: 10000,
+          totalStakeThisRound: 1200
+        },
+        skip_reasons: [{ matchId: "match-x", reason: "信息不足，跳过。" }],
+        data_gaps: [{ domain: "lineup", note: "首发未确认。" }]
+      }),
+      battleContext,
+      accountContext
+    );
+
+    expect(parsed).toMatchObject({
+      action: "bet",
+      totalStake: 1200,
+      potentialReturn: 2556,
+      riskLevel: "medium",
+      bankrollPlan: JSON.stringify({ availableBankroll: 10000, totalStakeThisRound: 1200 }),
+      singles: [
+        {
+          matchId: "match-1",
+          poolCode: "HAD",
+          selectionCode: "h",
+          selectionLabel: "主胜",
+          lockedOdds: 1.8,
+          confidence: 0
+        }
+      ],
+      parlays: [
+        {
+          parlayName: "串关 1",
+          combinedOdds: 3.78,
+          confidence: 0.4,
+          legs: [
+            { matchId: "match-1", selectionLabel: "主胜" },
+            { matchId: "match-2", selectionLabel: "客胜" }
+          ]
+        }
+      ],
+      skipReasons: [JSON.stringify({ matchId: "match-x", reason: "信息不足，跳过。" })],
+      dataGaps: [JSON.stringify({ domain: "lineup", note: "首发未确认。" })]
+    });
+  });
+
+  it("normalizes total stake when a model omits parlay stake from total_stake", () => {
+    const parsed = parseBettingArenaSlip(
+      JSON.stringify({
+        action: "bet",
+        total_stake: 1000,
+        singles: [
+          {
+            match_id: "match-1",
+            pool_code: "HAD",
+            selection_code: "h",
+            selection_label: "主胜",
+            locked_odds: 1.8,
+            stake: 1000,
+            confidence: "medium",
+            rationale: "主胜。"
+          }
+        ],
+        parlays: [
+          {
+            parlay_id: "P001",
+            legs: [
+              { match_id: "match-1", pool_code: "HAD", selection_code: "h", locked_odds: 1.8 },
+              { match_id: "match-2", pool_code: "HAD", selection_code: "a", locked_odds: 2.1 }
+            ],
+            combined_odds: "3.78",
+            stake: 200,
+            confidence: "low",
+            reason: "小额串关。"
+          }
+        ],
+        strategy_summary: "单关加小串。",
+        risk_level: "medium",
+        bankroll_plan: "投入控制。",
+        skip_reasons: [],
+        data_gaps: []
+      }),
+      battleContext,
+      accountContext
+    );
+
+    expect(parsed).toMatchObject({
+      totalStake: 1200,
+      potentialReturn: 2556,
+      singles: [{ confidence: 0.6 }],
+      parlays: [{ parlayName: "P001", confidence: 0.4 }]
+    });
+  });
+
+  it("ignores zero-stake parlays and fills missing leg odds from locked options", () => {
+    const parsed = parseBettingArenaSlip(
+      JSON.stringify({
+        action: "bet",
+        total_stake: 1500,
+        singles: [
+          {
+            matchId: "match-1",
+            poolCode: "HAD",
+            selection: "h",
+            odds: 1.8,
+            stake: 1000
+          }
+        ],
+        parlays: [
+          {
+            parlayId: "backup",
+            legs: [
+              { matchId: "match-1", poolCode: "HAD", selection: "h" },
+              { matchId: "match-2", poolCode: "HAD", selection: "a" }
+            ],
+            odds: 3.78,
+            stake: 0
+          },
+          {
+            matches: [
+              { matchId: "match-1", poolCode: "HAD", selection: "h" },
+              { matchId: "match-2", poolCode: "HAD", optionCode: "a" }
+            ],
+            odds: 3.78,
+            stake: 500
+          }
+        ],
+        strategy_summary: "忽略备用串关，保留实际串关。",
+        risk_level: "medium",
+        bankroll_plan: "投入控制。",
+        skip_reasons: [],
+        data_gaps: []
+      }),
+      battleContext,
+      accountContext
+    );
+
+    expect(parsed).toMatchObject({
+      totalStake: 1500,
+      parlays: [
+        {
+          stake: 500,
+          combinedOdds: 3.78,
+          legs: [
+            { matchId: "match-1", lockedOdds: 1.8 },
+            { matchId: "match-2", lockedOdds: 2.1 }
+          ]
+        }
+      ]
+    });
+  });
+
+  it("parses portfolio buckets from model output", () => {
+    const parsed = parseBettingArenaSlip(
+      JSON.stringify({
+        action: "bet",
+        total_stake: 100,
+        singles: [
+          {
+            matchId: "match-1",
+            poolCode: "HAD",
+            selectionCode: "h",
+            lockedOdds: 1.8,
+            stake: 100,
+            confidence: 0.62,
+            rationale: "命中路径清楚，失败路径是轮换。"
+          }
+        ],
+        parlays: [],
+        portfolio_buckets: [
+          {
+            bucket: "safe",
+            label: "稳胆",
+            stake: 100,
+            rationale: "主队基本面更稳。",
+            items: ["match-1 HAD h"]
+          },
+          {
+            bucket: "avoid",
+            label: "回避",
+            stake: 0,
+            rationale: "无外部情报。",
+            items: []
+          }
+        ],
+        strategy_summary: "分桶出单。",
+        risk_level: "medium",
+        bankroll_plan: "投入 1%。",
+        skip_reasons: [],
+        data_gaps: []
+      }),
+      battleContext,
+      { availableBankroll: 10000 }
+    );
+
+    expect(parsed.portfolioBuckets).toEqual([
+      { bucket: "safe", label: "稳胆", stake: 100, rationale: "主队基本面更稳。", items: ["match-1 HAD h"] },
+      { bucket: "avoid", label: "回避", stake: 0, rationale: "无外部情报。", items: [] }
+    ]);
+  });
+
   it("rejects stake above 50 percent of available bankroll", () => {
     expect(() =>
       parseBettingArenaSlip(
