@@ -78,6 +78,90 @@ describe("external intelligence collector", () => {
     expect(result.summary.sourceLinks[0]).toMatchObject({ url: "https://example.com/germany-news" });
   });
 
+  it("lets callers override the query count", async () => {
+    const { db } = createTestDatabase();
+    seedMatch(db);
+    const provider: WebSearchProvider = {
+      search: vi.fn().mockResolvedValue([
+        {
+          title: "Germany team news",
+          url: "https://example.com/germany-news",
+          snippet: "Germany may rotate midfield.",
+          sourceDomain: "example.com",
+          publishedAt: null
+        }
+      ])
+    };
+
+    db.prepare("INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)").run(
+      "externalIntel.enabled",
+      "true",
+      "2026-06-21T10:00:00.000Z"
+    );
+
+    await collectExternalIntelForMatch(db, {
+      matchId: "match-1",
+      homeTeamName: "Germany",
+      awayTeamName: "Japan",
+      kickoffAt: "2026-06-22T10:00:00.000Z",
+      maxQueries: 2,
+      webSearchProvider: provider,
+      now: new Date("2026-06-21T10:00:00.000Z"),
+      forceRefresh: false
+    });
+
+    expect(provider.search).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps successful search results when one query fails", async () => {
+    const { db } = createTestDatabase();
+    seedMatch(db);
+    const provider: WebSearchProvider = {
+      search: vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            title: "Germany injury update",
+            url: "https://example.com/germany-injury",
+            snippet: "Germany report one late fitness check.",
+            sourceDomain: "example.com",
+            publishedAt: null
+          }
+        ])
+        .mockRejectedValueOnce(new Error("search timeout"))
+        .mockResolvedValue([])
+    };
+
+    db.prepare("INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)").run(
+      "externalIntel.enabled",
+      "true",
+      "2026-06-21T10:00:00.000Z"
+    );
+
+    const result = await collectExternalIntelForMatch(db, {
+      matchId: "match-1",
+      homeTeamName: "Germany",
+      awayTeamName: "Japan",
+      kickoffAt: "2026-06-22T10:00:00.000Z",
+      webSearchProvider: provider,
+      now: new Date("2026-06-21T10:00:00.000Z"),
+      forceRefresh: false
+    });
+
+    expect(result.status).toBe("summary_failed");
+    expect(result.searchResults).toHaveLength(1);
+    expect(result.summary.summary).toContain("Germany injury update");
+    expect(result.summary.dataGaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "external_intel",
+          code: "search_partial_failed",
+          message: "部分外部情报搜索失败：search timeout"
+        })
+      ])
+    );
+  });
+
   it("reuses a fresh cached snapshot", async () => {
     const { db } = createTestDatabase();
     seedMatch(db);

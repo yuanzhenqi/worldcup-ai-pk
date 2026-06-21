@@ -23,6 +23,7 @@ export interface CollectExternalIntelInput {
   homeTeamName: string;
   awayTeamName: string;
   kickoffAt: string;
+  maxQueries?: number;
   webSearchProvider: WebSearchProvider;
   now: Date;
   forceRefresh: boolean;
@@ -67,6 +68,7 @@ function buildFallbackSummary(input: {
   results: ExternalIntelSearchResult[];
   collectedAt: string;
   reason: string;
+  extraDataGaps?: ExternalIntelSummaryDto["dataGaps"];
 }): ExternalIntelSummaryDto {
   return {
     status: input.status,
@@ -83,7 +85,7 @@ function buildFallbackSummary(input: {
       publishedAt: result.publishedAt
     })),
     confidence: "low",
-    dataGaps: [{ source: "external_intel", code: input.status, message: input.reason }],
+    dataGaps: [{ source: "external_intel", code: input.status, message: input.reason }, ...(input.extraDataGaps ?? [])],
     collectedAt: input.collectedAt
   };
 }
@@ -179,14 +181,19 @@ export async function collectExternalIntelForMatch(db: Database, input: CollectE
     }
   }
 
-  const queries = buildExternalIntelQueries({ ...input, maxQueries: settings.maxQueriesPerMatch });
+  const queries = buildExternalIntelQueries({ ...input, maxQueries: input.maxQueries ?? settings.maxQueriesPerMatch });
 
   try {
-    const settledResults = await Promise.all(
+    const settledResults = await Promise.allSettled(
       queries.map((query) => input.webSearchProvider.search({ query, maxResults: settings.maxResultsPerQuery }))
     );
+    const failedSearchMessages = settledResults.flatMap((result) => {
+      if (result.status === "fulfilled") return [];
+      const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      return [message];
+    });
     const byUrl = new Map<string, ExternalIntelSearchResult>();
-    for (const result of settledResults.flat()) {
+    for (const result of settledResults.flatMap((item) => (item.status === "fulfilled" ? item.value : []))) {
       if (result.url && !byUrl.has(result.url)) {
         byUrl.set(result.url, result);
       }
@@ -200,6 +207,16 @@ export async function collectExternalIntelForMatch(db: Database, input: CollectE
       results: searchResults,
       collectedAt
     });
+    if (failedSearchMessages.length > 0) {
+      summary.dataGaps = [
+        ...summary.dataGaps,
+        ...failedSearchMessages.map((message) => ({
+          source: "external_intel",
+          code: "search_partial_failed",
+          message: `部分外部情报搜索失败：${message}`
+        }))
+      ];
+    }
     const status = summary.status;
 
     insertExternalIntelSnapshot(db, {
