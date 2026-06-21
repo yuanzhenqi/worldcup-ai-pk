@@ -6,6 +6,7 @@ import {
   deleteAdminAiProvider,
   deleteAdminPromptTemplate,
   listAdminContextCacheLogs,
+  refreshAdminMatchExternalIntel,
   saveAdminExternalIntelSettings,
   syncAdminSportteryMappings,
   testAdminAiModel,
@@ -85,6 +86,7 @@ vi.mock("../src/api/client", () => ({
   saveAdminPromptTemplate: vi.fn(),
   updateAdminPromptTemplate: vi.fn().mockResolvedValue(promptTemplate),
   saveAdminTeamDisplayName: vi.fn(),
+  refreshAdminMatchExternalIntel: vi.fn().mockResolvedValue({ status: "cached" }),
   saveAdminExternalIntelSettings: vi.fn().mockResolvedValue({
     enabled: false,
     provider: "duckduckgo_html",
@@ -133,6 +135,8 @@ describe("AdminPage", () => {
     fireEvent.click(screen.getByLabelText("启用统一外部情报"));
     fireEvent.change(screen.getByLabelText("总结模型"), { target: { value: "model-1" } });
     fireEvent.change(screen.getByLabelText("缓存分钟"), { target: { value: "45" } });
+    fireEvent.change(screen.getByLabelText("每次查询结果数"), { target: { value: "7" } });
+    fireEvent.change(screen.getByLabelText("每场查询数"), { target: { value: "6" } });
     fireEvent.click(screen.getByRole("button", { name: "保存外部情报配置" }));
 
     expect(saveAdminExternalIntelSettings).toHaveBeenCalledWith({
@@ -140,9 +144,20 @@ describe("AdminPage", () => {
       provider: "duckduckgo_html",
       summarizerModelId: "model-1",
       cacheMinutes: 45,
-      maxResultsPerQuery: 5,
-      maxQueriesPerMatch: 4
+      maxResultsPerQuery: 7,
+      maxQueriesPerMatch: 6
     });
+  });
+
+  it("refreshes external intelligence for a match", async () => {
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "外部情报" }));
+    fireEvent.change(screen.getByLabelText("比赛 ID"), { target: { value: "match-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "刷新比赛外部情报" }));
+
+    expect(refreshAdminMatchExternalIntel).toHaveBeenCalledWith("match-1");
+    expect(await screen.findByText("比赛外部情报已刷新")).toBeInTheDocument();
   });
 
   it("renders context cache sync logs", async () => {

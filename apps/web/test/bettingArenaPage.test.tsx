@@ -100,7 +100,7 @@ const arena: BettingArenaDto = {
             collectedAt: "2026-06-21T10:00:00.000Z"
           },
           sportteryPools: [{ poolCode: "HAD", options: [{ code: "h", label: "主胜", value: "1.85" }] }],
-          dataGaps: ["暂无球队身价数据源"]
+          dataGaps: ["暂无球队身价数据源", { source: "external_intel", code: "search_partial_failed", message: "部分外部情报搜索失败：timeout" }]
         }
       ]
     },
@@ -168,7 +168,7 @@ describe("BettingArenaPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "投注输入面板" }));
     expect(screen.getByRole("heading", { name: "投注输入面板" })).toBeInTheDocument();
     expect(screen.getAllByText("德国 对 科特迪瓦").length).toBeGreaterThan(0);
-    expect(screen.getByText("玩法 1 · 选项 1 · 缺口 1")).toBeInTheDocument();
+    expect(screen.getByText("玩法 1 · 选项 1 · 缺口 2")).toBeInTheDocument();
     fireEvent.click(screen.getByText("德国 对 科特迪瓦"));
     expect(screen.getByText("主队资料")).toBeInTheDocument();
     expect(screen.getByText("数据来源拆解")).toBeInTheDocument();
@@ -182,6 +182,7 @@ describe("BettingArenaPage", () => {
     expect(screen.getByRole("link", { name: "Team news" })).toHaveAttribute("href", "https://example.com/news");
     expect(screen.getAllByText(/Home Star/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/暂无球队身价数据源/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/external_intel · search_partial_failed：部分外部情报搜索失败：timeout/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
     expect(screen.getByRole("heading", { name: "Model One" })).toBeInTheDocument();

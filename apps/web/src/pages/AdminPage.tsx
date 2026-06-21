@@ -23,6 +23,7 @@ import {
   listAdminPromptTemplates,
   listAdminSportteryMappings,
   listAdminTeamDisplayNames,
+  refreshAdminMatchExternalIntel,
   saveAdminAiModel,
   saveAdminAiProvider,
   saveAdminApiFootballKey,
@@ -95,6 +96,7 @@ export function AdminPage() {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [sportteryEnabled, setSportteryEnabled] = useState<boolean | null>(null);
   const [externalIntelSettings, setExternalIntelSettings] = useState<ExternalIntelSettingsDto>(initialExternalIntelSettings);
+  const [externalIntelMatchId, setExternalIntelMatchId] = useState("");
   const [sportteryMappingsCount, setSportteryMappingsCount] = useState(0);
   const [summary, setSummary] = useState<AdminSummaryDto | null>(null);
   const [providers, setProviders] = useState<AiProviderConfigDto[]>([]);
@@ -237,6 +239,22 @@ export function AdminPage() {
       setStatusText("外部情报配置已保存");
     } catch (error) {
       setStatusText(error instanceof Error ? `外部情报配置保存失败：${error.message}` : "外部情报配置保存失败，请确认本地后台 API 可访问");
+    }
+  }
+
+  async function handleRefreshExternalIntel() {
+    const matchId = externalIntelMatchId.trim();
+    if (!matchId) {
+      setStatusText("请输入比赛 ID");
+      return;
+    }
+    setStatusText("正在刷新比赛外部情报...");
+
+    try {
+      await refreshAdminMatchExternalIntel(matchId);
+      setStatusText("比赛外部情报已刷新");
+    } catch (error) {
+      setStatusText(error instanceof Error ? `外部情报刷新失败：${error.message}` : "外部情报刷新失败，请确认本地后台 API 可访问");
     }
   }
 
@@ -499,8 +517,48 @@ export function AdminPage() {
                     onChange={(event) => setExternalIntelSettings((current) => ({ ...current, cacheMinutes: Number(event.target.value) }))}
                   />
                 </label>
+                <label>
+                  每次查询结果数
+                  <input
+                    aria-label="每次查询结果数"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={externalIntelSettings.maxResultsPerQuery}
+                    onChange={(event) => setExternalIntelSettings((current) => ({ ...current, maxResultsPerQuery: Number(event.target.value) }))}
+                  />
+                </label>
+                <label>
+                  每场查询数
+                  <input
+                    aria-label="每场查询数"
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={externalIntelSettings.maxQueriesPerMatch}
+                    onChange={(event) => setExternalIntelSettings((current) => ({ ...current, maxQueriesPerMatch: Number(event.target.value) }))}
+                  />
+                </label>
                 <button className="app-button app-button-primary" type="button" onClick={handleSaveExternalIntelSettings}>
                   保存外部情报配置
+                </button>
+              </section>
+              <section className="admin-subsection">
+                <header>
+                  <h4>手动刷新</h4>
+                  <span>按比赛</span>
+                </header>
+                <label>
+                  比赛 ID
+                  <input
+                    aria-label="比赛 ID"
+                    value={externalIntelMatchId}
+                    placeholder="match-1"
+                    onChange={(event) => setExternalIntelMatchId(event.target.value)}
+                  />
+                </label>
+                <button className="app-button app-button-secondary" type="button" onClick={handleRefreshExternalIntel}>
+                  刷新比赛外部情报
                 </button>
               </section>
             </>

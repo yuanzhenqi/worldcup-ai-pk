@@ -72,6 +72,16 @@ function readNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function formatDataGap(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (!isRecord(value)) return null;
+  const source = readString(value.source);
+  const code = readString(value.code);
+  const message = readString(value.message);
+  if (!source && !code && !message) return JSON.stringify(value);
+  return `${source || "unknown"} · ${code || "unknown"}：${message || "未提供说明"}`;
+}
+
 function readSourceLinks(value: unknown): Array<{ title: string; url: string; sourceDomain: string; publishedAt: string | null }> {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
@@ -264,7 +274,10 @@ function getBattleContextSummary(round: BettingArenaRoundDto | null | undefined)
         poolsCount: sportteryPools.length,
         optionsCount,
         dataGapsCount: dataGaps.length,
-        dataGaps: dataGaps.flatMap((item) => (typeof item === "string" ? [item] : [])),
+        dataGaps: dataGaps.flatMap((item) => {
+          const formatted = formatDataGap(item);
+          return formatted ? [formatted] : [];
+        }),
         homeTeamProfile: formatTeamProfile(match.homeTeamProfile),
         awayTeamProfile: formatTeamProfile(match.awayTeamProfile),
         historicalMatchup: formatHistoricalMatchup(match.historicalMatchup),
