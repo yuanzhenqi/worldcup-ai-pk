@@ -1,5 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
-import type { AdminSummaryDto, AiModelConfigDto, AiProviderConfigDto, PromptTemplateConfigDto, TeamDisplayNameDto } from "@worldcup-ai-pk/shared";
+import type {
+  AdminSummaryDto,
+  AiModelConfigDto,
+  AiProviderConfigDto,
+  ExternalIntelSettingsDto,
+  PromptTemplateConfigDto,
+  TeamDisplayNameDto
+} from "@worldcup-ai-pk/shared";
 import {
   type AdminContextCacheLogDto,
   captureApiFootballFixturesRaw,
@@ -7,6 +14,7 @@ import {
   deleteAdminAiProvider,
   deleteAdminPromptTemplate,
   getAdminApiFootballSettings,
+  getAdminExternalIntelSettings,
   getAdminSportterySettings,
   getAdminSummary,
   listAdminAiModels,
@@ -18,19 +26,22 @@ import {
   saveAdminAiModel,
   saveAdminAiProvider,
   saveAdminApiFootballKey,
+  saveAdminExternalIntelSettings,
   saveAdminSportterySettings,
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
   syncApiFootballFixtures,
   syncAdminSportteryMappings,
   testAdminAiModel,
+  updateAdminAiModel,
   updateAdminPromptTemplate
 } from "../api/client";
 
-type AdminModule = "data-source" | "context-cache" | "providers" | "models" | "prompts" | "teams";
+type AdminModule = "data-source" | "external-intel" | "context-cache" | "providers" | "models" | "prompts" | "teams";
 
 const adminModules: Array<{ id: AdminModule; label: string }> = [
   { id: "data-source", label: "数据源配置" },
+  { id: "external-intel", label: "外部情报" },
   { id: "context-cache", label: "数据缓存" },
   { id: "providers", label: "模型供应商" },
   { id: "models", label: "模型列表" },
@@ -52,7 +63,11 @@ const initialModelForm = {
   providerId: "",
   modelName: "",
   displayName: "",
-  enabled: true
+  enabled: true,
+  contextWindowTokens: 0,
+  maxOutputTokens: 0,
+  requestTimeoutMs: 90000,
+  requestRetryCount: 1
 };
 
 const initialPromptForm = {
@@ -65,11 +80,21 @@ const initialPromptForm = {
   isDefault: false
 };
 
+const initialExternalIntelSettings: ExternalIntelSettingsDto = {
+  enabled: false,
+  provider: "duckduckgo_html",
+  summarizerModelId: "",
+  cacheMinutes: 60,
+  maxResultsPerQuery: 5,
+  maxQueriesPerMatch: 4
+};
+
 export function AdminPage() {
   const [activeModule, setActiveModule] = useState<AdminModule>("data-source");
   const [apiKey, setApiKey] = useState("");
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [sportteryEnabled, setSportteryEnabled] = useState<boolean | null>(null);
+  const [externalIntelSettings, setExternalIntelSettings] = useState<ExternalIntelSettingsDto>(initialExternalIntelSettings);
   const [sportteryMappingsCount, setSportteryMappingsCount] = useState(0);
   const [summary, setSummary] = useState<AdminSummaryDto | null>(null);
   const [providers, setProviders] = useState<AiProviderConfigDto[]>([]);
@@ -82,6 +107,7 @@ export function AdminPage() {
   const [providerForm, setProviderForm] = useState(initialProviderForm);
   const [modelForm, setModelForm] = useState(initialModelForm);
   const [promptForm, setPromptForm] = useState(initialPromptForm);
+  const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [editingPromptTemplateId, setEditingPromptTemplateId] = useState<string | null>(null);
   const [statusText, setStatusText] = useState("正在读取配置...");
 
@@ -92,9 +118,21 @@ export function AdminPage() {
   }
 
   async function loadAdminData() {
-    const [settings, sportterySettings, sportteryMappings, nextSummary, nextProviders, nextModels, nextPromptTemplates, nextContextCacheLogs, nextTeams] = await Promise.all([
+    const [
+      settings,
+      sportterySettings,
+      externalIntel,
+      sportteryMappings,
+      nextSummary,
+      nextProviders,
+      nextModels,
+      nextPromptTemplates,
+      nextContextCacheLogs,
+      nextTeams
+    ] = await Promise.all([
       getAdminApiFootballSettings(),
       getAdminSportterySettings(),
+      getAdminExternalIntelSettings(),
       listAdminSportteryMappings(),
       getAdminSummary(),
       listAdminAiProviders(),
@@ -106,6 +144,7 @@ export function AdminPage() {
 
     setConfigured(settings.configured);
     setSportteryEnabled(sportterySettings.enabled);
+    setExternalIntelSettings(externalIntel);
     setSportteryMappingsCount(sportteryMappings.length);
     setSummary(nextSummary);
     setProviders(nextProviders);
@@ -189,6 +228,18 @@ export function AdminPage() {
     }
   }
 
+  async function handleSaveExternalIntelSettings() {
+    setStatusText("正在保存外部情报配置...");
+
+    try {
+      const saved = await saveAdminExternalIntelSettings(externalIntelSettings);
+      setExternalIntelSettings(saved);
+      setStatusText("外部情报配置已保存");
+    } catch (error) {
+      setStatusText(error instanceof Error ? `外部情报配置保存失败：${error.message}` : "外部情报配置保存失败，请确认本地后台 API 可访问");
+    }
+  }
+
   async function handleSyncSportteryMappings() {
     setStatusText("正在同步体彩映射...");
 
@@ -220,10 +271,36 @@ export function AdminPage() {
 
   async function handleSaveModel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await saveAdminAiModel(modelForm);
+    if (editingModelId) {
+      await updateAdminAiModel(editingModelId, modelForm);
+    } else {
+      await saveAdminAiModel(modelForm);
+    }
     setModelForm(initialModelForm);
+    setEditingModelId(null);
     setModels(await listAdminAiModels());
-    setStatusText("模型配置已保存");
+    setStatusText(editingModelId ? "模型配置已更新" : "模型配置已保存");
+  }
+
+  function handleEditModel(model: AiModelConfigDto) {
+    setEditingModelId(model.id);
+    setModelForm({
+      providerId: model.providerId,
+      modelName: model.modelName,
+      displayName: model.displayName,
+      enabled: model.enabled,
+      contextWindowTokens: model.contextWindowTokens,
+      maxOutputTokens: model.maxOutputTokens,
+      requestTimeoutMs: model.requestTimeoutMs,
+      requestRetryCount: model.requestRetryCount
+    });
+    setStatusText(`正在编辑模型：${model.displayName}`);
+  }
+
+  function handleCancelEditModel() {
+    setEditingModelId(null);
+    setModelForm(initialModelForm);
+    setStatusText("已取消模型编辑");
   }
 
   async function handleTestModel(model: AiModelConfigDto) {
@@ -233,9 +310,13 @@ export function AdminPage() {
   }
 
   async function handleDeleteModel(model: AiModelConfigDto) {
-    await deleteAdminAiModel(model.id);
-    setModels(await listAdminAiModels());
-    setStatusText("模型已删除");
+    try {
+      await deleteAdminAiModel(model.id);
+      setModels(await listAdminAiModels());
+      setStatusText("模型已删除");
+    } catch (error) {
+      setStatusText(error instanceof Error ? `模型删除失败：${error.message}` : "模型删除失败");
+    }
   }
 
   async function handleSavePrompt(event: FormEvent<HTMLFormElement>) {
@@ -303,6 +384,7 @@ export function AdminPage() {
           {adminModules.map((module) => (
             <button
               className={activeModule === module.id ? "admin-module-button active" : "admin-module-button"}
+              aria-label={module.id === "data-source" ? "数据源" : undefined}
               key={module.id}
               type="button"
               onClick={() => setActiveModule(module.id)}
@@ -368,6 +450,64 @@ export function AdminPage() {
                   </p>
                 ) : null}
               </section>
+            </>
+          ) : null}
+
+          {activeModule === "external-intel" ? (
+            <>
+              <header>
+                <h3>{selectedModule?.label}</h3>
+                <span>{externalIntelSettings.enabled ? "已启用" : "未启用"}</span>
+              </header>
+              <section className="admin-subsection">
+                <header>
+                  <h4>外部情报</h4>
+                  <span>{externalIntelSettings.enabled ? "已启用" : "未启用"}</span>
+                </header>
+                <label className="checkbox-line">
+                  <input
+                    aria-label="启用统一外部情报"
+                    type="checkbox"
+                    checked={externalIntelSettings.enabled}
+                    onChange={(event) => setExternalIntelSettings((current) => ({ ...current, enabled: event.target.checked }))}
+                  />
+                  启用统一外部情报
+                </label>
+                <label>
+                  总结模型
+                  <select
+                    aria-label="总结模型"
+                    value={externalIntelSettings.summarizerModelId}
+                    onChange={(event) => setExternalIntelSettings((current) => ({ ...current, summarizerModelId: event.target.value }))}
+                  >
+                    <option value="">不使用模型总结，只注入搜索摘要</option>
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  缓存分钟
+                  <input
+                    aria-label="缓存分钟"
+                    type="number"
+                    min={5}
+                    max={1440}
+                    value={externalIntelSettings.cacheMinutes}
+                    onChange={(event) => setExternalIntelSettings((current) => ({ ...current, cacheMinutes: Number(event.target.value) }))}
+                  />
+                </label>
+                <button className="app-button app-button-primary" type="button" onClick={handleSaveExternalIntelSettings}>
+                  保存外部情报配置
+                </button>
+              </section>
+            </>
+          ) : null}
+
+          {activeModule === "data-source" ? (
+            <>
               <section className="admin-subsection">
                 <header>
                   <h4>体彩赛前情报</h4>
@@ -507,7 +647,48 @@ export function AdminPage() {
                   <input type="checkbox" checked={modelForm.enabled} onChange={(event) => setModelForm({ ...modelForm, enabled: event.target.checked })} />
                   启用
                 </label>
-                <button type="submit">保存模型</button>
+                <label>
+                  <span>上下文窗口 token</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={modelForm.contextWindowTokens}
+                    onChange={(event) => setModelForm({ ...modelForm, contextWindowTokens: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  <span>输出 token 上限</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={modelForm.maxOutputTokens}
+                    onChange={(event) => setModelForm({ ...modelForm, maxOutputTokens: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  <span>超时 ms</span>
+                  <input
+                    type="number"
+                    min="1000"
+                    value={modelForm.requestTimeoutMs}
+                    onChange={(event) => setModelForm({ ...modelForm, requestTimeoutMs: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  <span>超时重试次数</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={modelForm.requestRetryCount}
+                    onChange={(event) => setModelForm({ ...modelForm, requestRetryCount: Number(event.target.value) })}
+                  />
+                </label>
+                <button type="submit">{editingModelId ? "更新模型" : "保存模型"}</button>
+                {editingModelId ? (
+                  <button type="button" onClick={handleCancelEditModel}>
+                    取消编辑
+                  </button>
+                ) : null}
               </form>
               <table className="admin-table">
                 <thead>
@@ -515,6 +696,7 @@ export function AdminPage() {
                     <th>显示名</th>
                     <th>模型标识</th>
                     <th>供应商</th>
+                    <th>请求配置</th>
                     <th>状态</th>
                     <th>操作</th>
                   </tr>
@@ -525,8 +707,15 @@ export function AdminPage() {
                       <td>{model.displayName}</td>
                       <td>{model.modelName}</td>
                       <td>{providers.find((provider) => provider.id === model.providerId)?.displayName ?? model.providerId}</td>
+                      <td>
+                        上下文 {model.contextWindowTokens || "默认"} · 输出 {model.maxOutputTokens || "默认"} · 超时 {model.requestTimeoutMs}ms · 重试{" "}
+                        {model.requestRetryCount}
+                      </td>
                       <td>{model.enabled ? "启用" : "停用"}</td>
                       <td>
+                        <button type="button" onClick={() => handleEditModel(model)} aria-label={`编辑 ${model.displayName}`}>
+                          编辑
+                        </button>
                         <button type="button" onClick={() => handleTestModel(model)} aria-label={`测试 ${model.displayName}`}>
                           测试
                         </button>

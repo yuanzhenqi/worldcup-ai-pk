@@ -33,6 +33,9 @@ import {
   syncSportteryMappingsForMatches,
   upsertSportteryMapping
 } from "../football/sportteryMapping.repository";
+import { collectExternalIntelForMatch } from "../external-intel/externalIntelCollector";
+import { getExternalIntelSettings, saveExternalIntelSettings } from "../external-intel/externalIntel.repository";
+import { DuckDuckGoHtmlWebSearchProvider } from "../external-intel/webSearchProvider";
 import { listMatches } from "../matches/match.repository";
 import { getApiFootballKey, hasApiFootballKey, isDongqiudiEnabled, isSportteryEnabled, saveApiFootballKey, saveDongqiudiEnabled, saveSportteryEnabled } from "../settings/settings.repository";
 import { listTeamDisplayNames, updateTeamDisplayName } from "../teams/teamDisplayName.repository";
@@ -58,7 +61,11 @@ const aiModelSchema = z.object({
   providerId: z.string().min(1),
   modelName: z.string().min(1),
   displayName: z.string().min(1),
-  enabled: z.boolean()
+  enabled: z.boolean(),
+  contextWindowTokens: z.number().int().min(0).default(0),
+  maxOutputTokens: z.number().int().min(0).default(0),
+  requestTimeoutMs: z.number().int().min(1000).default(90000),
+  requestRetryCount: z.number().int().min(0).default(1)
 });
 
 const promptTemplateSchema = z.object({
@@ -91,6 +98,15 @@ const sportterySettingsSchema = z.object({
 const sportteryMappingSchema = z.object({
   apiFootballFixtureId: z.number().int(),
   sportteryMatchId: z.number().int()
+});
+
+const externalIntelSettingsSchema = z.object({
+  enabled: z.boolean(),
+  provider: z.literal("duckduckgo_html"),
+  summarizerModelId: z.string(),
+  cacheMinutes: z.number().int().min(5).max(1440),
+  maxResultsPerQuery: z.number().int().min(1).max(10),
+  maxQueriesPerMatch: z.number().int().min(1).max(8)
 });
 
 function getApiFootballErrors(response: unknown): unknown | null {
@@ -209,6 +225,16 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
     return { enabled: parsed.data.enabled };
   });
 
+  app.get("/settings/external-intel", async () => getExternalIntelSettings(options.db));
+
+  app.put("/settings/external-intel", async (request, reply) => {
+    const parsed = externalIntelSettingsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid external intelligence settings payload" });
+    }
+    return saveExternalIntelSettings(options.db, parsed.data);
+  });
+
   app.get("/sporttery-mappings", async () => ({
     mappings: listSportteryMappings(options.db)
   }));
@@ -239,6 +265,34 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
   app.delete("/sporttery-mappings/:apiFootballFixtureId", async (request) => {
     deleteSportteryMapping(options.db, Number(getIdParam(request, "apiFootballFixtureId")));
     return { deleted: true };
+  });
+
+  app.post("/matches/:matchId/external-intel/refresh", async (request, reply) => {
+    const matchId = getIdParam(request, "matchId");
+    const match = options.db
+      .prepare("SELECT id, kickoff_at, home_team_name, away_team_name FROM matches WHERE id = ?")
+      .get(matchId) as
+      | {
+          id: string;
+          kickoff_at: string;
+          home_team_name: string;
+          away_team_name: string;
+        }
+      | undefined;
+
+    if (!match) {
+      return reply.code(404).send({ error: "Match not found" });
+    }
+
+    return collectExternalIntelForMatch(options.db, {
+      matchId: match.id,
+      homeTeamName: match.home_team_name,
+      awayTeamName: match.away_team_name,
+      kickoffAt: match.kickoff_at,
+      webSearchProvider: new DuckDuckGoHtmlWebSearchProvider(),
+      now: new Date(),
+      forceRefresh: true
+    });
   });
 
   app.get("/ai-providers", async () => ({
@@ -305,7 +359,11 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
       return testOpenAiCompatibleModel({
         baseUrl: config.baseUrl,
         apiKey: config.apiKey,
-        modelName: config.modelName
+        modelName: config.modelName,
+        contextWindowTokens: config.contextWindowTokens,
+        maxOutputTokens: config.maxOutputTokens,
+        requestTimeoutMs: config.requestTimeoutMs,
+        requestRetryCount: config.requestRetryCount
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "AI model test failed";

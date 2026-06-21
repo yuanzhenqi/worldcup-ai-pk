@@ -86,6 +86,19 @@ const arena: BettingArenaDto = {
             { domain: "sporttery", status: "cached", summary: "体彩数据已缓存", error: null },
             { domain: "team_profile", status: "cached", summary: "球队资料已缓存", error: null }
           ],
+          externalIntel: {
+            status: "cached",
+            summary: "德国主力前锋可出场。",
+            injuryNews: ["主力前锋可出场"],
+            lineupNews: ["中场可能轮换"],
+            motivation: ["争取提前出线"],
+            recentFormNews: [],
+            riskSignals: ["轮换幅度不明"],
+            sourceLinks: [{ title: "Team news", url: "https://example.com/news", sourceDomain: "example.com", publishedAt: null }],
+            confidence: "medium",
+            dataGaps: [],
+            collectedAt: "2026-06-21T10:00:00.000Z"
+          },
           sportteryPools: [{ poolCode: "HAD", options: [{ code: "h", label: "主胜", value: "1.85" }] }],
           dataGaps: ["暂无球队身价数据源"]
         }
@@ -127,7 +140,7 @@ const arena: BettingArenaDto = {
       prompt: "account_context={}\nbattle_context={}",
       rawResponse: '{"choices":[]}',
       outputJson: '{"action":"bet"}',
-      portfolioBuckets: [],
+      portfolioBuckets: [{ bucket: "safe", label: "稳胆", stake: 200, rationale: "基本面优势明确。", items: ["德国 主胜"] }],
       settlementSummary: null,
       createdAt: "2026-06-20T10:00:00.000Z"
     }
@@ -164,11 +177,16 @@ describe("BettingArenaPage", () => {
     expect(screen.getAllByText(/懂球帝/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/本地资料/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/外部联网情报/).length).toBeGreaterThan(0);
+    expect(screen.getByText("外部情报")).toBeInTheDocument();
+    expect(screen.getByText("德国主力前锋可出场。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Team news" })).toHaveAttribute("href", "https://example.com/news");
     expect(screen.getAllByText(/Home Star/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/暂无球队身价数据源/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
     expect(screen.getByRole("heading", { name: "Model One" })).toBeInTheDocument();
+    expect(screen.getByText("组合分桶")).toBeInTheDocument();
+    expect(screen.getByText("稳胆 · 投入 200")).toBeInTheDocument();
     expect(screen.getByText("输入 / 输出审计")).toBeInTheDocument();
     expect(screen.getByText("提示词拆解")).toBeInTheDocument();
     expect(screen.getByText("提示规则")).toBeInTheDocument();

@@ -3,6 +3,7 @@ import type {
   AiModelConfigDto,
   AiProviderConfigDto,
   BettingArenaDto,
+  ExternalIntelSettingsDto,
   FixtureContextSummaryDto,
   LeaderboardDto,
   MatchDto,
@@ -98,6 +99,10 @@ export interface SaveAiModelRequest {
   modelName: string;
   displayName: string;
   enabled: boolean;
+  contextWindowTokens: number;
+  maxOutputTokens: number;
+  requestTimeoutMs: number;
+  requestRetryCount: number;
 }
 
 export interface SavePromptTemplateRequest {
@@ -166,6 +171,16 @@ export async function triggerBettingArenaRound(): Promise<BettingArenaDto> {
   });
   if (!response.ok) {
     throw new Error(`Public betting arena round request failed with status ${response.status}`);
+  }
+  return (await response.json()) as BettingArenaDto;
+}
+
+export async function triggerBettingArenaModel(roundId: string, modelId: string): Promise<BettingArenaDto> {
+  const response = await request(`${apiBaseUrl}/api/public/betting-arena/rounds/${roundId}/models/${modelId}`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(`Public betting arena model request failed with status ${response.status}`);
   }
   return (await response.json()) as BettingArenaDto;
 }
@@ -288,6 +303,38 @@ export async function saveAdminSportterySettings(enabled: boolean): Promise<Spor
   return (await response.json()) as SportterySettingsStatus;
 }
 
+export async function getAdminExternalIntelSettings(): Promise<ExternalIntelSettingsDto> {
+  const response = await request(`${apiBaseUrl}/api/admin/settings/external-intel`);
+  if (!response.ok) {
+    throw new Error(`Admin external intelligence settings request failed with status ${response.status}`);
+  }
+  return (await response.json()) as ExternalIntelSettingsDto;
+}
+
+export async function saveAdminExternalIntelSettings(input: ExternalIntelSettingsDto): Promise<ExternalIntelSettingsDto> {
+  const response = await request(`${apiBaseUrl}/api/admin/settings/external-intel`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) {
+    throw new Error(`Admin external intelligence settings save failed with status ${response.status}`);
+  }
+  return (await response.json()) as ExternalIntelSettingsDto;
+}
+
+export async function refreshAdminMatchExternalIntel(matchId: string): Promise<unknown> {
+  const response = await request(`${apiBaseUrl}/api/admin/matches/${matchId}/external-intel/refresh`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(`Admin external intelligence refresh failed with status ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function listAdminSportteryMappings(): Promise<AdminSportteryMappingDto[]> {
   const response = await request(`${apiBaseUrl}/api/admin/sporttery-mappings`);
   if (!response.ok) {
@@ -398,6 +445,20 @@ export async function saveAdminAiModel(input: SaveAiModelRequest): Promise<AiMod
   });
   if (!response.ok) {
     throw new Error(`Admin AI model save failed with status ${response.status}`);
+  }
+  return (await response.json()) as AiModelConfigDto;
+}
+
+export async function updateAdminAiModel(id: string, input: SaveAiModelRequest): Promise<AiModelConfigDto> {
+  const response = await request(`${apiBaseUrl}/api/admin/ai-models/${id}`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) {
+    throw new Error(`Admin AI model update failed with status ${response.status}`);
   }
   return (await response.json()) as AiModelConfigDto;
 }

@@ -72,6 +72,23 @@ function readNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function readSourceLinks(value: unknown): Array<{ title: string; url: string; sourceDomain: string; publishedAt: string | null }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const url = readString(item.url);
+    if (!url) return [];
+    return [
+      {
+        title: readString(item.title) || url,
+        url,
+        sourceDomain: readString(item.sourceDomain),
+        publishedAt: typeof item.publishedAt === "string" ? item.publishedAt : null
+      }
+    ];
+  });
+}
+
 function domainLabel(domain: string): string {
   const labels: Record<string, string> = {
     odds: "指数",
@@ -230,6 +247,7 @@ function getBattleContextSummary(round: BettingArenaRoundDto | null | undefined)
           ];
         })
       : [];
+    const externalIntel = isRecord(match.externalIntel) ? match.externalIntel : null;
     const optionsCount = sportteryPools.reduce((total, pool) => {
       if (!isRecord(pool) || !Array.isArray(pool.options)) return total;
       return total + pool.options.length;
@@ -251,6 +269,12 @@ function getBattleContextSummary(round: BettingArenaRoundDto | null | undefined)
         awayTeamProfile: formatTeamProfile(match.awayTeamProfile),
         historicalMatchup: formatHistoricalMatchup(match.historicalMatchup),
         contextDomains,
+        externalIntel: {
+          status: readString(externalIntel?.status),
+          summary: readString(externalIntel?.summary),
+          sourceLinks: readSourceLinks(externalIntel?.sourceLinks),
+          collectedAt: readString(externalIntel?.collectedAt)
+        },
         sourceBreakdown: buildSourceBreakdown({ contextDomains, sportteryPoolsCount: sportteryPools.length })
       }
     ];
@@ -545,6 +569,16 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                   </span>
                 </div>
               ))}
+              <strong>组合分桶</strong>
+              {selectedSlip.portfolioBuckets.length === 0 ? <span className="muted">暂无组合分桶</span> : null}
+              {selectedSlip.portfolioBuckets.map((bucket) => (
+                <div className="arena-pick-row" key={`${bucket.bucket}-${bucket.label}`}>
+                  <span>
+                    {bucket.label} · 投入 {money(bucket.stake)}
+                  </span>
+                  <span>{bucket.rationale}</span>
+                </div>
+              ))}
               <strong>串关</strong>
               {selectedSlip.parlays.length === 0 ? <span className="muted">无串关投入</span> : null}
               {selectedSlip.parlays.map((parlay) => (
@@ -671,6 +705,20 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                           {domainLabel(domain.domain)} · {domainStatusLabel(domain.status)}：{domain.summary || domain.error || "暂无"}
                         </p>
                       ))}
+                    </section>
+                    <section>
+                      <h4>外部情报</h4>
+                      <p>{match.externalIntel.summary || "暂无外部情报摘要"}</p>
+                      <p>采集时间：{match.externalIntel.collectedAt || "暂无"}</p>
+                      {match.externalIntel.sourceLinks.length > 0 ? (
+                        <div className="arena-source-links">
+                          {match.externalIntel.sourceLinks.map((source) => (
+                            <a key={`${match.matchId}-${source.url}`} href={source.url} target="_blank" rel="noreferrer">
+                              {source.title}
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
                     </section>
                     <section className="arena-source-breakdown">
                       <h4>数据来源拆解</h4>

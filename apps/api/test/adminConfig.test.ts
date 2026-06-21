@@ -208,6 +208,141 @@ describe("admin config API", () => {
     await app.close();
   });
 
+  it("loads and saves external intelligence settings", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const initialResponse = await app.inject({
+      method: "GET",
+      url: "/api/admin/settings/external-intel",
+      remoteAddress: "127.0.0.1"
+    });
+    expect(initialResponse.statusCode).toBe(200);
+    expect(initialResponse.json()).toEqual({
+      enabled: false,
+      provider: "duckduckgo_html",
+      summarizerModelId: "",
+      cacheMinutes: 60,
+      maxResultsPerQuery: 5,
+      maxQueriesPerMatch: 4
+    });
+
+    const saveResponse = await app.inject({
+      method: "PUT",
+      url: "/api/admin/settings/external-intel",
+      remoteAddress: "127.0.0.1",
+      payload: {
+        enabled: true,
+        provider: "duckduckgo_html",
+        summarizerModelId: "model-1",
+        cacheMinutes: 45,
+        maxResultsPerQuery: 6,
+        maxQueriesPerMatch: 3
+      }
+    });
+    expect(saveResponse.statusCode).toBe(200);
+    expect(saveResponse.json()).toEqual({
+      enabled: true,
+      provider: "duckduckgo_html",
+      summarizerModelId: "model-1",
+      cacheMinutes: 45,
+      maxResultsPerQuery: 6,
+      maxQueriesPerMatch: 3
+    });
+
+    await app.close();
+  });
+
+  it("refreshes external intelligence for a match", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO matches (
+          id,
+          api_football_fixture_id,
+          stage,
+          kickoff_at,
+          status,
+          venue,
+          home_team_id,
+          home_team_name,
+          home_team_logo_url,
+          away_team_id,
+          away_team_name,
+          away_team_logo_url,
+          home_score,
+          away_score,
+          last_synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "match-1",
+      1001,
+      "Group Stage",
+      "2026-06-22T10:00:00.000Z",
+      "scheduled",
+      "Test Stadium",
+      "home-1",
+      "Germany",
+      null,
+      "away-1",
+      "Japan",
+      null,
+      null,
+      null,
+      "2026-06-21T10:00:00.000Z"
+    );
+    db.prepare(
+      "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)"
+    ).run(
+      "externalIntel.enabled",
+      "true",
+      "2026-06-21T10:00:00.000Z",
+      "externalIntel.provider",
+      "duckduckgo_html",
+      "2026-06-21T10:00:00.000Z",
+      "externalIntel.summarizerModelId",
+      "",
+      "2026-06-21T10:00:00.000Z",
+      "externalIntel.cacheMinutes",
+      "60",
+      "2026-06-21T10:00:00.000Z",
+      "externalIntel.maxResultsPerQuery",
+      "1",
+      "2026-06-21T10:00:00.000Z",
+      "externalIntel.maxQueriesPerMatch",
+      "1",
+      "2026-06-21T10:00:00.000Z"
+    );
+    db.close();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        `<!doctype html><html><body><div class="result"><h2 class="result__title"><a class="result__a" href="https://example.com/news">Team news</a></h2><a class="result__snippet">Germany may rotate midfield.</a></div></body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } }
+      )
+    );
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/matches/match-1/external-intel/refresh",
+      remoteAddress: "127.0.0.1"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      matchId: "match-1",
+      summary: expect.objectContaining({
+        status: "summary_failed",
+        summary: expect.stringContaining("Team news")
+      })
+    });
+
+    await app.close();
+  });
+
   it("syncs sporttery mappings from exact World Cup team names", async () => {
     const { db, databasePath } = createTestDatabase();
     db.prepare(
@@ -335,7 +470,11 @@ describe("admin config API", () => {
         providerId: provider.id,
         modelName: "deepseek-chat",
         displayName: "DeepSeek Chat",
-        enabled: true
+        enabled: true,
+        contextWindowTokens: 64000,
+        maxOutputTokens: 4096,
+        requestTimeoutMs: 120000,
+        requestRetryCount: 2
       }
     });
 
@@ -344,12 +483,122 @@ describe("admin config API", () => {
       providerId: provider.id,
       modelName: "deepseek-chat",
       displayName: "DeepSeek Chat",
-      enabled: true
+      enabled: true,
+      contextWindowTokens: 64000,
+      maxOutputTokens: 4096,
+      requestTimeoutMs: 120000,
+      requestRetryCount: 2
     });
 
     const listResponse = await app.inject({ method: "GET", url: "/api/admin/ai-models", remoteAddress: "127.0.0.1" });
     expect(listResponse.statusCode).toBe(200);
     expect(listResponse.json().models).toHaveLength(1);
+
+    await app.close();
+  });
+
+  it("archives a model with historical records and hides it from admin lists", async () => {
+    const { db, databasePath } = createTestDatabase();
+    db.prepare(
+      `
+        INSERT INTO matches (
+          id,
+          api_football_fixture_id,
+          stage,
+          kickoff_at,
+          status,
+          venue,
+          home_team_id,
+          home_team_name,
+          home_team_logo_url,
+          away_team_id,
+          away_team_name,
+          away_team_logo_url,
+          home_score,
+          away_score,
+          last_synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "match-1",
+      1001,
+      "Group Stage",
+      "2026-06-13T19:00:00.000Z",
+      "finished",
+      null,
+      "home-1",
+      "Home",
+      null,
+      "away-1",
+      "Away",
+      null,
+      2,
+      1,
+      "2026-06-13T07:00:00.000Z"
+    );
+    db.prepare(
+      `
+        INSERT INTO ai_providers (id, name, display_name, base_url, api_key, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run("provider-1", "newapi", "NewAPI", "https://newapi.example.com/v1", "secret-provider-key", 1, "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:00.000Z");
+    db.prepare(
+      `
+        INSERT INTO ai_models (id, provider_id, model_name, display_name, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run("model-1", "provider-1", "mimo-v2.5-pro", "mimo-v2.5-pro", 1, "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:00.000Z");
+    db.prepare(
+      `
+        INSERT INTO prompt_templates (id, name, full_prompt, prompt_summary, description, scope, enabled, is_default, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run("prompt-1", "默认", "prompt", "summary", "", "match_prediction", 1, 1, "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:00.000Z");
+    db.prepare(
+      `
+        INSERT INTO prediction_runs (id, match_id, scheduled_at, started_at, finished_at, status, failure_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run("run-1", "match-1", "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:00.000Z", "2026-06-13T08:00:05.000Z", "completed", null);
+    db.prepare(
+      `
+        INSERT INTO ai_predictions (
+          id,
+          prediction_run_id,
+          match_id,
+          model_id,
+          prompt_template_id,
+          predicted_result,
+          predicted_home_score,
+          predicted_away_score,
+          confidence,
+          short_reason,
+          analysis_report,
+          key_factors_json,
+          odds_interpretation,
+          risk_points_json,
+          raw_response,
+          parse_status,
+          eligible_for_scoring,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run("prediction-1", "run-1", "match-1", "model-1", "prompt-1", "home", 2, 1, 0.8, "reason", "report", "[]", "", "[]", "{}", "parsed", 1, "2026-06-13T08:00:05.000Z");
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const deleteResponse = await app.inject({ method: "DELETE", url: "/api/admin/ai-models/model-1", remoteAddress: "127.0.0.1" });
+    expect(deleteResponse.statusCode).toBe(200);
+    expect(deleteResponse.json()).toEqual({ deleted: true });
+
+    const listResponse = await app.inject({ method: "GET", url: "/api/admin/ai-models", remoteAddress: "127.0.0.1" });
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json().models).toEqual([]);
+
+    const checkDb = createDatabase(databasePath);
+    expect(checkDb.prepare("SELECT deleted_at, enabled FROM ai_models WHERE id = ?").get("model-1")).toMatchObject({ enabled: 0 });
+    expect(checkDb.prepare("SELECT COUNT(*) AS count FROM ai_predictions WHERE model_id = ?").get("model-1")).toMatchObject({ count: 1 });
+    checkDb.close();
 
     await app.close();
   });

@@ -6,8 +6,10 @@ import {
   deleteAdminAiProvider,
   deleteAdminPromptTemplate,
   listAdminContextCacheLogs,
+  saveAdminExternalIntelSettings,
   syncAdminSportteryMappings,
   testAdminAiModel,
+  updateAdminAiModel,
   updateAdminPromptTemplate
 } from "../src/api/client";
 
@@ -25,7 +27,11 @@ const { model, promptTemplate, provider } = vi.hoisted(() => ({
     providerId: "provider-1",
     modelName: "openai/gpt-4o-mini",
     displayName: "GPT-4o mini",
-    enabled: true
+    enabled: true,
+    contextWindowTokens: 128000,
+    maxOutputTokens: 4096,
+    requestTimeoutMs: 90000,
+    requestRetryCount: 1
   },
   promptTemplate: {
   id: "prompt-1",
@@ -41,6 +47,14 @@ const { model, promptTemplate, provider } = vi.hoisted(() => ({
 
 vi.mock("../src/api/client", () => ({
   getAdminApiFootballSettings: vi.fn().mockResolvedValue({ configured: true }),
+  getAdminExternalIntelSettings: vi.fn().mockResolvedValue({
+    enabled: false,
+    provider: "duckduckgo_html",
+    summarizerModelId: "",
+    cacheMinutes: 60,
+    maxResultsPerQuery: 5,
+    maxQueriesPerMatch: 4
+  }),
   getAdminSportterySettings: vi.fn().mockResolvedValue({ enabled: true }),
   getAdminSummary: vi.fn().mockResolvedValue({ matchCount: 72, scheduledCount: 70, liveCount: 0, finishedCount: 2, latestSyncLog: null }),
   listAdminSportteryMappings: vi.fn().mockResolvedValue([{ apiFootballFixtureId: 1001, sportteryMatchId: 2040170, updatedAt: "2026-06-14T08:00:00.000Z" }]),
@@ -63,13 +77,22 @@ vi.mock("../src/api/client", () => ({
   syncAdminSportteryMappings: vi.fn().mockResolvedValue({ matched: 12, unmatched: 10, totalSportteryMatches: 22 }),
   saveAdminAiProvider: vi.fn(),
   saveAdminAiModel: vi.fn(),
+  updateAdminAiModel: vi.fn().mockResolvedValue(model),
   testAdminAiModel: vi.fn().mockResolvedValue({ ok: true, status: 200, message: "模型测试成功", latencyMs: 128 }),
   deleteAdminAiProvider: vi.fn().mockResolvedValue({ deleted: true }),
   deleteAdminAiModel: vi.fn().mockResolvedValue({ deleted: true }),
   deleteAdminPromptTemplate: vi.fn().mockResolvedValue({ deleted: true }),
   saveAdminPromptTemplate: vi.fn(),
   updateAdminPromptTemplate: vi.fn().mockResolvedValue(promptTemplate),
-  saveAdminTeamDisplayName: vi.fn()
+  saveAdminTeamDisplayName: vi.fn(),
+  saveAdminExternalIntelSettings: vi.fn().mockResolvedValue({
+    enabled: false,
+    provider: "duckduckgo_html",
+    summarizerModelId: "",
+    cacheMinutes: 60,
+    maxResultsPerQuery: 5,
+    maxQueriesPerMatch: 4
+  })
 }));
 
 describe("AdminPage", () => {
@@ -82,6 +105,7 @@ describe("AdminPage", () => {
     render(<AdminPage />);
 
     expect(await screen.findByText("数据源配置")).toBeInTheDocument();
+    expect(screen.getByText("外部情报")).toBeInTheDocument();
     expect(screen.getByText("模型供应商")).toBeInTheDocument();
     expect(screen.getByText("提示词模板")).toBeInTheDocument();
     expect(screen.getByText("球队中文名")).toBeInTheDocument();
@@ -99,6 +123,26 @@ describe("AdminPage", () => {
 
     expect(syncAdminSportteryMappings).toHaveBeenCalled();
     expect(await screen.findByText("体彩映射同步完成：匹配 12 场，未匹配 10 场")).toBeInTheDocument();
+  });
+
+  it("edits external intelligence settings", async () => {
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "数据源" }));
+    fireEvent.click(await screen.findByRole("button", { name: "外部情报" }));
+    fireEvent.click(screen.getByLabelText("启用统一外部情报"));
+    fireEvent.change(screen.getByLabelText("总结模型"), { target: { value: "model-1" } });
+    fireEvent.change(screen.getByLabelText("缓存分钟"), { target: { value: "45" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存外部情报配置" }));
+
+    expect(saveAdminExternalIntelSettings).toHaveBeenCalledWith({
+      enabled: true,
+      provider: "duckduckgo_html",
+      summarizerModelId: "model-1",
+      cacheMinutes: 45,
+      maxResultsPerQuery: 5,
+      maxQueriesPerMatch: 4
+    });
   });
 
   it("renders context cache sync logs", async () => {
@@ -131,6 +175,41 @@ describe("AdminPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "提示词模板" }));
     fireEvent.click(await screen.findByRole("button", { name: "删除 稳健胜平负预测" }));
     expect(deleteAdminPromptTemplate).toHaveBeenCalledWith("prompt-1");
+  });
+
+  it("shows model delete failures instead of failing silently", async () => {
+    vi.mocked(deleteAdminAiModel).mockRejectedValueOnce(new Error("模型已有历史记录"));
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模型列表" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除 GPT-4o mini" }));
+
+    expect(await screen.findByText("模型删除失败：模型已有历史记录")).toBeInTheDocument();
+  });
+
+  it("loads a model into the form and saves it through update", async () => {
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模型列表" }));
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 GPT-4o mini" }));
+
+    expect(screen.getByLabelText("模型标识")).toHaveValue("openai/gpt-4o-mini");
+    expect(screen.getByLabelText("显示名")).toHaveValue("GPT-4o mini");
+    expect(screen.getByLabelText("输出 token 上限")).toHaveValue(4096);
+
+    fireEvent.change(screen.getByLabelText("输出 token 上限"), { target: { value: "20000" } });
+    fireEvent.click(screen.getByRole("button", { name: "更新模型" }));
+
+    expect(updateAdminAiModel).toHaveBeenCalledWith("model-1", {
+      providerId: "provider-1",
+      modelName: "openai/gpt-4o-mini",
+      displayName: "GPT-4o mini",
+      enabled: true,
+      contextWindowTokens: 128000,
+      maxOutputTokens: 20000,
+      requestTimeoutMs: 90000,
+      requestRetryCount: 1
+    });
   });
 
   it("loads a prompt template into the form and saves it through update", async () => {

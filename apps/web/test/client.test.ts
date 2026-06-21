@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PredictionRequestInputDto } from "@worldcup-ai-pk/shared";
+import type { ExternalIntelSettingsDto } from "@worldcup-ai-pk/shared";
 import {
   captureApiFootballFixturesRaw,
   createParlayCombination,
@@ -7,6 +8,7 @@ import {
   deleteAdminAiProvider,
   deleteAdminPromptTemplate,
   getAdminApiFootballSettings,
+  getAdminExternalIntelSettings,
   getAdminSportterySettings,
   getAdminSummary,
   getMatchContext,
@@ -24,6 +26,7 @@ import {
   saveAdminAiModel,
   saveAdminAiProvider,
   saveAdminApiFootballKey,
+  saveAdminExternalIntelSettings,
   saveAdminSportterySettings,
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
@@ -33,7 +36,9 @@ import {
   syncAdminSportteryMappings,
   syncApiFootballFixtures,
   testAdminAiModel,
+  triggerBettingArenaModel,
   triggerBettingArenaRound,
+  updateAdminAiModel,
   updateAdminPromptTemplate
 } from "../src/api/client";
 
@@ -136,6 +141,35 @@ describe("web API client", () => {
         "content-type": "application/json"
       },
       body: JSON.stringify({ enabled: false })
+    });
+  });
+
+  it("gets and saves admin external intelligence settings", async () => {
+    const settings: ExternalIntelSettingsDto = {
+      enabled: true,
+      provider: "duckduckgo_html",
+      summarizerModelId: "model-1",
+      cacheMinutes: 60,
+      maxResultsPerQuery: 5,
+      maxQueriesPerMatch: 4
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(settings), { status: 200, headers: { "content-type": "application/json" } })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(settings), { status: 200, headers: { "content-type": "application/json" } })
+      );
+
+    await expect(getAdminExternalIntelSettings()).resolves.toEqual(settings);
+    await expect(saveAdminExternalIntelSettings(settings)).resolves.toEqual(settings);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/admin/settings/external-intel");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/settings/external-intel", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(settings)
     });
   });
 
@@ -422,6 +456,21 @@ describe("web API client", () => {
     });
   });
 
+  it("triggers one betting arena model without an empty JSON request body", async () => {
+    const arena = { accounts: [], currentRound: null, slips: [], history: [] };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(arena), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(triggerBettingArenaModel("round-1", "model-1")).resolves.toEqual(arena);
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/betting-arena/rounds/round-1/models/model-1", {
+      method: "POST"
+    });
+  });
+
   it("settles a betting arena round without an empty JSON request body", async () => {
     const arena = { accounts: [], currentRound: null, slips: [], history: [] };
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -548,7 +597,11 @@ describe("web API client", () => {
       providerId: "provider-1",
       modelName: "deepseek-chat",
       displayName: "DeepSeek Chat",
-      enabled: true
+      enabled: true,
+      contextWindowTokens: 64000,
+      maxOutputTokens: 4096,
+      requestTimeoutMs: 120000,
+      requestRetryCount: 2
     };
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -570,7 +623,11 @@ describe("web API client", () => {
       providerId: "provider-1",
       modelName: "deepseek-chat",
       displayName: "DeepSeek Chat",
-      enabled: true
+      enabled: true,
+      contextWindowTokens: 64000,
+      maxOutputTokens: 4096,
+      requestTimeoutMs: 120000,
+      requestRetryCount: 2
     })).resolves.toEqual(model);
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/admin/ai-models");
@@ -581,8 +638,50 @@ describe("web API client", () => {
         providerId: "provider-1",
         modelName: "deepseek-chat",
         displayName: "DeepSeek Chat",
-        enabled: true
+        enabled: true,
+        contextWindowTokens: 64000,
+        maxOutputTokens: 4096,
+        requestTimeoutMs: 120000,
+        requestRetryCount: 2
       })
+    });
+  });
+
+  it("updates admin model configuration", async () => {
+    const model = {
+      id: "model-1",
+      providerId: "provider-1",
+      modelName: "deepseek-chat",
+      displayName: "DeepSeek Chat",
+      enabled: true,
+      contextWindowTokens: 64000,
+      maxOutputTokens: 20000,
+      requestTimeoutMs: 120000,
+      requestRetryCount: 2
+    };
+    const input = {
+      providerId: "provider-1",
+      modelName: "deepseek-chat",
+      displayName: "DeepSeek Chat",
+      enabled: true,
+      contextWindowTokens: 64000,
+      maxOutputTokens: 20000,
+      requestTimeoutMs: 120000,
+      requestRetryCount: 2
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(model), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(updateAdminAiModel("model-1", input)).resolves.toEqual(model);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/ai-models/model-1", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
     });
   });
 
