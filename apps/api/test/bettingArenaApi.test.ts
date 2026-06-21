@@ -726,6 +726,59 @@ describe("betting arena public API", () => {
     await app.close();
   });
 
+  it("returns existing state before model lookup when duplicate slip belongs to an archived model", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-21T10:00:00.000Z"));
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-21",
+      lockTime: "2026-06-21T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报由比赛级 externalIntel 提供", dataGaps: [] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-21",
+      lockTime: "2026-06-21T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报由比赛级 externalIntel 提供", dataGaps: [] },
+      now: new Date("2026-06-21T10:00:00.000Z")
+    });
+    db.prepare(
+      `INSERT INTO betting_arena_slips (
+        id, round_id, model_id, action, status, total_stake, potential_return, risk_level,
+        raw_response, output_json, parsed_slip_json, account_context_json, validation_error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "slip-archived",
+      round.id,
+      "model-1",
+      "hold",
+      "accepted",
+      0,
+      0,
+      "low",
+      "{}",
+      "{}",
+      JSON.stringify({ action: "hold", singles: [], parlays: [], portfolioBuckets: [] }),
+      "{}",
+      null,
+      "2026-06-21T10:00:00.000Z",
+      "2026-06-21T10:00:00.000Z"
+    );
+    db.prepare("UPDATE ai_models SET enabled = 0, deleted_at = ? WHERE id = ?").run("2026-06-21T10:05:00.000Z", "model-1");
+    db.close();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      throw new Error("fetch should not be called for an archived duplicate slip");
+    });
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "POST", url: `/api/public/betting-arena/rounds/${round.id}/models/model-1` });
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("retries a failed round slip and preserves invalid model output", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-17T10:00:00.000Z"));

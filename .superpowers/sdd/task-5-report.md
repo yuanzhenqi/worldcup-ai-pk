@@ -74,3 +74,18 @@ Notes:
 
 - `corepack pnpm typecheck` initially failed on `apps/web/test/bettingArenaPage.test.tsx` because the local slip fixture was missing `portfolioBuckets`.
 - I added `portfolioBuckets: []` to that fixture and reran typecheck successfully.
+
+## Review Follow-up
+
+Reviewer found that the manual per-model duplicate guard still had a race window and checked enabled model state before returning existing duplicate slips.
+
+Fix:
+- Added an atomic `INSERT OR IGNORE` pending-slip claim before model generation.
+- Moved existing-slip short-circuit before enabled-model lookup.
+- Kept the post-generation `updateRoundStatusFromSlips` behavior.
+- Added API coverage for existing slips whose model is later archived.
+
+Verification:
+- `corepack pnpm --filter @worldcup-ai-pk/api test -- bettingArenaApi.test.ts`
+- `corepack pnpm --filter @worldcup-ai-pk/web test -- bettingArenaPage.test.tsx`
+- `corepack pnpm typecheck`

@@ -344,6 +344,49 @@ function hasRoundSlipForModel(db: Database, input: { roundId: string; modelId: s
   return Boolean(row);
 }
 
+function claimRoundSlipForModel(db: Database, input: { roundId: string; modelId: string; timestamp: string }): boolean {
+  const result = db
+    .prepare(
+      `
+        INSERT OR IGNORE INTO betting_arena_slips (
+          id,
+          round_id,
+          model_id,
+          action,
+          status,
+          total_stake,
+          potential_return,
+          risk_level,
+          raw_response,
+          output_json,
+          parsed_slip_json,
+          account_context_json,
+          validation_error,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    )
+    .run(
+      randomUUID(),
+      input.roundId,
+      input.modelId,
+      "hold",
+      "pending",
+      0,
+      0,
+      "low",
+      "",
+      "{}",
+      "{}",
+      "{}",
+      null,
+      input.timestamp,
+      input.timestamp
+    );
+  return result.changes > 0;
+}
+
 function rollbackReplaceableSlipStake(db: Database, input: { roundId: string; modelId: string; timestamp: string }): boolean {
   const existing = getReplaceableSlip(db, input);
   if (!existing) {
@@ -780,15 +823,20 @@ export async function triggerBettingArenaRound(db: Database, now = new Date()): 
 
 export async function triggerBettingArenaModel(db: Database, input: { roundId: string; modelId: string }, now = new Date()): Promise<BettingArenaDto> {
   ensureBettingArenaAccounts(db, now);
-  const model = getEnabledModel(db, input.modelId);
-  if (!model) {
-    throw new Error(`Betting arena model not found: ${input.modelId}`);
-  }
   const timestamp = now.toISOString();
   if (hasRoundSlipForModel(db, { roundId: input.roundId, modelId: input.modelId })) {
     updateRoundStatusFromSlips(db, input.roundId, timestamp);
     return getBettingArenaSummary(db);
   }
+  const model = getEnabledModel(db, input.modelId);
+  if (!model) {
+    throw new Error(`Betting arena model not found: ${input.modelId}`);
+  }
+  if (!claimRoundSlipForModel(db, { roundId: input.roundId, modelId: input.modelId, timestamp })) {
+    updateRoundStatusFromSlips(db, input.roundId, timestamp);
+    return getBettingArenaSummary(db);
+  }
+  updateRoundStatusFromSlips(db, input.roundId, timestamp);
   const battleContext = getRoundBattleContext(db, input.roundId);
   await generateRoundSlipForModel(db, { roundId: input.roundId, model, battleContext, timestamp });
   updateRoundStatusFromSlips(db, input.roundId, timestamp);
