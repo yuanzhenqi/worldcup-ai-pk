@@ -792,6 +792,7 @@ export function getBettingArenaLedger(
   db: Database,
   input: { modelId?: string | null; limit?: number; offset?: number } = {}
 ): BettingArenaLedgerDto {
+  settleAutoReadyRounds(db);
   return listBettingArenaLedger(db, input);
 }
 

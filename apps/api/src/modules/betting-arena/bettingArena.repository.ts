@@ -89,6 +89,20 @@ function toNumber(value: unknown): number {
   return Number(value ?? 0);
 }
 
+function normalizeLedgerLimit(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 50;
+  }
+  return Math.max(1, Math.min(100, Math.trunc(value)));
+}
+
+function normalizeLedgerOffset(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(value));
+}
+
 function calculateTotalAssetValue(row: AccountRow): number {
   return toNumber(row.available_bankroll) + toNumber(row.frozen_stake);
 }
@@ -823,8 +837,8 @@ export function listBettingArenaLedger(
 ): BettingArenaLedgerDto {
   ensureBettingArenaAccounts(db);
   const modelId = input.modelId ?? null;
-  const limit = Math.max(1, Math.min(100, Math.trunc(input.limit ?? 50)));
-  const offset = Math.max(0, Math.trunc(input.offset ?? 0));
+  const limit = normalizeLedgerLimit(input.limit);
+  const offset = normalizeLedgerOffset(input.offset);
   const whereSql = modelId ? "WHERE betting_arena_slips.model_id = ? AND ai_models.deleted_at IS NULL" : "WHERE ai_models.deleted_at IS NULL";
   const countParams = modelId ? [modelId] : [];
   const totalRow = db
@@ -858,7 +872,11 @@ export function listBettingArenaLedger(
         INNER JOIN ai_models ON ai_models.id = betting_arena_slips.model_id
         LEFT JOIN betting_arena_settlements ON betting_arena_settlements.slip_id = betting_arena_slips.id
         ${whereSql}
-        ORDER BY betting_arena_rounds.round_date DESC, betting_arena_rounds.round_sequence DESC, betting_arena_slips.created_at DESC
+        ORDER BY
+          betting_arena_rounds.round_date DESC,
+          betting_arena_rounds.round_sequence DESC,
+          betting_arena_slips.created_at DESC,
+          betting_arena_slips.id DESC
         LIMIT ? OFFSET ?
       `
     )

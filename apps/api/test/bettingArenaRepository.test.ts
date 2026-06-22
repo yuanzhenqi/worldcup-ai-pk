@@ -214,6 +214,47 @@ describe("betting arena repository and context", () => {
     db.close();
   });
 
+  it("orders betting ledger slips deterministically when created_at values match", () => {
+    const { db } = createTestDatabase();
+    insertModel(db, "model-1", "Model One");
+    insertModel(db, "model-2", "Model Two");
+    insertMatch(db, "match-1");
+    ensureBettingArenaAccounts(db, new Date("2026-06-20T00:00:00.000Z"));
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-20T00:00:00.000Z")
+    });
+    insertBetSlip(db, {
+      id: "slip-ledger-a",
+      roundId: round.id,
+      modelId: "model-1",
+      totalStake: 50,
+      potentialReturn: 92.5,
+      parsedSlip: { action: "bet", singles: [], parlays: [], portfolioBuckets: [], skipReasons: [], dataGaps: [] }
+    });
+    insertBetSlip(db, {
+      id: "slip-ledger-b",
+      roundId: round.id,
+      modelId: "model-2",
+      totalStake: 75,
+      potentialReturn: 138.75,
+      parsedSlip: { action: "bet", singles: [], parlays: [], portfolioBuckets: [], skipReasons: [], dataGaps: [] }
+    });
+
+    const ledger = listBettingArenaLedger(db, { limit: 10, offset: 0 });
+
+    expect(ledger.items.map((item) => item.slip.id)).toEqual(["slip-ledger-b", "slip-ledger-a"]);
+    db.close();
+  });
+
   it("hides archived model accounts and slips from betting arena summary", () => {
     const { db } = createTestDatabase();
     insertModel(db, "model-1", "Model One");

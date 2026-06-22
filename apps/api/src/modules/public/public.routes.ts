@@ -103,6 +103,14 @@ function parsePredictionRequestBody(body: unknown): PredictionRequestInputDto {
   return parsed.success ? parsed.data : defaultPredictionRequestInput;
 }
 
+function parseOptionalFiniteNumber(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function resolveDisplayNameZh(input: { teamId: string; originalName: string; displayNameZh: string | null; displayNameSource: string | null }): string {
   return input.displayNameSource === "admin" ? input.displayNameZh ?? input.originalName : worldCupTeamNamesZh[input.teamId] ?? input.displayNameZh ?? input.originalName;
 }
@@ -129,8 +137,8 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
   app.get<{ Querystring: { modelId?: string; limit?: string; offset?: string } }>("/betting-arena/ledger", async (request) =>
     getBettingArenaLedger(options.db, {
       modelId: request.query.modelId ?? null,
-      limit: request.query.limit ? Number(request.query.limit) : undefined,
-      offset: request.query.offset ? Number(request.query.offset) : undefined
+      limit: parseOptionalFiniteNumber(request.query.limit),
+      offset: parseOptionalFiniteNumber(request.query.offset)
     })
   );
 

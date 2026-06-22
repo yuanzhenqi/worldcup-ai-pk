@@ -124,6 +124,166 @@ describe("betting arena public API", () => {
     await app.close();
   });
 
+  it("normalizes invalid ledger limit and offset query values", async () => {
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      battleContext: {
+        roundDate: "2026-06-20",
+        lockTime: "2026-06-20T10:00:00.000Z",
+        matches: [],
+        externalIntel: { summary: "统一外部情报未配置", dataGaps: [] }
+      },
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: [] },
+      now: new Date("2026-06-20T00:00:00.000Z")
+    });
+    db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id, round_id, model_id, action, status, total_stake, potential_return, risk_level,
+          raw_response, output_json, parsed_slip_json, account_context_json, validation_error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "slip-ledger-invalid-query",
+      round.id,
+      "model-1",
+      "hold",
+      "accepted",
+      0,
+      0,
+      "low",
+      "{}",
+      "{}",
+      JSON.stringify({ action: "hold", strategySummary: "观望", singles: [], parlays: [], portfolioBuckets: [], skipReasons: ["没有优势"], dataGaps: [] }),
+      "{}",
+      null,
+      "2026-06-20T10:00:00.000Z",
+      "2026-06-20T10:00:00.000Z"
+    );
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "GET", url: "/api/public/betting-arena/ledger?limit=foo&offset=bar" });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({ total: 1, limit: 50, offset: 0, modelId: null });
+    expect(body.items[0].slip.id).toBe("slip-ledger-invalid-query");
+    await app.close();
+  });
+
+  it("auto-settles ready ledger slips when the ledger route is requested", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-19T10:00:00.000Z"));
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T10:00:00.000Z")
+    });
+    db.prepare("UPDATE betting_arena_rounds SET status = ? WHERE id = ?").run("locked", round.id);
+    db.prepare("UPDATE matches SET status = ?, home_score = ?, away_score = ? WHERE id = ?").run("finished", 0, 1, "match-1");
+    db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id,
+          round_id,
+          model_id,
+          action,
+          status,
+          total_stake,
+          potential_return,
+          risk_level,
+          raw_response,
+          output_json,
+          parsed_slip_json,
+          account_context_json,
+          validation_error,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "slip-ledger-auto",
+      round.id,
+      "model-1",
+      "bet",
+      "accepted",
+      100,
+      210,
+      "medium",
+      "{}",
+      "{}",
+      JSON.stringify({
+        action: "bet",
+        totalStake: 100,
+        potentialReturn: 210,
+        riskLevel: "medium",
+        strategySummary: "客胜单场。",
+        bankrollPlan: "投入 100。",
+        singles: [
+          {
+            matchId: "match-1",
+            poolCode: "HAD",
+            selectionCode: "a",
+            selectionLabel: "客胜",
+            lockedOdds: 2.1,
+            stake: 100,
+            confidence: 0.62,
+            rationale: "客队状态好。"
+          }
+        ],
+        parlays: [],
+        skipReasons: [],
+        dataGaps: []
+      }),
+      "{}",
+      null,
+      "2026-06-17T10:00:00.000Z",
+      "2026-06-17T10:00:00.000Z"
+    );
+    db.prepare(
+      `
+        UPDATE betting_arena_accounts
+        SET available_bankroll = 9900,
+            frozen_stake = 100,
+            total_staked = 100,
+            order_count = 1
+        WHERE model_id = ?
+      `
+    ).run("model-1");
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "GET", url: "/api/public/betting-arena/ledger?limit=10&offset=0" });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({ total: 1, limit: 10, offset: 0, modelId: null });
+    expect(body.items[0]).toMatchObject({
+      round: { id: round.id, status: "settled", settledReturn: 210 },
+      slip: { id: "slip-ledger-auto", status: "settled" }
+    });
+    await app.close();
+    const settledDb = createDatabase(databasePath);
+    const settlement = settledDb
+      .prepare("SELECT stake, returned_amount, profit, status FROM betting_arena_settlements WHERE slip_id = ?")
+      .get("slip-ledger-auto") as { stake: number; returned_amount: number; profit: number; status: string };
+    expect(settlement).toEqual({ stake: 100, returned_amount: 210, profit: 110, status: "settled" });
+    settledDb.close();
+  });
+
   it("manually triggers a round and stores a hold slip", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-17T10:00:00.000Z"));
