@@ -383,6 +383,19 @@ export interface BettingArenaDto {
   history: BettingArenaDailySummaryDto[];
 }
 
+export interface BettingArenaLedgerItemDto {
+  round: BettingArenaRoundDto;
+  slip: BettingArenaSlipDto;
+}
+
+export interface BettingArenaLedgerDto {
+  items: BettingArenaLedgerItemDto[];
+  total: number;
+  limit: number;
+  offset: number;
+  modelId: string | null;
+}
+
 export interface PredictionRequestInputDto {
   taskTypes: PredictionTaskType[];
   dataOptions: PredictionDataOptionsDto;

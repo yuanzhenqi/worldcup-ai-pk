@@ -4,6 +4,7 @@ import {
   createBettingArenaRound,
   ensureBettingArenaAccounts,
   getBettingArenaSummary,
+  listBettingArenaLedger,
   listBettingArenaAccounts
 } from "../src/modules/betting-arena/bettingArena.repository";
 import { buildBattleContext, buildAccountContext } from "../src/modules/betting-arena/bettingArena.context";
@@ -155,6 +156,61 @@ describe("betting arena repository and context", () => {
 
     expect(round).toMatchObject({ roundDate: "2026-06-17", status: "draft", eligibleMatchCount: 1, modelsCount: 1 });
     expect(getBettingArenaSummary(db).currentRound).toMatchObject({ roundDate: "2026-06-17" });
+    db.close();
+  });
+
+  it("lists betting ledger items across historical rounds with model filtering", () => {
+    const { db } = createTestDatabase();
+    insertModel(db, "model-1", "Model One");
+    insertModel(db, "model-2", "Model Two");
+    insertMatch(db, "match-1");
+    ensureBettingArenaAccounts(db, new Date("2026-06-20T00:00:00.000Z"));
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const firstRound = createBettingArenaRound(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-20T00:00:00.000Z")
+    });
+    db.prepare("UPDATE betting_arena_rounds SET status = ? WHERE id = ?").run("settled", firstRound.id);
+    const secondRound = createBettingArenaRound(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T18:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-20T12:00:00.000Z")
+    });
+    insertBetSlip(db, {
+      id: "slip-ledger-1",
+      roundId: firstRound.id,
+      modelId: "model-1",
+      totalStake: 100,
+      potentialReturn: 185,
+      parsedSlip: { action: "bet", singles: [], parlays: [], portfolioBuckets: [], skipReasons: [], dataGaps: [] }
+    });
+    insertBetSlip(db, {
+      id: "slip-ledger-2",
+      roundId: secondRound.id,
+      modelId: "model-2",
+      totalStake: 0,
+      potentialReturn: 0,
+      parsedSlip: { action: "hold", singles: [], parlays: [], portfolioBuckets: [], skipReasons: ["没有优势"], dataGaps: [] }
+    });
+
+    const allLedger = listBettingArenaLedger(db, { limit: 10, offset: 0 });
+    const modelLedger = listBettingArenaLedger(db, { modelId: "model-1", limit: 10, offset: 0 });
+
+    expect(allLedger.total).toBe(2);
+    expect(allLedger.items.map((item) => item.slip.id)).toEqual(["slip-ledger-2", "slip-ledger-1"]);
+    expect(modelLedger).toMatchObject({ total: 1, modelId: "model-1", limit: 10, offset: 0 });
+    expect("roundId" in (modelLedger.items[0]?.round ?? {})).toBe(false);
+    expect(modelLedger.items[0]?.round.id).toBe(firstRound.id);
+    expect(modelLedger.items[0]?.slip.modelDisplayName).toBe("Model One");
     db.close();
   });
 

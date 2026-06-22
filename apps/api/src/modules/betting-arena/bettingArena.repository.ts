@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
-import type { BettingArenaAccountDto, BettingArenaDto, BettingArenaRoundDto, BettingArenaSettlementDto, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
+import type {
+  BettingArenaAccountDto,
+  BettingArenaDto,
+  BettingArenaLedgerDto,
+  BettingArenaRoundDto,
+  BettingArenaSettlementDto,
+  BettingArenaSlipDto
+} from "@worldcup-ai-pk/shared";
 import { enrichBattleContext } from "./bettingArena.context";
 import { buildBettingArenaPrompt } from "./bettingArenaPrompts";
 
@@ -807,5 +814,65 @@ export function getBettingArenaSummary(db: Database, roundId?: string): BettingA
     currentRound,
     slips: currentRound ? listRoundSlips(db, currentRound.id, currentRound.battleContext) : [],
     history: listRoundHistory(db)
+  };
+}
+
+export function listBettingArenaLedger(
+  db: Database,
+  input: { modelId?: string | null; limit?: number; offset?: number } = {}
+): BettingArenaLedgerDto {
+  ensureBettingArenaAccounts(db);
+  const modelId = input.modelId ?? null;
+  const limit = Math.max(1, Math.min(100, Math.trunc(input.limit ?? 50)));
+  const offset = Math.max(0, Math.trunc(input.offset ?? 0));
+  const whereSql = modelId ? "WHERE betting_arena_slips.model_id = ? AND ai_models.deleted_at IS NULL" : "WHERE ai_models.deleted_at IS NULL";
+  const countParams = modelId ? [modelId] : [];
+  const totalRow = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS total
+        FROM betting_arena_slips
+        INNER JOIN ai_models ON ai_models.id = betting_arena_slips.model_id
+        ${whereSql}
+      `
+    )
+    .get(...countParams) as { total: number };
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          betting_arena_rounds.id,
+          betting_arena_rounds.round_date,
+          betting_arena_rounds.round_sequence,
+          betting_arena_rounds.status,
+          betting_arena_rounds.lock_time,
+          betting_arena_rounds.battle_context_json,
+          betting_arena_rounds.created_at,
+          betting_arena_rounds.updated_at,
+          COALESCE(betting_arena_slips.total_stake, 0) AS total_staked,
+          COALESCE(betting_arena_slips.potential_return, 0) AS potential_return,
+          COALESCE(betting_arena_settlements.returned_amount, 0) AS settled_return,
+          betting_arena_slips.id AS slip_id
+        FROM betting_arena_slips
+        INNER JOIN betting_arena_rounds ON betting_arena_rounds.id = betting_arena_slips.round_id
+        INNER JOIN ai_models ON ai_models.id = betting_arena_slips.model_id
+        LEFT JOIN betting_arena_settlements ON betting_arena_settlements.slip_id = betting_arena_slips.id
+        ${whereSql}
+        ORDER BY betting_arena_rounds.round_date DESC, betting_arena_rounds.round_sequence DESC, betting_arena_slips.created_at DESC
+        LIMIT ? OFFSET ?
+      `
+    )
+    .all(...countParams, limit, offset) as Array<RoundRow & { slip_id: string }>;
+  const items = rows.flatMap((row) => {
+    const round = toRoundDto(db, row, countAccounts(db));
+    const slip = listRoundSlips(db, round.id, round.battleContext).find((entry) => entry.id === row.slip_id);
+    return slip ? [{ round, slip }] : [];
+  });
+  return {
+    items,
+    total: toNumber(totalRow.total),
+    limit,
+    offset,
+    modelId
   };
 }

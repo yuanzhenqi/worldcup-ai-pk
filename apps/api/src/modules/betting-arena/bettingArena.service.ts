@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
-import type { BettingArenaDto, BettingArenaParlayDto, BettingArenaSingleDto } from "@worldcup-ai-pk/shared";
+import type { BettingArenaDto, BettingArenaLedgerDto, BettingArenaParlayDto, BettingArenaSingleDto } from "@worldcup-ai-pk/shared";
 import { runOpenAiCompatiblePrediction } from "../ai/openAiCompatibleClient";
 import { refreshFixtureContext } from "../context/fixtureContext.service";
 import { DongqiudiClient } from "../football/dongqiudiClient";
@@ -13,7 +13,7 @@ import { isDongqiudiEnabled, isSportteryEnabled } from "../settings/settings.rep
 import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
 import { buildAccountContext, buildBattleContext, enrichBattleContext, type BattleContext } from "./bettingArena.context";
 import { buildBettingArenaPrompt } from "./bettingArenaPrompts";
-import { createBettingArenaRound, ensureBettingArenaAccounts, getBettingArenaSummary } from "./bettingArena.repository";
+import { createBettingArenaRound, ensureBettingArenaAccounts, getBettingArenaSummary, listBettingArenaLedger } from "./bettingArena.repository";
 import { settleParsedSlip, type BettingArenaSettlementResult } from "./bettingArenaSettlement";
 import { parseBettingArenaSlip } from "./bettingArenaSlip";
 
@@ -786,6 +786,13 @@ async function refreshBettingArenaMatchContext(db: Database, input: { matchWindo
 export function getBettingArena(db: Database): BettingArenaDto {
   settleAutoReadyRounds(db);
   return getBettingArenaSummary(db);
+}
+
+export function getBettingArenaLedger(
+  db: Database,
+  input: { modelId?: string | null; limit?: number; offset?: number } = {}
+): BettingArenaLedgerDto {
+  return listBettingArenaLedger(db, input);
 }
 
 export async function triggerBettingArenaRound(db: Database, now = new Date()): Promise<BettingArenaDto> {

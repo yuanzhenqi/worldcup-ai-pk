@@ -22,7 +22,13 @@ import { getSportteryMappingByFixtureId } from "../football/sportteryMapping.rep
 import { getApiFootballKey, isDongqiudiEnabled, isSportteryEnabled } from "../settings/settings.repository";
 import { settleFinishedMatchPredictions } from "../predictions/predictionSettlement.service";
 import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
-import { getBettingArena, getBettingArenaRound, settleBettingArenaRound, triggerBettingArenaRound } from "../betting-arena/bettingArena.service";
+import {
+  getBettingArena,
+  getBettingArenaLedger,
+  getBettingArenaRound,
+  settleBettingArenaRound,
+  triggerBettingArenaRound
+} from "../betting-arena/bettingArena.service";
 
 export interface PublicRoutesOptions {
   db: Database;
@@ -119,6 +125,14 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
   app.get("/betting-arena", async () => getBettingArena(options.db));
 
   app.post("/betting-arena/rounds", async () => triggerBettingArenaRound(options.db));
+
+  app.get<{ Querystring: { modelId?: string; limit?: string; offset?: string } }>("/betting-arena/ledger", async (request) =>
+    getBettingArenaLedger(options.db, {
+      modelId: request.query.modelId ?? null,
+      limit: request.query.limit ? Number(request.query.limit) : undefined,
+      offset: request.query.offset ? Number(request.query.offset) : undefined
+    })
+  );
 
   app.get<{ Params: { roundId: string } }>("/betting-arena/rounds/:roundId", async (request) =>
     getBettingArenaRound(options.db, request.params.roundId)

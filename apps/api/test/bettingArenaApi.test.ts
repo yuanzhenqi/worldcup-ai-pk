@@ -73,6 +73,57 @@ describe("betting arena public API", () => {
     await app.close();
   });
 
+  it("returns betting arena ledger history through the public API", async () => {
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      battleContext: {
+        roundDate: "2026-06-20",
+        lockTime: "2026-06-20T10:00:00.000Z",
+        matches: [],
+        externalIntel: { summary: "统一外部情报未配置", dataGaps: [] }
+      },
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: [] },
+      now: new Date("2026-06-20T00:00:00.000Z")
+    });
+    db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id, round_id, model_id, action, status, total_stake, potential_return, risk_level,
+          raw_response, output_json, parsed_slip_json, account_context_json, validation_error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "slip-ledger-api",
+      round.id,
+      "model-1",
+      "hold",
+      "accepted",
+      0,
+      0,
+      "low",
+      "{}",
+      "{}",
+      JSON.stringify({ action: "hold", strategySummary: "观望", singles: [], parlays: [], portfolioBuckets: [], skipReasons: ["没有优势"], dataGaps: [] }),
+      "{}",
+      null,
+      "2026-06-20T10:00:00.000Z",
+      "2026-06-20T10:00:00.000Z"
+    );
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "GET", url: "/api/public/betting-arena/ledger?modelId=model-1&limit=10&offset=0" });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({ total: 1, limit: 10, offset: 0, modelId: "model-1" });
+    expect(body.items[0].slip.id).toBe("slip-ledger-api");
+    await app.close();
+  });
+
   it("manually triggers a round and stores a hold slip", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-17T10:00:00.000Z"));
