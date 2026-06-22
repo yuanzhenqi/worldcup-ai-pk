@@ -474,7 +474,7 @@ describe("betting arena repository and context", () => {
     db.close();
   });
 
-  it("reconstructs non-zero settlement item amounts for legacy settlement rows without items", () => {
+  it("reconstructs legacy settlement items and counts one single plus one parlay as two settled picks", () => {
     const { db } = createTestDatabase();
     insertModel(db, "model-1", "Model One");
     insertMatch(db, "match-1", { status: "finished", homeTeamName: "德国", awayTeamName: "日本" });
@@ -569,6 +569,11 @@ describe("betting arena repository and context", () => {
 
     const summary = getBettingArenaSummary(db, round.id);
 
+    expect(summary.accounts[0]).toMatchObject({
+      settledPickCount: 2,
+      hitPickCount: 2,
+      pickHitRate: 1
+    });
     expect(summary.slips[0]?.settlement?.items).toEqual([
       {
         type: "single",

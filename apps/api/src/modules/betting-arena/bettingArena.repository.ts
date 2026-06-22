@@ -173,8 +173,8 @@ function parseSettlementLegs(rawLegs: unknown[]): ParsedSettlementLeg[] {
   });
 }
 
-function parseSlipForSettlement(row: SlipRow): ParsedSlipForSettlement {
-  const parsedSlip = parseJsonOrNull(row.parsed_slip_json);
+function parseSlipForSettlement(value: string): ParsedSlipForSettlement {
+  const parsedSlip = parseJsonOrNull(value);
   if (!isRecord(parsedSlip)) return { singles: [], parlays: [] };
   const singles = Array.isArray(parsedSlip.singles)
     ? parsedSlip.singles.flatMap((single) => {
@@ -210,8 +210,8 @@ function takeLegacyLeg(legs: ParsedSettlementLeg[], usedIndexes: Set<number>, ma
   return { matchId, won: false, voided: true };
 }
 
-function reconstructSettlementItems(row: SlipRow, legs: ParsedSettlementLeg[]): BettingArenaSettlementDto["items"] {
-  const parsedSlip = parseSlipForSettlement(row);
+function reconstructSettlementItems(parsedSlipJson: string, legs: ParsedSettlementLeg[]): BettingArenaSettlementDto["items"] {
+  const parsedSlip = parseSlipForSettlement(parsedSlipJson);
   const usedIndexes = new Set<number>();
   const singleItems = parsedSlip.singles.map((single) => {
     const leg = takeLegacyLeg(legs, usedIndexes, single.matchId);
@@ -249,7 +249,7 @@ function parseSettlement(value: string | null, row: SlipRow): BettingArenaSettle
   const parsed = parseJsonOrNull(value);
   if (!isRecord(parsed)) return null;
   const legs = parseSettlementLegs(Array.isArray(parsed.legs) ? parsed.legs : []);
-  const rawItems = Array.isArray(parsed.items) ? parsed.items : reconstructSettlementItems(row, legs);
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : reconstructSettlementItems(row.parsed_slip_json, legs);
   return {
     stake: toNumber(row.settlement_stake ?? parsed.stake),
     returnedAmount: toNumber(row.settlement_returned_amount ?? parsed.returnedAmount),
@@ -276,10 +276,11 @@ function parseSettlement(value: string | null, row: SlipRow): BettingArenaSettle
   };
 }
 
-function countSettlementItems(settlementJson: string): AccountSettlementMetrics {
+function countSettlementItems(settlementJson: string, parsedSlipJson: string): AccountSettlementMetrics {
   const parsed = parseJsonOrNull(settlementJson);
   if (!isRecord(parsed)) return { settledPickCount: 0, hitPickCount: 0 };
-  const rawItems = Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed.legs) ? parsed.legs : [];
+  const legs = parseSettlementLegs(Array.isArray(parsed.legs) ? parsed.legs : []);
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : reconstructSettlementItems(parsedSlipJson, legs);
   let settledPickCount = 0;
   let hitPickCount = 0;
   for (const item of rawItems) {
@@ -294,17 +295,18 @@ function getAccountSettlementMetrics(db: Database): Map<string, AccountSettlemen
   const rows = db
     .prepare(
       `
-        SELECT betting_arena_settlements.model_id, betting_arena_settlements.settlement_json
+        SELECT betting_arena_settlements.model_id, betting_arena_settlements.settlement_json, betting_arena_slips.parsed_slip_json
         FROM betting_arena_settlements
+        INNER JOIN betting_arena_slips ON betting_arena_slips.id = betting_arena_settlements.slip_id
         INNER JOIN ai_models ON ai_models.id = betting_arena_settlements.model_id
         WHERE ai_models.deleted_at IS NULL
       `
     )
-    .all() as Array<{ model_id: string; settlement_json: string }>;
+    .all() as Array<{ model_id: string; settlement_json: string; parsed_slip_json: string }>;
   const metrics = new Map<string, AccountSettlementMetrics>();
   for (const row of rows) {
     const current = metrics.get(row.model_id) ?? { settledPickCount: 0, hitPickCount: 0 };
-    const next = countSettlementItems(row.settlement_json);
+    const next = countSettlementItems(row.settlement_json, row.parsed_slip_json);
     metrics.set(row.model_id, {
       settledPickCount: current.settledPickCount + next.settledPickCount,
       hitPickCount: current.hitPickCount + next.hitPickCount
