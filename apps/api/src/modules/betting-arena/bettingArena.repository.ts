@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
-import type { BettingArenaAccountDto, BettingArenaDto, BettingArenaRoundDto, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
+import type { BettingArenaAccountDto, BettingArenaDto, BettingArenaRoundDto, BettingArenaSettlementDto, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
 import { enrichBattleContext } from "./bettingArena.context";
 import { buildBettingArenaPrompt } from "./bettingArenaPrompts";
 
@@ -24,6 +24,7 @@ interface AccountRow {
 interface RoundRow {
   id: string;
   round_date: string;
+  round_sequence: number;
   status: BettingArenaRoundDto["status"];
   lock_time: string;
   battle_context_json: string;
@@ -58,6 +59,23 @@ interface SlipRow {
   account_context_json: string;
   validation_error: string | null;
   created_at: string;
+  settlement_stake: number | null;
+  settlement_returned_amount: number | null;
+  settlement_profit: number | null;
+  settlement_status: BettingArenaSettlementDto["status"] | null;
+  settlement_json: string | null;
+  settled_at: string | null;
+}
+
+interface AccountSettlementMetrics {
+  settledPickCount: number;
+  hitPickCount: number;
+}
+
+interface RoundModelProfit {
+  roundId: string;
+  modelDisplayName: string;
+  profit: number;
 }
 
 function toNumber(value: unknown): number {
@@ -68,13 +86,15 @@ function calculateTotalAssetValue(row: AccountRow): number {
   return toNumber(row.available_bankroll) + toNumber(row.frozen_stake);
 }
 
-function toAccountDto(row: AccountRow, rank: number, totalRounds: number): BettingArenaAccountDto {
+function toAccountDto(row: AccountRow, rank: number, totalRounds: number, metrics: AccountSettlementMetrics): BettingArenaAccountDto {
   const initialBankroll = toNumber(row.initial_bankroll);
   const totalAssetValue = calculateTotalAssetValue(row);
   const orderCount = toNumber(row.order_count);
   const settledOrderCount = toNumber(row.settled_order_count);
   const hitCount = toNumber(row.hit_count);
   const failedGenerationCount = toNumber(row.failed_generation_count);
+  const profitableSlipRate = settledOrderCount > 0 ? hitCount / settledOrderCount : 0;
+  const pickHitRate = metrics.settledPickCount > 0 ? metrics.hitPickCount / metrics.settledPickCount : 0;
 
   return {
     modelId: row.model_id,
@@ -89,7 +109,12 @@ function toAccountDto(row: AccountRow, rank: number, totalRounds: number): Betti
     orderCount,
     settledOrderCount,
     hitCount,
-    hitRate: settledOrderCount > 0 ? hitCount / settledOrderCount : 0,
+    hitRate: pickHitRate,
+    profitableSlipCount: hitCount,
+    profitableSlipRate,
+    settledPickCount: metrics.settledPickCount,
+    hitPickCount: metrics.hitPickCount,
+    pickHitRate,
     failedGenerationCount,
     orderRate: totalRounds > 0 ? orderCount / totalRounds : 0,
     failureRate: totalRounds > 0 ? failedGenerationCount / totalRounds : 0,
@@ -109,6 +134,215 @@ function parseJsonOrNull(value: string): unknown | null {
   } catch {
     return null;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+interface ParsedSettlementLeg {
+  matchId: string;
+  won: boolean;
+  voided: boolean;
+}
+
+interface ParsedSlipForSettlement {
+  singles: Array<{
+    matchId: string;
+    stake: number;
+    lockedOdds: number;
+  }>;
+  parlays: Array<{
+    parlayName: string;
+    stake: number;
+    combinedOdds: number;
+    legs: Array<{ matchId: string }>;
+  }>;
+}
+
+function parseSettlementLegs(rawLegs: unknown[]): ParsedSettlementLeg[] {
+  return rawLegs.flatMap((leg) => {
+    if (!isRecord(leg)) return [];
+    return [
+      {
+        matchId: typeof leg.matchId === "string" ? leg.matchId : "",
+        won: leg.won === true,
+        voided: leg.voided === true
+      }
+    ];
+  });
+}
+
+function parseSlipForSettlement(row: SlipRow): ParsedSlipForSettlement {
+  const parsedSlip = parseJsonOrNull(row.parsed_slip_json);
+  if (!isRecord(parsedSlip)) return { singles: [], parlays: [] };
+  const singles = Array.isArray(parsedSlip.singles)
+    ? parsedSlip.singles.flatMap((single) => {
+        if (!isRecord(single)) return [];
+        const matchId = typeof single.matchId === "string" ? single.matchId : "";
+        if (!matchId) return [];
+        return [{ matchId, stake: toNumber(single.stake), lockedOdds: toNumber(single.lockedOdds) }];
+      })
+    : [];
+  const parlays = Array.isArray(parsedSlip.parlays)
+    ? parsedSlip.parlays.flatMap((parlay) => {
+        if (!isRecord(parlay)) return [];
+        const parlayName = typeof parlay.parlayName === "string" ? parlay.parlayName : "串关";
+        const legs = Array.isArray(parlay.legs)
+          ? parlay.legs.flatMap((leg) => {
+              if (!isRecord(leg)) return [];
+              const matchId = typeof leg.matchId === "string" ? leg.matchId : "";
+              return matchId ? [{ matchId }] : [];
+            })
+          : [];
+        return [{ parlayName, stake: toNumber(parlay.stake), combinedOdds: toNumber(parlay.combinedOdds), legs }];
+      })
+    : [];
+  return { singles, parlays };
+}
+
+function takeLegacyLeg(legs: ParsedSettlementLeg[], usedIndexes: Set<number>, matchId: string): ParsedSettlementLeg {
+  const foundIndex = legs.findIndex((leg, index) => !usedIndexes.has(index) && leg.matchId === matchId);
+  if (foundIndex >= 0) {
+    usedIndexes.add(foundIndex);
+    return legs[foundIndex];
+  }
+  return { matchId, won: false, voided: true };
+}
+
+function reconstructSettlementItems(row: SlipRow, legs: ParsedSettlementLeg[]): BettingArenaSettlementDto["items"] {
+  const parsedSlip = parseSlipForSettlement(row);
+  const usedIndexes = new Set<number>();
+  const singleItems = parsedSlip.singles.map((single) => {
+    const leg = takeLegacyLeg(legs, usedIndexes, single.matchId);
+    const returnedAmount = leg.voided ? single.stake : leg.won ? single.stake * single.lockedOdds : 0;
+    return {
+      type: "single" as const,
+      name: null,
+      stake: single.stake,
+      returnedAmount,
+      won: leg.won,
+      voided: leg.voided,
+      legs: [leg]
+    };
+  });
+  const parlayItems = parsedSlip.parlays.map((parlay) => {
+    const parlayLegs = parlay.legs.map((leg) => takeLegacyLeg(legs, usedIndexes, leg.matchId));
+    const voided = parlayLegs.length > 0 && parlayLegs.every((leg) => leg.voided);
+    const won = parlayLegs.length > 0 && parlayLegs.every((leg) => leg.won || leg.voided) && parlayLegs.some((leg) => leg.won);
+    const returnedAmount = voided ? parlay.stake : won ? parlay.stake * parlay.combinedOdds : 0;
+    return {
+      type: "parlay" as const,
+      name: parlay.parlayName,
+      stake: parlay.stake,
+      returnedAmount,
+      won,
+      voided,
+      legs: parlayLegs
+    };
+  });
+  return [...singleItems, ...parlayItems];
+}
+
+function parseSettlement(value: string | null, row: SlipRow): BettingArenaSettlementDto | null {
+  if (!value) return null;
+  const parsed = parseJsonOrNull(value);
+  if (!isRecord(parsed)) return null;
+  const legs = parseSettlementLegs(Array.isArray(parsed.legs) ? parsed.legs : []);
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : reconstructSettlementItems(row, legs);
+  return {
+    stake: toNumber(row.settlement_stake ?? parsed.stake),
+    returnedAmount: toNumber(row.settlement_returned_amount ?? parsed.returnedAmount),
+    profit: toNumber(row.settlement_profit ?? parsed.profit),
+    status: row.settlement_status ?? (parsed.status === "void" ? "void" : "settled"),
+    hit: parsed.hit === true,
+    legs,
+    items: rawItems.flatMap((item) => {
+      if (!isRecord(item)) return [];
+      const itemLegs = Array.isArray(item.legs) ? parseSettlementLegs(item.legs) : [];
+      return [
+        {
+          type: item.type === "parlay" ? "parlay" : "single",
+          name: typeof item.name === "string" ? item.name : null,
+          stake: toNumber(item.stake),
+          returnedAmount: toNumber(item.returnedAmount),
+          won: item.won === true,
+          voided: item.voided === true,
+          legs: itemLegs
+        }
+      ];
+    }),
+    settledAt: row.settled_at ?? ""
+  };
+}
+
+function countSettlementItems(settlementJson: string): AccountSettlementMetrics {
+  const parsed = parseJsonOrNull(settlementJson);
+  if (!isRecord(parsed)) return { settledPickCount: 0, hitPickCount: 0 };
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed.legs) ? parsed.legs : [];
+  let settledPickCount = 0;
+  let hitPickCount = 0;
+  for (const item of rawItems) {
+    if (!isRecord(item) || item.voided === true) continue;
+    settledPickCount += 1;
+    if (item.won === true) hitPickCount += 1;
+  }
+  return { settledPickCount, hitPickCount };
+}
+
+function getAccountSettlementMetrics(db: Database): Map<string, AccountSettlementMetrics> {
+  const rows = db
+    .prepare(
+      `
+        SELECT betting_arena_settlements.model_id, betting_arena_settlements.settlement_json
+        FROM betting_arena_settlements
+        INNER JOIN ai_models ON ai_models.id = betting_arena_settlements.model_id
+        WHERE ai_models.deleted_at IS NULL
+      `
+    )
+    .all() as Array<{ model_id: string; settlement_json: string }>;
+  const metrics = new Map<string, AccountSettlementMetrics>();
+  for (const row of rows) {
+    const current = metrics.get(row.model_id) ?? { settledPickCount: 0, hitPickCount: 0 };
+    const next = countSettlementItems(row.settlement_json);
+    metrics.set(row.model_id, {
+      settledPickCount: current.settledPickCount + next.settledPickCount,
+      hitPickCount: current.hitPickCount + next.hitPickCount
+    });
+  }
+  return metrics;
+}
+
+function getRoundModelProfitExtremes(db: Database): Map<string, { bestModelDisplayName: string | null; worstModelDisplayName: string | null }> {
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          betting_arena_settlements.round_id AS roundId,
+          ai_models.display_name AS modelDisplayName,
+          SUM(betting_arena_settlements.profit) AS profit
+        FROM betting_arena_settlements
+        INNER JOIN ai_models ON ai_models.id = betting_arena_settlements.model_id
+        WHERE ai_models.deleted_at IS NULL
+        GROUP BY betting_arena_settlements.round_id, betting_arena_settlements.model_id, ai_models.display_name
+      `
+    )
+    .all() as RoundModelProfit[];
+  const grouped = new Map<string, RoundModelProfit[]>();
+  for (const row of rows) {
+    const current = grouped.get(row.roundId) ?? [];
+    current.push({ ...row, profit: toNumber(row.profit) });
+    grouped.set(row.roundId, current);
+  }
+  const result = new Map<string, { bestModelDisplayName: string | null; worstModelDisplayName: string | null }>();
+  for (const [roundId, profits] of grouped.entries()) {
+    const sorted = [...profits].sort((a, b) => b.profit - a.profit || a.modelDisplayName.localeCompare(b.modelDisplayName));
+    result.set(roundId, {
+      bestModelDisplayName: sorted[0]?.modelDisplayName ?? null,
+      worstModelDisplayName: sorted[sorted.length - 1]?.modelDisplayName ?? null
+    });
+  }
+  return result;
 }
 
 function countAccounts(db: Database): number {
@@ -135,6 +369,7 @@ function toRoundDto(db: Database, row: RoundRow, modelsCount: number): BettingAr
   return {
     id: row.id,
     roundDate: row.round_date,
+    roundSequence: toNumber(row.round_sequence) || 1,
     status: row.status,
     lockTime: row.lock_time,
     eligibleMatchCount: parseEligibleMatchCount(row.battle_context_json),
@@ -181,6 +416,7 @@ function toSlipDto(row: SlipRow, battleContext: unknown | null): BettingArenaSli
     rawResponse: row.raw_response,
     outputJson: row.output_json,
     settlementSummary: null,
+    settlement: parseSettlement(row.settlement_json, row),
     createdAt: row.created_at
   };
 }
@@ -204,9 +440,16 @@ function listRoundSlips(db: Database, roundId: string, battleContext: unknown | 
           betting_arena_slips.parsed_slip_json,
           betting_arena_slips.account_context_json,
           betting_arena_slips.validation_error,
-          betting_arena_slips.created_at
+          betting_arena_slips.created_at,
+          betting_arena_settlements.stake AS settlement_stake,
+          betting_arena_settlements.returned_amount AS settlement_returned_amount,
+          betting_arena_settlements.profit AS settlement_profit,
+          betting_arena_settlements.status AS settlement_status,
+          betting_arena_settlements.settlement_json,
+          betting_arena_settlements.settled_at
         FROM betting_arena_slips
         INNER JOIN ai_models ON ai_models.id = betting_arena_slips.model_id
+        LEFT JOIN betting_arena_settlements ON betting_arena_settlements.slip_id = betting_arena_slips.id
         WHERE betting_arena_slips.round_id = ?
           AND ai_models.deleted_at IS NULL
         ORDER BY betting_arena_slips.created_at ASC, ai_models.display_name ASC
@@ -224,6 +467,7 @@ function getRoundById(db: Database, id: string): BettingArenaRoundDto {
         SELECT
           betting_arena_rounds.id,
           betting_arena_rounds.round_date,
+          betting_arena_rounds.round_sequence,
           betting_arena_rounds.status,
           betting_arena_rounds.lock_time,
           betting_arena_rounds.battle_context_json,
@@ -271,6 +515,7 @@ function getRoundByDate(db: Database, roundDate: string): BettingArenaRoundDto |
         SELECT
           betting_arena_rounds.id,
           betting_arena_rounds.round_date,
+          betting_arena_rounds.round_sequence,
           betting_arena_rounds.status,
           betting_arena_rounds.lock_time,
           betting_arena_rounds.battle_context_json,
@@ -300,6 +545,8 @@ function getRoundByDate(db: Database, roundDate: string): BettingArenaRoundDto |
           GROUP BY betting_arena_settlements.round_id
         ) AS settlement_totals ON settlement_totals.round_id = betting_arena_rounds.id
         WHERE betting_arena_rounds.round_date = ?
+        ORDER BY betting_arena_rounds.round_sequence DESC, betting_arena_rounds.created_at DESC
+        LIMIT 1
       `
     )
     .get(roundDate) as RoundRow | undefined;
@@ -314,6 +561,7 @@ function getLatestRound(db: Database): BettingArenaRoundDto | null {
         SELECT
           betting_arena_rounds.id,
           betting_arena_rounds.round_date,
+          betting_arena_rounds.round_sequence,
           betting_arena_rounds.status,
           betting_arena_rounds.lock_time,
           betting_arena_rounds.battle_context_json,
@@ -342,13 +590,71 @@ function getLatestRound(db: Database): BettingArenaRoundDto | null {
           WHERE ai_models.deleted_at IS NULL
           GROUP BY betting_arena_settlements.round_id
         ) AS settlement_totals ON settlement_totals.round_id = betting_arena_rounds.id
-        ORDER BY betting_arena_rounds.round_date DESC, betting_arena_rounds.created_at DESC
+        ORDER BY betting_arena_rounds.round_date DESC, betting_arena_rounds.round_sequence DESC, betting_arena_rounds.created_at DESC
         LIMIT 1
       `
     )
     .get() as RoundRow | undefined;
 
   return row ? toRoundDto(db, row, countAccounts(db)) : null;
+}
+
+function listRoundHistory(db: Database, limit = 12): BettingArenaDto["history"] {
+  const extremes = getRoundModelProfitExtremes(db);
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          betting_arena_rounds.id,
+          betting_arena_rounds.round_date,
+          betting_arena_rounds.round_sequence,
+          betting_arena_rounds.status,
+          betting_arena_rounds.lock_time,
+          betting_arena_rounds.battle_context_json,
+          betting_arena_rounds.created_at,
+          betting_arena_rounds.updated_at,
+          COALESCE(slip_totals.total_staked, 0) AS total_staked,
+          COALESCE(slip_totals.potential_return, 0) AS potential_return,
+          COALESCE(settlement_totals.settled_return, 0) AS settled_return
+        FROM betting_arena_rounds
+        LEFT JOIN (
+          SELECT
+            betting_arena_slips.round_id,
+            SUM(total_stake) AS total_staked,
+            SUM(potential_return) AS potential_return
+          FROM betting_arena_slips
+          INNER JOIN ai_models ON ai_models.id = betting_arena_slips.model_id
+          WHERE ai_models.deleted_at IS NULL
+          GROUP BY betting_arena_slips.round_id
+        ) AS slip_totals ON slip_totals.round_id = betting_arena_rounds.id
+        LEFT JOIN (
+          SELECT
+            betting_arena_settlements.round_id,
+            SUM(returned_amount) AS settled_return
+          FROM betting_arena_settlements
+          INNER JOIN ai_models ON ai_models.id = betting_arena_settlements.model_id
+          WHERE ai_models.deleted_at IS NULL
+          GROUP BY betting_arena_settlements.round_id
+        ) AS settlement_totals ON settlement_totals.round_id = betting_arena_rounds.id
+        ORDER BY betting_arena_rounds.round_date DESC, betting_arena_rounds.round_sequence DESC, betting_arena_rounds.created_at DESC
+        LIMIT ?
+      `
+    )
+    .all(limit) as RoundRow[];
+
+  return rows.map((row) => {
+    const roundExtremes = extremes.get(row.id);
+    return {
+      roundId: row.id,
+      roundDate: row.round_date,
+      roundSequence: toNumber(row.round_sequence) || 1,
+      status: row.status,
+      totalStaked: toNumber(row.total_staked),
+      totalReturned: toNumber(row.settled_return),
+      bestModelDisplayName: roundExtremes?.bestModelDisplayName ?? null,
+      worstModelDisplayName: roundExtremes?.worstModelDisplayName ?? null
+    };
+  });
 }
 
 export function ensureBettingArenaAccounts(db: Database, now = new Date()): void {
@@ -403,6 +709,7 @@ export function ensureBettingArenaAccounts(db: Database, now = new Date()): void
 
 export function listBettingArenaAccounts(db: Database): BettingArenaAccountDto[] {
   const totalRounds = countRounds(db);
+  const settlementMetrics = getAccountSettlementMetrics(db);
   const rows = db
     .prepare(
       `
@@ -437,7 +744,9 @@ export function listBettingArenaAccounts(db: Database): BettingArenaAccountDto[]
     )
     .all() as AccountRow[];
 
-  return rows.map((row, index) => toAccountDto(row, index + 1, totalRounds));
+  return rows.map((row, index) =>
+    toAccountDto(row, index + 1, totalRounds, settlementMetrics.get(row.model_id) ?? { settledPickCount: 0, hitPickCount: 0 })
+  );
 }
 
 export function createBettingArenaRound(db: Database, input: CreateBettingArenaRoundInput): BettingArenaRoundDto {
@@ -448,15 +757,17 @@ export function createBettingArenaRound(db: Database, input: CreateBettingArenaR
   ensureBettingArenaAccounts(db, now);
 
   const existingRound = getRoundByDate(db, input.roundDate);
-  if (existingRound) {
+  if (existingRound && existingRound.status !== "settled") {
     return existingRound;
   }
+  const roundSequence = existingRound ? existingRound.roundSequence + 1 : 1;
 
   db.prepare(
     `
       INSERT INTO betting_arena_rounds (
         id,
         round_date,
+        round_sequence,
         status,
         lock_time,
         battle_context_json,
@@ -465,11 +776,12 @@ export function createBettingArenaRound(db: Database, input: CreateBettingArenaR
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     id,
     input.roundDate,
+    roundSequence,
     "draft",
     input.lockTime,
     JSON.stringify(input.battleContext),
@@ -482,28 +794,16 @@ export function createBettingArenaRound(db: Database, input: CreateBettingArenaR
   return getRoundById(db, id);
 }
 
-export function getBettingArenaSummary(db: Database): BettingArenaDto {
+export function getBettingArenaSummary(db: Database, roundId?: string): BettingArenaDto {
   ensureBettingArenaAccounts(db);
 
   const accounts = listBettingArenaAccounts(db);
-  const currentRound = getLatestRound(db);
+  const currentRound = roundId ? getRoundById(db, roundId) : getLatestRound(db);
 
   return {
     accounts,
     currentRound,
     slips: currentRound ? listRoundSlips(db, currentRound.id, currentRound.battleContext) : [],
-    history: currentRound
-      ? [
-          {
-            roundId: currentRound.id,
-            roundDate: currentRound.roundDate,
-            status: currentRound.status,
-            totalStaked: currentRound.totalStaked,
-            totalReturned: currentRound.settledReturn,
-            bestModelDisplayName: null,
-            worstModelDisplayName: null
-          }
-        ]
-      : []
+    history: listRoundHistory(db)
   };
 }
