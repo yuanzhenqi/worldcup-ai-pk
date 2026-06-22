@@ -14,6 +14,8 @@ import {
   getMatchContext,
   getMatchPredictionHistory,
   getBettingArena,
+  getBettingArenaLedger,
+  getBettingArenaRound,
   getPublicHealth,
   getPublicLeaderboard,
   listAdminAiModels,
@@ -484,6 +486,36 @@ describe("web API client", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/public/betting-arena/rounds/round-1/settle", {
       method: "POST"
     });
+  });
+
+  it("loads one betting arena round without browser caching", async () => {
+    const arena = { accounts: [], currentRound: { id: "round-1" }, slips: [], history: [] };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(arena), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(getBettingArenaRound("round-1")).resolves.toEqual(arena);
+    expect(fetchMock).toHaveBeenCalledWith("/api/public/betting-arena/rounds/round-1", {
+      cache: "no-store"
+    });
+  });
+
+  it("loads betting arena ledger with query parameters", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [], total: 0, limit: 25, offset: 50, modelId: "model-1" })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getBettingArenaLedger({ modelId: "model-1", limit: 25, offset: 50 });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/public/betting-arena/ledger?modelId=model-1&limit=25&offset=50"), {
+      cache: "no-store"
+    });
+    expect(result).toEqual({ items: [], total: 0, limit: 25, offset: 50, modelId: "model-1" });
   });
 
   it("loads the betting arena summary without browser caching", async () => {

@@ -5,11 +5,14 @@ import { App } from "../src/App";
 import {
   createParlayCombination,
   getBettingArena,
+  getBettingArenaLedger,
+  getBettingArenaRound,
   getPublicLeaderboard,
   getPublicMatches,
   listAdminPromptTemplates,
   settleBettingArenaRound,
   syncApiFootballFixtures,
+  triggerBettingArenaModel,
   triggerBettingArenaRound
 } from "../src/api/client";
 
@@ -24,6 +27,8 @@ vi.mock("../src/pages/LeaderboardPage", () => ({
 vi.mock("../src/api/client", () => ({
   createParlayCombination: vi.fn(),
   getBettingArena: vi.fn(),
+  getBettingArenaLedger: vi.fn(),
+  getBettingArenaRound: vi.fn(),
   getMatchContext: vi.fn(),
   getMatchPredictionHistory: vi.fn(),
   getPredictionRunStatus: vi.fn(),
@@ -34,6 +39,7 @@ vi.mock("../src/api/client", () => ({
   requestMatchPrediction: vi.fn(),
   settleBettingArenaRound: vi.fn(),
   syncApiFootballFixtures: vi.fn(),
+  triggerBettingArenaModel: vi.fn(),
   triggerBettingArenaRound: vi.fn()
 }));
 
@@ -96,7 +102,10 @@ describe("App", () => {
     vi.mocked(listAdminPromptTemplates).mockResolvedValue([]);
     vi.mocked(syncApiFootballFixtures).mockResolvedValue({ synced: true, imported: 1 });
     vi.mocked(getBettingArena).mockResolvedValue(emptyBettingArena);
+    vi.mocked(getBettingArenaLedger).mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0, modelId: null });
+    vi.mocked(getBettingArenaRound).mockResolvedValue(emptyBettingArena);
     vi.mocked(createParlayCombination).mockRejectedValue(new Error("not used in this test"));
+    vi.mocked(triggerBettingArenaModel).mockResolvedValue(emptyBettingArena);
     vi.mocked(triggerBettingArenaRound).mockResolvedValue(emptyBettingArena);
     vi.mocked(settleBettingArenaRound).mockResolvedValue(emptyBettingArena);
 
@@ -124,5 +133,27 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "进行中" }));
     expect(screen.getByText("1 - 1")).toBeInTheDocument();
+  });
+
+  it("wires betting arena ledger loading through App", async () => {
+    vi.mocked(getPublicMatches).mockResolvedValue([buildMatch({ status: "scheduled", homeScore: null, awayScore: null })]);
+    vi.mocked(getPublicLeaderboard).mockResolvedValue({ settledRows: [], activeRows: [] });
+    vi.mocked(listAdminPromptTemplates).mockResolvedValue([]);
+    vi.mocked(syncApiFootballFixtures).mockResolvedValue({ synced: true, imported: 1 });
+    vi.mocked(getBettingArena).mockResolvedValue(emptyBettingArena);
+    vi.mocked(getBettingArenaLedger).mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0, modelId: null });
+    vi.mocked(getBettingArenaRound).mockResolvedValue(emptyBettingArena);
+    vi.mocked(createParlayCombination).mockRejectedValue(new Error("not used in this test"));
+    vi.mocked(triggerBettingArenaModel).mockResolvedValue(emptyBettingArena);
+    vi.mocked(triggerBettingArenaRound).mockResolvedValue(emptyBettingArena);
+    vi.mocked(settleBettingArenaRound).mockResolvedValue(emptyBettingArena);
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "查看投注账本" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看投注账本" }));
+
+    expect(getBettingArenaLedger).toHaveBeenCalledWith({ limit: 50, offset: 0 });
   });
 });

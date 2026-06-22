@@ -3,6 +3,7 @@ import type {
   AiModelConfigDto,
   AiProviderConfigDto,
   BettingArenaDto,
+  BettingArenaLedgerDto,
   ExternalIntelSettingsDto,
   FixtureContextSummaryDto,
   LeaderboardDto,
@@ -163,6 +164,27 @@ export async function getBettingArena(): Promise<BettingArenaDto> {
     throw new Error(`Public betting arena request failed with status ${response.status}`);
   }
   return (await response.json()) as BettingArenaDto;
+}
+
+export async function getBettingArenaRound(roundId: string): Promise<BettingArenaDto> {
+  const response = await request(`${apiBaseUrl}/api/public/betting-arena/rounds/${roundId}`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Public betting arena round detail request failed with status ${response.status}`);
+  }
+  return (await response.json()) as BettingArenaDto;
+}
+
+export async function getBettingArenaLedger(params: { modelId?: string | null; limit?: number; offset?: number } = {}): Promise<BettingArenaLedgerDto> {
+  const query = new URLSearchParams();
+  if (params.modelId) query.set("modelId", params.modelId);
+  if (typeof params.limit === "number") query.set("limit", String(params.limit));
+  if (typeof params.offset === "number") query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const response = await request(`${apiBaseUrl}/api/public/betting-arena/ledger${suffix}`, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Public betting arena ledger request failed with status ${response.status}`);
+  }
+  return (await response.json()) as BettingArenaLedgerDto;
 }
 
 export async function triggerBettingArenaRound(): Promise<BettingArenaDto> {

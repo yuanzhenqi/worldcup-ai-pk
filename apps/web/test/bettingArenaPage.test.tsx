@@ -19,6 +19,11 @@ const arena: BettingArenaDto = {
       settledOrderCount: 0,
       hitCount: 0,
       hitRate: 0,
+      profitableSlipCount: 0,
+      profitableSlipRate: 0,
+      settledPickCount: 0,
+      hitPickCount: 0,
+      pickHitRate: 0,
       failedGenerationCount: 0,
       orderRate: 1,
       failureRate: 0,
@@ -29,6 +34,7 @@ const arena: BettingArenaDto = {
   currentRound: {
     id: "round-1",
     roundDate: "2026-06-20",
+    roundSequence: 1,
     status: "locked",
     lockTime: "2026-06-20T10:00:00.000Z",
     eligibleMatchCount: 1,
@@ -142,10 +148,41 @@ const arena: BettingArenaDto = {
       outputJson: '{"action":"bet"}',
       portfolioBuckets: [{ bucket: "safe", label: "稳胆", stake: 200, rationale: "基本面优势明确。", items: ["德国 主胜"] }],
       settlementSummary: null,
+      settlement: {
+        stake: 200,
+        returnedAmount: 370,
+        profit: 170,
+        status: "settled",
+        hit: true,
+        settledAt: "2026-06-21T14:00:00.000Z",
+        legs: [{ matchId: "match-1", won: true, voided: false }],
+        items: [
+          {
+            type: "single",
+            name: null,
+            stake: 200,
+            returnedAmount: 370,
+            won: true,
+            voided: false,
+            legs: [{ matchId: "match-1", won: true, voided: false }]
+          }
+        ]
+      },
       createdAt: "2026-06-20T10:00:00.000Z"
     }
   ],
-  history: []
+  history: [
+    {
+      roundId: "round-1",
+      roundDate: "2026-06-20",
+      roundSequence: 1,
+      status: "settled",
+      totalStaked: 200,
+      totalReturned: 370,
+      bestModelDisplayName: null,
+      worstModelDisplayName: null
+    }
+  ]
 };
 
 describe("BettingArenaPage", () => {
@@ -195,6 +232,122 @@ describe("BettingArenaPage", () => {
     expect(screen.getByText("账户上下文")).toBeInTheDocument();
     expect(screen.getByText("比赛数据")).toBeInTheDocument();
     expect(screen.getByText("完整原文")).toBeInTheDocument();
+    expect(screen.getByText("结算明细")).toBeInTheDocument();
+    expect(screen.getByText("命中 · 返还 370 · 盈亏 170")).toBeInTheDocument();
+  });
+
+  it("shows separate bankroll standings metrics and historical settlement rows", () => {
+    render(
+      <BettingArenaPage
+        arena={{
+          ...arena,
+          accounts: [
+            {
+              ...arena.accounts[0],
+              availableBankroll: 10170,
+              totalAssetValue: 10170,
+              returnRate: 0.017,
+              settledOrderCount: 1,
+              hitCount: 1,
+              hitRate: 1,
+              profitableSlipCount: 1,
+              profitableSlipRate: 1,
+              settledPickCount: 1,
+              hitPickCount: 1,
+              pickHitRate: 1
+            }
+          ]
+        }}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("投注项命中率 1/1")).toBeInTheDocument();
+    expect(screen.getByText("盈利出单 1/1")).toBeInTheDocument();
+    expect(screen.getByText("历史结算")).toBeInTheDocument();
+    expect(screen.getAllByText("2026-06-20 第 1 轮").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("返还 370").length).toBeGreaterThan(0);
+  });
+
+  it("opens full model betting ledger and then opens a historical slip detail", async () => {
+    const onLoadLedger = vi.fn().mockResolvedValue({
+      items: [{ round: arena.currentRound, slip: arena.slips[0] }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+      modelId: null
+    });
+    render(
+      <BettingArenaPage
+        arena={arena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+        onLoadLedger={onLoadLedger}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "查看投注账本" }));
+
+    expect(onLoadLedger).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    expect(await screen.findByRole("heading", { name: "投注账本" })).toBeInTheDocument();
+    expect(screen.getByText("Model One")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看 Model One 2026-06-20 第 1 轮投注明细" }));
+
+    expect(screen.getByRole("heading", { name: "Model One" })).toBeInTheDocument();
+    expect(screen.getByText("命中 · 返还 370 · 盈亏 170")).toBeInTheDocument();
+  });
+
+  it("loads historical round details and opens one historical model slip", async () => {
+    const onLoadRound = vi.fn().mockResolvedValue({
+      ...arena,
+      currentRound: arena.currentRound
+        ? {
+            ...arena.currentRound,
+            id: "round-history",
+            roundDate: "2026-06-19",
+            roundSequence: 2
+          }
+        : null,
+      slips: [
+        {
+          ...arena.slips[0],
+          id: "slip-history",
+          roundId: "round-history",
+          modelDisplayName: "History Model"
+        }
+      ]
+    });
+    render(
+      <BettingArenaPage
+        arena={arena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+        onLoadRound={onLoadRound}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "查看 2026-06-20 第 1 轮历史结算" }));
+
+    expect(onLoadRound).toHaveBeenCalledWith("round-1");
+    expect(await screen.findByRole("heading", { name: "历史轮次详情" })).toBeInTheDocument();
+    expect(screen.getByText("2026-06-19 第 2 轮")).toBeInTheDocument();
+    expect(screen.getByText("History Model")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看 History Model 历史出单" }));
+
+    expect(screen.getByRole("heading", { name: "History Model" })).toBeInTheDocument();
+    expect(screen.getByText("结算明细")).toBeInTheDocument();
   });
 
   it("shows readable match names and locked odds in model slip details", () => {

@@ -1,4 +1,5 @@
-import type { BettingArenaDto, BettingArenaRoundDto, BettingArenaRoundStatus, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
+import { BookOpen } from "lucide-react";
+import type { BettingArenaDto, BettingArenaLedgerDto, BettingArenaRoundDto, BettingArenaRoundStatus, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
 import { useState } from "react";
 
 interface BettingArenaPageProps {
@@ -8,6 +9,8 @@ interface BettingArenaPageProps {
   onTriggerRound: () => Promise<BettingArenaDto>;
   onTriggerModel: (roundId: string, modelId: string) => Promise<BettingArenaDto>;
   onSettleRound: (roundId: string) => Promise<BettingArenaDto>;
+  onLoadLedger?: (params?: { modelId?: string | null; limit?: number; offset?: number }) => Promise<BettingArenaLedgerDto>;
+  onLoadRound?: (roundId: string) => Promise<BettingArenaDto>;
 }
 
 function percent(value: number): string {
@@ -351,6 +354,44 @@ function getSlipProgress(slip: BettingArenaSlipDto, matches: ReturnType<typeof g
   return { total: matchIds.length, finished, matchIds };
 }
 
+function getSlipSettlementStats(slip: BettingArenaSlipDto) {
+  const items = slip.settlement?.items ?? [];
+  const finishedItems = items.filter((item) => !item.voided);
+  const hitItems = finishedItems.filter((item) => item.won);
+  const returnedAmount = slip.settlement?.returnedAmount ?? 0;
+  const profit = slip.settlement?.profit ?? 0;
+  return {
+    total: finishedItems.length,
+    hit: hitItems.length,
+    returnedAmount,
+    profit
+  };
+}
+
+function roundLabel(round: Pick<BettingArenaRoundDto, "roundDate" | "roundSequence"> | null | undefined): string {
+  if (!round) return "未创建";
+  return `${round.roundDate} 第 ${round.roundSequence} 轮`;
+}
+
+function settlementItemStatusLabel(item: NonNullable<BettingArenaSlipDto["settlement"]>["items"][number]): string {
+  if (item.voided) return "退回";
+  return item.won ? "命中" : "未中";
+}
+
+function settlementTone(item: NonNullable<BettingArenaSlipDto["settlement"]>["items"][number]): string {
+  if (item.voided) return "void";
+  return item.won ? "hit" : "miss";
+}
+
+function findSingleForSettlementItem(slip: BettingArenaSlipDto, itemIndex: number) {
+  return slip.singles[itemIndex] ?? null;
+}
+
+function findParlayForSettlementItem(slip: BettingArenaSlipDto, itemIndex: number) {
+  const parlayIndex = itemIndex - slip.singles.length;
+  return slip.parlays[parlayIndex] ?? null;
+}
+
 function splitPrompt(prompt: string) {
   const accountMarker = "account_context=";
   const battleMarker = "battle_context=";
@@ -376,9 +417,17 @@ function splitPrompt(prompt: string) {
   };
 }
 
-export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTriggerModel, onSettleRound }: BettingArenaPageProps) {
+export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTriggerModel, onSettleRound, onLoadLedger, onLoadRound }: BettingArenaPageProps) {
   const [selectedSlip, setSelectedSlip] = useState<BettingArenaSlipDto | null>(null);
+  const [selectedSlipRound, setSelectedSlipRound] = useState<BettingArenaRoundDto | null>(null);
   const [inputPanelOpen, setInputPanelOpen] = useState(false);
+  const [ledger, setLedger] = useState<BettingArenaLedgerDto | null>(null);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [historyRoundArena, setHistoryRoundArena] = useState<BettingArenaDto | null>(null);
+  const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyModelIds, setBusyModelIds] = useState<Set<string>>(() => new Set());
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -386,8 +435,36 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
   const roundGenerating = arena?.currentRound?.status === "generating";
   const busyModelCount = busyModelIds.size;
   const battleContextSummary = getBattleContextSummary(arena?.currentRound);
-  const selectedSlipProgress = selectedSlip ? getSlipProgress(selectedSlip, battleContextSummary.matches) : null;
+  const selectedSlipContextSummary = getBattleContextSummary(selectedSlipRound ?? arena?.currentRound);
+  const selectedSlipProgress = selectedSlip ? getSlipProgress(selectedSlip, selectedSlipContextSummary.matches) : null;
   const selectedPrompt = splitPrompt(selectedSlip?.prompt ?? "");
+
+  function openSlipDetail(slip: BettingArenaSlipDto, round: BettingArenaRoundDto | null | undefined) {
+    setSelectedSlip(slip);
+    setSelectedSlipRound(round ?? null);
+  }
+
+  function closeSlipDetail() {
+    setSelectedSlip(null);
+    setSelectedSlipRound(null);
+  }
+
+  async function openLedger() {
+    if (!onLoadLedger) return;
+    setLedgerLoading(true);
+    setLedgerError(null);
+    try {
+      const nextLedger = await onLoadLedger({ limit: 50, offset: 0 });
+      setLedger(nextLedger);
+      setLedgerOpen(true);
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "加载投注账本失败";
+      setLedgerError(message);
+      setLedgerOpen(false);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }
 
   async function triggerRound() {
     setBusy(true);
@@ -443,6 +520,21 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
     }
   }
 
+  async function loadHistoryRound(roundId: string) {
+    if (!onLoadRound) return;
+    setHistoryLoadingId(roundId);
+    setHistoryError(null);
+    try {
+      const nextArena = await onLoadRound(roundId);
+      setHistoryRoundArena(nextArena);
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "加载历史轮次失败";
+      setHistoryError(message);
+    } finally {
+      setHistoryLoadingId(null);
+    }
+  }
+
   return (
     <section id="betting-arena" className="page-section betting-arena">
       <div className="section-heading">
@@ -457,6 +549,10 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
           <button className="app-button app-button-secondary" type="button" onClick={() => setInputPanelOpen(true)} disabled={!arena?.currentRound}>
             投注输入面板
           </button>
+          <button className="app-button app-button-secondary" type="button" onClick={() => void openLedger()} disabled={!onLoadLedger || ledgerLoading}>
+            <BookOpen aria-hidden="true" size={16} />
+            查看投注账本
+          </button>
           <button className="app-button app-button-secondary" type="button" onClick={settleRound} disabled={busy || !arena?.currentRound}>
             结算当前轮
           </button>
@@ -469,11 +565,12 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
       {busyModelCount > 0 ? <p className="status-line">正在生成 {busyModelCount} 个模型</p> : null}
       {actionMessage ? <p className="status-line">{actionMessage}</p> : null}
       {actionError ? <p className="status-line error">{actionError}</p> : null}
+      {ledgerError ? <p className="status-line error">{ledgerError}</p> : null}
 
       <div className="arena-overview">
         <div>
           <span>当前轮次</span>
-          <strong>{arena?.currentRound?.roundDate ?? "未创建"}</strong>
+          <strong>{roundLabel(arena?.currentRound)}</strong>
         </div>
         <div>
           <span>状态</span>
@@ -498,41 +595,48 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
       </div>
 
       <div className="arena-grid">
-        <section className="arena-panel">
+        <section className="arena-panel arena-standings-panel">
           <h3>AI 资金榜</h3>
           <div className="arena-account-list">
             {(arena?.accounts ?? []).map((account) => (
               <div className="arena-account-row" key={account.modelId}>
-                <strong>
-                  {account.rank}. {account.modelDisplayName}
-                </strong>
-                <span>余额 {money(account.availableBankroll)}</span>
+                <div className="arena-rank-chip">{account.rank}</div>
+                <div>
+                  <strong>{`模型 ${account.modelDisplayName}`}</strong>
+                  <span>余额 {money(account.availableBankroll)} · 冻结 {money(account.frozenStake)}</span>
+                </div>
                 <span>收益率 {percent(account.returnRate)}</span>
-                <span>命中率 {percent(account.hitRate)}</span>
+                <span>投注项命中率 {account.hitPickCount}/{account.settledPickCount}</span>
+                <span>盈利出单 {account.profitableSlipCount}/{account.settledOrderCount}</span>
               </div>
             ))}
             {(arena?.accounts ?? []).length === 0 ? <p className="muted">暂无模型账户。</p> : null}
           </div>
         </section>
 
-        <section className="arena-panel">
-          <h3>今日出单矩阵</h3>
+        <section className="arena-panel arena-orders-panel">
+          <h3>当前出单</h3>
           <div className="arena-slip-list">
             {(arena?.accounts ?? []).map((account) => {
               const slip = (arena?.slips ?? []).find((entry) => entry.modelId === account.modelId) ?? null;
+              const settlement = slip?.settlement ?? null;
+              const profit = settlement ? settlement.profit : null;
               return (
                 <div className="arena-slip-row" key={account.modelId}>
                   <button
                     aria-label={slip ? `${account.modelDisplayName} 投注详情` : `${account.modelDisplayName} 暂无出单`}
                     className="arena-slip-main"
                     type="button"
-                    onClick={() => (slip ? setSelectedSlip(slip) : null)}
+                    onClick={() => (slip ? openSlipDetail(slip, arena?.currentRound) : null)}
                     disabled={!slip}
                   >
-                    <strong>{account.modelDisplayName}</strong>
-                    <span>{slip ? `${actionLabel(slip.action)} · ${statusLabel(slip.status)}` : "暂无出单"}</span>
+                    <div>
+                      <strong>{`出单 ${account.modelDisplayName}`}</strong>
+                      <span>{slip ? `${actionLabel(slip.action)} · ${statusLabel(slip.status)}` : "暂无出单"}</span>
+                    </div>
                     <span>投入 {money(slip?.totalStake ?? 0)}</span>
-                    <span>潜在 {money(slip?.potentialReturn ?? 0)}</span>
+                    <span>{settlement ? `返还 ${money(settlement.returnedAmount)}` : `潜在 ${money(slip?.potentialReturn ?? 0)}`}</span>
+                    <span>{profit === null ? "待结算" : `盈亏 ${profit >= 0 ? "+" : ""}${money(profit)}`}</span>
                   </button>
                   <button
                     className="app-button app-button-secondary arena-slip-generate"
@@ -553,6 +657,154 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
         </section>
       </div>
 
+      <section className="arena-panel arena-history-panel">
+        <div className="arena-panel-header">
+          <h3>历史结算</h3>
+          <span>{arena?.history.length ?? 0} 轮</span>
+        </div>
+        <div className="arena-history-list">
+          {(arena?.history ?? []).map((round) => {
+            const profit = round.totalReturned - round.totalStaked;
+            return (
+              <button
+                aria-label={`查看 ${round.roundDate} 第 ${round.roundSequence} 轮历史结算`}
+                className="arena-history-row"
+                disabled={!onLoadRound || historyLoadingId === round.roundId}
+                key={round.roundId}
+                onClick={() => loadHistoryRound(round.roundId)}
+                type="button"
+              >
+                <strong>
+                  {round.roundDate} 第 {round.roundSequence} 轮
+                </strong>
+                <span>{roundStatusLabel(round.status)}</span>
+                <span>投入 {money(round.totalStaked)}</span>
+                <span>返还 {money(round.totalReturned)}</span>
+                <span className={profit >= 0 ? "arena-profit-positive" : "arena-profit-negative"}>盈亏 {profit >= 0 ? "+" : ""}{money(profit)}</span>
+                <span>{historyLoadingId === round.roundId ? "加载中" : round.bestModelDisplayName ? `最佳 ${round.bestModelDisplayName}` : "查看"}</span>
+              </button>
+            );
+          })}
+          {(arena?.history ?? []).length === 0 ? <p className="muted">暂无历史结算。</p> : null}
+        </div>
+      </section>
+
+      {historyError ? <p className="status-line error">{historyError}</p> : null}
+
+      {ledgerOpen ? (
+        <div className="arena-detail-drawer" role="dialog" aria-modal="true">
+          <div className="arena-detail-panel arena-history-detail-panel">
+            <div className="arena-detail-header">
+              <div>
+                <p className="eyebrow">共享投注账本</p>
+                <h3>投注账本</h3>
+              </div>
+              <button className="app-button app-button-secondary" type="button" onClick={() => setLedgerOpen(false)}>
+                关闭
+              </button>
+            </div>
+            <div className="arena-input-summary">
+              <div>
+                <span>记录</span>
+                <strong>{ledger?.total ?? 0}</strong>
+              </div>
+              <div>
+                <span>分页</span>
+                <strong>
+                  {ledger?.offset ?? 0} / {ledger?.limit ?? 0}
+                </strong>
+              </div>
+              <div>
+                <span>模型</span>
+                <strong>{ledger?.modelId ?? "全部模型"}</strong>
+              </div>
+            </div>
+            <div className="arena-history-slip-list">
+              {(ledger?.items ?? []).map((entry, index) => (
+                <button
+                  aria-label={`查看 ${entry.slip.modelDisplayName} ${roundLabel(entry.round)}投注明细`}
+                  className="arena-history-slip-row"
+                  key={`${entry.slip.id}-${index}`}
+                  onClick={() => {
+                    setLedgerOpen(false);
+                    openSlipDetail(entry.slip, entry.round);
+                  }}
+                  type="button"
+                >
+                  <strong>{entry.slip.modelDisplayName}</strong>
+                  <span>{roundLabel(entry.round)}</span>
+                  <span>{actionLabel(entry.slip.action)} · {statusLabel(entry.slip.status)}</span>
+                  <span>投入 {money(entry.slip.totalStake)}</span>
+                  <span>潜在 {money(entry.slip.potentialReturn)}</span>
+                </button>
+              ))}
+              {(ledger?.items ?? []).length === 0 ? <p className="muted">暂无投注账本记录。</p> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {historyRoundArena?.currentRound ? (
+        <div className="arena-detail-drawer" role="dialog" aria-modal="true">
+          <div className="arena-detail-panel arena-history-detail-panel">
+            <div className="arena-detail-header">
+              <div>
+                <p className="eyebrow">历史结算追溯</p>
+                <h3>历史轮次详情</h3>
+              </div>
+              <button className="app-button app-button-secondary" type="button" onClick={() => setHistoryRoundArena(null)}>
+                关闭
+              </button>
+            </div>
+            <div className="arena-input-summary">
+              <div>
+                <span>轮次</span>
+                <strong>{roundLabel(historyRoundArena.currentRound)}</strong>
+              </div>
+              <div>
+                <span>状态</span>
+                <strong>{roundStatusLabel(historyRoundArena.currentRound.status)}</strong>
+              </div>
+              <div>
+                <span>投入</span>
+                <strong>{money(historyRoundArena.currentRound.totalStaked)}</strong>
+              </div>
+              <div>
+                <span>返还</span>
+                <strong>{money(historyRoundArena.currentRound.settledReturn)}</strong>
+              </div>
+            </div>
+            <div className="arena-history-slip-list">
+              {historyRoundArena.slips.map((slip) => {
+                const stats = getSlipSettlementStats(slip);
+                return (
+                  <button
+                    aria-label={`查看 ${slip.modelDisplayName} 历史出单`}
+                    className="arena-history-slip-row"
+                    key={slip.id}
+                    onClick={() => {
+                      setHistoryRoundArena(null);
+                      openSlipDetail(slip, historyRoundArena.currentRound);
+                    }}
+                    type="button"
+                  >
+                    <strong>{slip.modelDisplayName}</strong>
+                    <span>{actionLabel(slip.action)} · {statusLabel(slip.status)}</span>
+                    <span>投入 {money(slip.totalStake)}</span>
+                    <span>返还 {money(stats.returnedAmount)}</span>
+                    <span className={stats.profit >= 0 ? "arena-profit-positive" : "arena-profit-negative"}>
+                      盈亏 {stats.profit >= 0 ? "+" : ""}{money(stats.profit)}
+                    </span>
+                    <span>命中 {stats.hit} / {stats.total}</span>
+                  </button>
+                );
+              })}
+              {historyRoundArena.slips.length === 0 ? <p className="muted">这一轮没有模型出单记录。</p> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {selectedSlip ? (
         <div className="arena-detail-drawer" role="dialog" aria-modal="true">
           <div className="arena-detail-panel">
@@ -561,7 +813,7 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                 <p className="eyebrow">模型出单详情</p>
                 <h3>{selectedSlip.modelDisplayName}</h3>
               </div>
-              <button className="app-button app-button-secondary" type="button" onClick={() => setSelectedSlip(null)}>
+              <button className="app-button app-button-secondary" type="button" onClick={closeSlipDetail}>
                 关闭
               </button>
             </div>
@@ -574,19 +826,56 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                 <div>
                   {selectedSlipProgress.matchIds.map((matchId) => (
                     <span className="arena-result-match" key={matchId}>
-                      <span>{getMatchLabel(battleContextSummary.matches, matchId)}</span>
-                      <span>{getMatchResultLabel(battleContextSummary.matches, matchId)}</span>
+                      <span>{getMatchLabel(selectedSlipContextSummary.matches, matchId)}</span>
+                      <span>{getMatchResultLabel(selectedSlipContextSummary.matches, matchId)}</span>
                     </span>
                   ))}
                 </div>
               </div>
             ) : null}
+            <div className="arena-settlement-box">
+              <strong>结算明细</strong>
+              {selectedSlip.settlement ? (
+                <div className="arena-settlement-list">
+                  {selectedSlip.settlement.items.map((item, index) => {
+                    const single = item.type === "single" ? findSingleForSettlementItem(selectedSlip, index) : null;
+                    const parlay = item.type === "parlay" ? findParlayForSettlementItem(selectedSlip, index) : null;
+                    const primaryLabel =
+                      item.type === "single" && single
+                        ? `${getMatchLabel(selectedSlipContextSummary.matches, single.matchId)} · ${poolDisplayName(single.poolCode)} · ${single.selectionLabel}`
+                        : `${parlayDisplayName(parlay?.legs.length ?? item.legs.length)} · ${item.name || parlay?.parlayName || "串关"}`;
+                    const profit = item.returnedAmount - item.stake;
+                    return (
+                      <div className="arena-settlement-item" key={`${item.type}-${index}`}>
+                        <div>
+                          <span className={`arena-status-pill ${settlementTone(item)}`}>{settlementItemStatusLabel(item)}</span>
+                          <strong>{primaryLabel}</strong>
+                        </div>
+                        <span>
+                          {settlementItemStatusLabel(item)} · 返还 {money(item.returnedAmount)} · 盈亏 {profit >= 0 ? "" : "-"}
+                          {money(Math.abs(profit))}
+                        </span>
+                        {item.type === "parlay"
+                          ? item.legs.map((leg) => (
+                              <small key={`${index}-${leg.matchId}-${leg.won}-${leg.voided}`}>
+                                {getMatchLabel(selectedSlipContextSummary.matches, leg.matchId)} · {leg.voided ? "待退回" : leg.won ? "命中" : "未中"}
+                              </small>
+                            ))
+                          : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span className="muted">暂无结算记录。</span>
+              )}
+            </div>
             <div className="arena-detail-table">
               <strong>单场</strong>
               {selectedSlip.singles.length === 0 ? <span className="muted">无单场投入</span> : null}
               {selectedSlip.singles.map((single) => (
                 <div className="arena-pick-row" key={`${single.matchId}-${single.poolCode}-${single.selectionCode}`}>
-                  <span>{getMatchLabel(battleContextSummary.matches, single.matchId)}</span>
+                  <span>{getMatchLabel(selectedSlipContextSummary.matches, single.matchId)}</span>
                   <span>
                     {poolDisplayName(single.poolCode)} · {single.selectionLabel} · 赔率 {single.lockedOdds.toFixed(2)} · 投入 {money(single.stake)} · 潜在{" "}
                     {money(single.stake * single.lockedOdds)}
@@ -613,7 +902,7 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                   </span>
                   {parlay.legs.map((leg) => (
                     <span key={`${parlay.parlayName}-${leg.matchId}-${leg.poolCode}-${leg.selectionCode}`}>
-                      {getMatchLabel(battleContextSummary.matches, leg.matchId)} · {poolDisplayName(leg.poolCode)} · {leg.selectionLabel} · 赔率{" "}
+                      {getMatchLabel(selectedSlipContextSummary.matches, leg.matchId)} · {poolDisplayName(leg.poolCode)} · {leg.selectionLabel} · 赔率{" "}
                       {leg.lockedOdds.toFixed(2)}
                     </span>
                   ))}

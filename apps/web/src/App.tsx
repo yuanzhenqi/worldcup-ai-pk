@@ -3,6 +3,8 @@ import type { BettingArenaDto, LeaderboardDto, MatchDto, PredictionRequestInputD
 import {
   createParlayCombination,
   getBettingArena,
+  getBettingArenaLedger,
+  getBettingArenaRound,
   getMatchContext,
   getMatchPredictionHistory,
   getPredictionRunStatus,
@@ -13,6 +15,7 @@ import {
   requestMatchPrediction,
   settleBettingArenaRound,
   syncApiFootballFixtures,
+  triggerBettingArenaModel,
   triggerBettingArenaRound
 } from "./api/client";
 import { AdminPage } from "./pages/AdminPage";
@@ -170,11 +173,18 @@ export function App() {
           setBettingArena(nextArena);
           return nextArena;
         }}
+        onTriggerModel={async (roundId, modelId) => {
+          const nextArena = await triggerBettingArenaModel(roundId, modelId);
+          setBettingArena(nextArena);
+          return nextArena;
+        }}
         onSettleRound={async (roundId) => {
           const nextArena = await settleBettingArenaRound(roundId);
           setBettingArena(nextArena);
           return nextArena;
         }}
+        onLoadLedger={getBettingArenaLedger}
+        onLoadRound={getBettingArenaRound}
       />
       <AdminPage />
     </main>
