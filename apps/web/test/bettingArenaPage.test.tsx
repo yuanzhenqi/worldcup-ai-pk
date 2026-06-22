@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { BettingArenaDto } from "@worldcup-ai-pk/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BettingArenaPage } from "../src/pages/BettingArenaPage";
@@ -190,6 +190,15 @@ describe("BettingArenaPage", () => {
     cleanup();
   });
 
+  function panelByHeading(name: string): HTMLElement {
+    const heading = screen.getByRole("heading", { name });
+    const panel = heading.closest("section");
+    if (!panel) {
+      throw new Error(`Panel section not found for heading: ${name}`);
+    }
+    return panel;
+  }
+
   it("shows betting input audit data and per-model input output details", () => {
     render(
       <BettingArenaPage
@@ -266,8 +275,13 @@ describe("BettingArenaPage", () => {
       />
     );
 
-    expect(screen.getByText("投注项命中率 1/1")).toBeInTheDocument();
-    expect(screen.getByText("盈利出单 1/1")).toBeInTheDocument();
+    const standingsPanel = panelByHeading("AI 资金榜");
+    const ordersPanel = panelByHeading("当前出单");
+
+    expect(within(standingsPanel).getByText("Model One")).toBeInTheDocument();
+    expect(within(ordersPanel).getByText("Model One")).toBeInTheDocument();
+    expect(within(standingsPanel).getByText("投注项命中率 1/1")).toBeInTheDocument();
+    expect(within(standingsPanel).getByText("盈利出单 1/1")).toBeInTheDocument();
     expect(screen.getByText("历史结算")).toBeInTheDocument();
     expect(screen.getAllByText("2026-06-20 第 1 轮").length).toBeGreaterThan(0);
     expect(screen.getAllByText("返还 370").length).toBeGreaterThan(0);
@@ -296,8 +310,12 @@ describe("BettingArenaPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看投注账本" }));
 
     expect(onLoadLedger).toHaveBeenCalledWith({ limit: 50, offset: 0 });
-    expect(await screen.findByRole("heading", { name: "投注账本" })).toBeInTheDocument();
-    expect(screen.getByText("Model One")).toBeInTheDocument();
+    const ledgerHeading = await screen.findByRole("heading", { name: "投注账本" });
+    const ledgerDialog = ledgerHeading.closest('[role="dialog"]');
+    if (!(ledgerDialog instanceof HTMLElement)) {
+      throw new Error("Ledger dialog not found");
+    }
+    expect(within(ledgerDialog).getByText("Model One")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "查看 Model One 2026-06-20 第 1 轮投注明细" }));
 

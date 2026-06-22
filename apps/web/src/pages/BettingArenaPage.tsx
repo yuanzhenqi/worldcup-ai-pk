@@ -602,7 +602,7 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
               <div className="arena-account-row" key={account.modelId}>
                 <div className="arena-rank-chip">{account.rank}</div>
                 <div>
-                  <strong>{`模型 ${account.modelDisplayName}`}</strong>
+                  <strong>{account.modelDisplayName}</strong>
                   <span>余额 {money(account.availableBankroll)} · 冻结 {money(account.frozenStake)}</span>
                 </div>
                 <span>收益率 {percent(account.returnRate)}</span>
@@ -631,7 +631,7 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                     disabled={!slip}
                   >
                     <div>
-                      <strong>{`出单 ${account.modelDisplayName}`}</strong>
+                      <strong>{account.modelDisplayName}</strong>
                       <span>{slip ? `${actionLabel(slip.action)} · ${statusLabel(slip.status)}` : "暂无出单"}</span>
                     </div>
                     <span>投入 {money(slip?.totalStake ?? 0)}</span>
