@@ -12,6 +12,14 @@ const battleContext = {
             { code: "h", label: "主胜", value: "1.80" },
             { code: "d", label: "平", value: "3.20" }
           ]
+        },
+        {
+          poolCode: "HHAD",
+          options: [
+            { code: "h", label: "让球主胜", value: "2.40", goalLine: "-2.00" },
+            { code: "d", label: "让球平", value: "3.50", goalLine: "-2.00" },
+            { code: "a", label: "让球客胜", value: "2.70", goalLine: "-2.00" }
+          ]
         }
       ]
     },
@@ -186,6 +194,47 @@ describe("betting arena slip parser", () => {
     );
 
     expect(parsed).toMatchObject({ action: "bet", totalStake: 1000, potentialReturn: 1800 });
+  });
+
+  it("rejects bet output missing required top-level fields", () => {
+    expect(() =>
+      parseBettingArenaSlip(
+        JSON.stringify({
+          action: "bet",
+          risk_level: "medium"
+        }),
+        battleContext,
+        accountContext
+      )
+    ).toThrow("total_stake must be a number");
+  });
+
+  it("rejects hold output with active bet selections", () => {
+    expect(() =>
+      parseBettingArenaSlip(
+        JSON.stringify({
+          action: "hold",
+          total_stake: 100,
+          singles: [
+            {
+              match_id: "match-1",
+              pool_code: "HAD",
+              selection_code: "h",
+              locked_odds: 1.8,
+              stake: 100
+            }
+          ],
+          parlays: [],
+          strategy_summary: "空仓但包含投注。",
+          risk_level: "low",
+          bankroll_plan: "不应投入。",
+          skip_reasons: [],
+          data_gaps: []
+        }),
+        battleContext,
+        accountContext
+      )
+    ).toThrow("hold action requires total_stake 0");
   });
 
   it("accepts common model aliases for betting legs and structured reason arrays", () => {
@@ -376,6 +425,44 @@ describe("betting arena slip parser", () => {
         }
       ]
     });
+  });
+
+  it("preserves handicap goal line from locked Sporttery options", () => {
+    const parsed = parseBettingArenaSlip(
+      JSON.stringify({
+        action: "bet",
+        total_stake: 200,
+        singles: [
+          {
+            match_id: "match-1",
+            pool_code: "HHAD",
+            selection_code: "h",
+            locked_odds: 2.4,
+            stake: 100
+          }
+        ],
+        parlays: [
+          {
+            parlay_name: "让球串关",
+            legs: [
+              { match_id: "match-1", pool_code: "HHAD", selection_code: "a", locked_odds: 2.7 },
+              { match_id: "match-2", pool_code: "HAD", selection_code: "a", locked_odds: 2.1 }
+            ],
+            stake: 100
+          }
+        ],
+        strategy_summary: "保留让球线。",
+        risk_level: "medium",
+        bankroll_plan: "投入 200。",
+        skip_reasons: [],
+        data_gaps: []
+      }),
+      battleContext,
+      accountContext
+    );
+
+    expect(parsed.singles[0]).toMatchObject({ poolCode: "HHAD", goalLine: -2 });
+    expect(parsed.parlays[0]?.legs[0]).toMatchObject({ poolCode: "HHAD", goalLine: -2 });
   });
 
   it("parses portfolio buckets from model output", () => {

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseDongqiudiIntelSummary } from "../src/modules/context/dongqiudiContextParsers";
-import { DongqiudiClient } from "../src/modules/football/dongqiudiClient";
+import { DongqiudiClient, parseImportantMatchesHtml } from "../src/modules/football/dongqiudiClient";
+import { syncDongqiudiMappingsForMatches } from "../src/modules/football/dongqiudiMapping.service";
+import { getDongqiudiMappingByFixtureId } from "../src/modules/football/dongqiudiMapping.repository";
+import { createTestDatabase } from "./support/testDatabase";
+import type { DongqiudiScheduleResponse } from "../src/modules/football/dongqiudiClient";
 
 const preAnalyzeResponse = {
   data: {
@@ -42,6 +46,16 @@ describe("Dongqiudi intel parser", () => {
     expect(result.raw).toBe(preAnalyzeResponse);
   });
 
+  it("extracts structured contrast pairs including market value", () => {
+    const result = parseDongqiudiIntelSummary(preAnalyzeResponse);
+    expect(result.structured).not.toBeNull();
+    expect(result.structured?.comprehensive).toEqual({ home: "43%", away: "57%" });
+    expect(result.structured?.marketValue).toEqual({ home: "873万欧", away: "1648万欧" });
+    expect(result.structured?.h2h).toEqual({ home: "1胜1平4负", away: "4胜1平1负" });
+    expect(result.structured?.avgGoals).toEqual({ home: "1.0球", away: "1.3球" });
+    expect(result.structured?.cards).toEqual({ home: "3.4张", away: "3.2张" });
+  });
+
   it("returns unavailable when data is null", () => {
     const result = parseDongqiudiIntelSummary({ errno: 1, message: "fail", data: null });
     expect(result.status).toBe("unavailable");
@@ -80,5 +94,142 @@ describe("DongqiudiClient", () => {
 
     const client = new DongqiudiClient();
     await expect(client.getPreAnalyzeContrast(1)).rejects.toThrow(/status 403/);
+  });
+
+  it("fetches schedule by season, round and gameweek", async () => {
+    const body: DongqiudiScheduleResponse = {
+      template: "schedule",
+      content: {
+        matches: [
+          {
+            match_id: "54341169",
+            team_A_id: "1",
+            team_A_name: "德国",
+            team_A_short_name: "德国",
+            team_B_id: "12",
+            team_B_name: "日本",
+            team_B_short_name: "日本",
+            start_play: "2026-06-22 18:00:00",
+            status: "Fixture"
+          }
+        ]
+      }
+    };
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
+    );
+
+    const client = new DongqiudiClient();
+    const result = await client.getSchedule({ seasonId: 10219, roundId: 10918, gameweek: 1 });
+
+    expect(result.content?.matches?.[0]?.match_id).toBe("54341169");
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("/soccer/biz/data/schedule?season_id=10219&round_id=10918&gameweek=1"),
+      expect.objectContaining({ headers: expect.objectContaining({ Referer: "https://m.dongqiudi.com/" }) })
+    );
+  });
+
+  it("parses important matches from m-site SSR html", async () => {
+    const html = `<script>window.__x__=1;var state={"other":"x","matchListStore":{"matchList":[{"match_id":"54329952","team_A_name":"厄瓜多尔","team_B_name":"德国","start_play":"2026-06-25 20:00:00","status":"Fixture"}]}};</script>`;
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(html, { status: 200, headers: { "content-type": "text/html" } })
+    );
+
+    const client = new DongqiudiClient();
+    const result = await client.getImportantMatches({ tabId: 70 });
+
+    expect(result).toEqual([
+      { matchId: 54329952, homeTeamName: "厄瓜多尔", awayTeamName: "德国", kickoffAt: "2026-06-25 20:00:00", status: "Fixture" }
+    ]);
+    expect(spy).toHaveBeenCalledWith(
+      "https://m.dongqiudi.com/match/70",
+      expect.objectContaining({ headers: expect.objectContaining({ Referer: "https://m.dongqiudi.com/" }) })
+    );
+  });
+
+  it("parses important matches html directly", () => {
+    const html = `{"matchListStore":{"matchList":[{"match_id":"111","team_A_name":"a","team_B_name":"b","start_play":"2026-06-25 20:00:00","status":"Fixture"},{"match_id":"222","team_A_name":"c","team_B_name":"d"}]}}`;
+    const result = parseImportantMatchesHtml(html);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ matchId: 111, homeTeamName: "a", awayTeamName: "b" });
+  });
+
+  it("returns empty when matchList is absent", () => {
+    expect(parseImportantMatchesHtml("<html>no match list here</html>")).toEqual([]);
+  });
+});
+
+describe("Dongqiudi mapping sync", () => {
+  function seedMatch(db: ReturnType<typeof createTestDatabase>["db"]) {
+    db.prepare(
+      `INSERT INTO matches (
+        id, api_football_fixture_id, stage, kickoff_at, status, venue,
+        home_team_id, home_team_name, away_team_id, away_team_name, last_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "match-1",
+      900111,
+      "Group Stage - 1",
+      "2026-06-22T10:00:00.000Z",
+      "scheduled",
+      "Test Stadium",
+      "25",
+      "Germany",
+      "12",
+      "Japan",
+      "2026-06-21T10:00:00.000Z"
+    );
+  }
+
+  it("matches dongqiudi fixtures by team name and kickoff time and writes mappings", async () => {
+    const { db } = createTestDatabase();
+    seedMatch(db);
+
+    const fakeClient = {
+      getImportantMatches: vi.fn().mockResolvedValue([
+        {
+          matchId: 54341169,
+          homeTeamName: "德国",
+          awayTeamName: "日本",
+          kickoffAt: "2026-06-22 18:00:00",
+          status: "Fixture"
+        }
+      ])
+    };
+
+    const result = await syncDongqiudiMappingsForMatches(db, {
+      // @ts-expect-error injecting a fake client for testing
+      client: fakeClient
+    });
+
+    expect(result.matched).toBe(1);
+    expect(result.totalDongqiudiMatches).toBe(1);
+    expect(getDongqiudiMappingByFixtureId(db, 900111)?.dongqiudiMatchId).toBe(54341169);
+  });
+
+  it("leaves unmatched fixtures untouched", async () => {
+    const { db } = createTestDatabase();
+    seedMatch(db);
+
+    const fakeClient = {
+      getImportantMatches: vi.fn().mockResolvedValue([
+        {
+          matchId: 99999999,
+          homeTeamName: "未知球队",
+          awayTeamName: "另一支球队",
+          kickoffAt: "2026-06-22 18:00:00",
+          status: "Fixture"
+        }
+      ])
+    };
+
+    const result = await syncDongqiudiMappingsForMatches(db, {
+      // @ts-expect-error injecting a fake client for testing
+      client: fakeClient
+    });
+
+    expect(result.matched).toBe(0);
+    expect(result.unmatched).toBe(1);
+    expect(getDongqiudiMappingByFixtureId(db, 900111)).toBeNull();
   });
 });

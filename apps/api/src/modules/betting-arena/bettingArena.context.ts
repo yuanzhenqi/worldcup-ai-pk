@@ -3,6 +3,8 @@ import { getWc26Injuries, getWc26Matchup, getWc26TeamProfile, resolveWc26TeamId,
 import type { ExternalIntelSummaryDto, FixtureContextSummaryDto, StructuredDataGapDto } from "@worldcup-ai-pk/shared";
 import { getLatestExternalIntelSnapshotByMatch } from "../external-intel/externalIntel.repository";
 import { parseSportteryOddsPools } from "../context/sportteryContextParsers";
+import { parseDongqiudiIntelSummary, type DongqiudiComparison } from "../context/dongqiudiContextParsers";
+import { loadWorldCupStandings, type GroupStandingRow } from "../context/worldCupStandings";
 import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
 
 export interface ExternalIntelInput {
@@ -14,6 +16,7 @@ export interface BattleContextSportteryOption {
   code: string;
   label: string;
   value: string;
+  goalLine: string | null;
 }
 
 export interface BattleContextSportteryPool {
@@ -43,6 +46,22 @@ export interface BattleContextHistoricalMatchup {
   meetings: Array<{ year: number; hostCountry: string; round: string; score: string; result: string; venueCity: string }>;
 }
 
+export interface BattleContextGroupStanding {
+  group: string;
+  rank: number;
+  teamId: string;
+  teamName: string;
+  points: number;
+  played: number;
+  win: number;
+  draw: number;
+  lose: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalsDiff: number;
+  description: string | null;
+}
+
 export interface BattleContextMatch {
   matchId: string;
   stage: string;
@@ -59,6 +78,8 @@ export interface BattleContextMatch {
   contextDomains: FixtureContextSummaryDto["domains"];
   sportteryPools: BattleContextSportteryPool[];
   externalIntel: ExternalIntelSummaryDto;
+  groupStandings: BattleContextGroupStanding[] | null;
+  dongqiudiComparison: DongqiudiComparison | null;
   dataGaps: Array<string | StructuredDataGapDto>;
 }
 
@@ -381,7 +402,7 @@ function readSportteryPools(rawJson: string): BattleContextSportteryPool[] {
       if (!isRecord(option)) return [];
       if (typeof option.code !== "string" || typeof option.label !== "string" || typeof option.value !== "string") return [];
       if (!option.code || !option.label || !option.value) return [];
-      return [{ code: option.code, label: option.label, value: option.value }];
+      return [{ code: option.code, label: option.label, value: option.value, goalLine: typeof pool.goalLine === "string" ? pool.goalLine : null }];
     });
 
     return options.length > 0 ? [{ poolCode: pool.poolCode, options }] : [];
@@ -390,11 +411,35 @@ function readSportteryPools(rawJson: string): BattleContextSportteryPool[] {
 
 interface LatestFixtureContext {
   sportteryPools: BattleContextSportteryPool[];
+  sportteryHistory: unknown;
+  dongqiudiComparison: DongqiudiComparison | null;
   domains: FixtureContextSummaryDto["domains"];
 }
 
 const bettingArenaContextDomains = new Set(["dongqiudi_intel", "sporttery", "team_profile"]);
 
+function readSportteryHistory(rawJson: string): unknown {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawJson);
+  } catch {
+    return null;
+  }
+  const sporttery = isRecord(raw) ? raw.sporttery : null;
+  return isRecord(sporttery) ? sporttery.history : null;
+}
+
+function readDongqiudiComparison(rawJson: string): DongqiudiComparison | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawJson);
+  } catch {
+    return null;
+  }
+  const dongqiudiIntel = isRecord(raw) ? raw.dongqiudiIntel : null;
+  if (!dongqiudiIntel) return null;
+  return parseDongqiudiIntelSummary(dongqiudiIntel).structured;
+}
 function readContextDomains(row: FixtureContextSnapshotRow): FixtureContextSummaryDto["domains"] {
   return [
     parseDomainSummary(row.odds_summary_json),
@@ -441,6 +486,8 @@ function listLatestFixtureContextByMatch(db: Database): Map<string, LatestFixtur
       row.match_id,
       {
         sportteryPools: readSportteryPools(row.raw_json),
+        sportteryHistory: readSportteryHistory(row.raw_json),
+        dongqiudiComparison: readDongqiudiComparison(row.raw_json),
         domains: readContextDomains(row)
       }
     ])
@@ -478,7 +525,18 @@ function buildTeamProfile(teamName: string): BattleContextTeamProfile {
   };
 }
 
-function buildHistoricalMatchup(homeTeamName: string, awayTeamName: string): BattleContextHistoricalMatchup | null {
+function parsePercentage(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value >= 0 && value <= 1 ? value : value / 100;
+  }
+  if (typeof value !== "string") return 0;
+  const normalized = value.replace("%", "").trim();
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return 0;
+  return normalized === value ? parsed / 100 : parsed / 100;
+}
+
+function buildWc26HistoricalMatchup(homeTeamName: string, awayTeamName: string): BattleContextHistoricalMatchup | null {
   const homeTeamId = resolveWc26TeamId(homeTeamName);
   const awayTeamId = resolveWc26TeamId(awayTeamName);
   if (!homeTeamId || !awayTeamId) return null;
@@ -506,18 +564,84 @@ function buildHistoricalMatchup(homeTeamName: string, awayTeamName: string): Bat
   };
 }
 
+function buildSportteryHistoricalMatchup(sportteryHistory: unknown): BattleContextHistoricalMatchup | null {
+  if (!isRecord(sportteryHistory)) return null;
+  const value = isRecord(sportteryHistory.value) ? sportteryHistory.value : null;
+  const stats = isRecord(value?.statistics) ? value.statistics : null;
+  if (!stats) return null;
+
+  const totalMatches = Number(stats.totalLegCnt);
+  if (!Number.isFinite(totalMatches) || totalMatches <= 0) return null;
+
+  const homeWinRate = parsePercentage(stats.winProbability);
+  const drawRate = parsePercentage(stats.drawProbability);
+  const awayWinRate = parsePercentage(stats.lossProbability);
+
+  const homeWins = Math.max(0, Math.round(totalMatches * homeWinRate));
+  const draws = Math.max(0, Math.round(totalMatches * drawRate));
+  const awayWins = Math.max(0, totalMatches - homeWins - draws);
+
+  return {
+    totalMatches,
+    homeWins,
+    draws,
+    awayWins,
+    homeGoals: 0,
+    awayGoals: 0,
+    summary: `来自体彩历史交锋：${totalMatches}场，主胜${Math.round(homeWinRate * 100)}%、平${Math.round(drawRate * 100)}%、客胜${Math.round(awayWinRate * 100)}%`,
+    meetings: []
+  };
+}
+
+function buildHistoricalMatchup(homeTeamName: string, awayTeamName: string, sportteryHistory?: unknown): BattleContextHistoricalMatchup | null {
+  const wc26Matchup = buildWc26HistoricalMatchup(homeTeamName, awayTeamName);
+  if (wc26Matchup) return wc26Matchup;
+  return buildSportteryHistoricalMatchup(sportteryHistory);
+}
+
+function toBattleContextGroupStanding(row: GroupStandingRow): BattleContextGroupStanding {
+  return {
+    group: row.group,
+    rank: row.rank,
+    teamId: row.teamId,
+    teamName: row.teamName,
+    points: row.points,
+    played: row.played,
+    win: row.win,
+    draw: row.draw,
+    lose: row.lose,
+    goalsFor: row.goalsFor,
+    goalsAgainst: row.goalsAgainst,
+    goalsDiff: row.goalsDiff,
+    description: row.description
+  };
+}
+
+/** 按 home 队的 teamId 反查其所在小组的完整积分榜（出线形势）。无数据返回 null。 */
+function resolveGroupStandingsForTeam(teamId: string | undefined, standings: { byTeamId: Map<string, GroupStandingRow[]> }): BattleContextGroupStanding[] | null {
+  if (!teamId) return null;
+  const rows = standings.byTeamId.get(String(teamId));
+  if (!rows || rows.length === 0) return null;
+  return rows.map(toBattleContextGroupStanding);
+}
+
 function buildDataGaps(input: {
   homeTeamProfile: BattleContextTeamProfile;
   awayTeamProfile: BattleContextTeamProfile;
   historicalMatchup: BattleContextHistoricalMatchup | null;
   sportteryPools: BattleContextSportteryPool[];
+  dongqiudiComparison?: DongqiudiComparison | null;
+  externalIntelDataGaps?: Array<string | StructuredDataGapDto>;
 }): Array<string | StructuredDataGapDto> {
   const gaps: Array<string | StructuredDataGapDto> = [];
   if (input.sportteryPools.length === 0) gaps.push("首版 battle_context 尚未注入完整体彩玩法快照");
   if (!input.homeTeamProfile.coach) gaps.push("主队缺少球队资料映射");
   if (!input.awayTeamProfile.coach) gaps.push("客队缺少球队资料映射");
   if (!input.historicalMatchup) gaps.push("暂无两队世界杯历史交锋数据");
-  gaps.push("暂无球队身价数据源");
+  // 身价：懂球帝对比里有 marketValue 就不再报"暂无身价数据源"，避免误导模型空仓
+  const hasMarketValue = Boolean(input.dongqiudiComparison?.marketValue && (input.dongqiudiComparison.marketValue.home || input.dongqiudiComparison.marketValue.away));
+  if (!hasMarketValue) gaps.push("暂无球队身价数据源");
+  if (input.externalIntelDataGaps) gaps.push(...input.externalIntelDataGaps);
   return gaps;
 }
 
@@ -563,6 +687,7 @@ export function enrichBattleContext(db: Database, battleContext: unknown): unkno
   });
   const matchesById = listMatchesByIds(db, matchIds);
   const fixtureContextByMatch = listLatestFixtureContextByMatch(db);
+  const standings = loadWorldCupStandings(db);
 
   return {
     ...battleContext,
@@ -592,7 +717,7 @@ export function enrichBattleContext(db: Database, battleContext: unknown): unkno
       const sportteryPools = Array.isArray(match.sportteryPools) && match.sportteryPools.length > 0 ? match.sportteryPools : fixtureContext?.sportteryPools ?? [];
       const homeTeamProfile = buildTeamProfile(homeOriginalName);
       const awayTeamProfile = buildTeamProfile(awayOriginalName);
-      const historicalMatchup = buildHistoricalMatchup(homeOriginalName, awayOriginalName);
+      const historicalMatchup = buildHistoricalMatchup(homeOriginalName, awayOriginalName, fixtureContext?.sportteryHistory);
       const externalIntel = getExternalIntelForMatch(db, matchId);
       return {
         ...match,
@@ -607,7 +732,11 @@ export function enrichBattleContext(db: Database, battleContext: unknown): unkno
         contextDomains: fixtureContext?.domains ?? [],
         sportteryPools,
         externalIntel,
-        dataGaps: [...buildDataGaps({ homeTeamProfile, awayTeamProfile, historicalMatchup, sportteryPools }), ...externalIntel.dataGaps]
+        groupStandings: Array.isArray(match.groupStandings)
+          ? match.groupStandings
+          : resolveGroupStandingsForTeam(row?.home_team_id, standings),
+        dongqiudiComparison: fixtureContext?.dongqiudiComparison ?? null,
+        dataGaps: buildDataGaps({ homeTeamProfile, awayTeamProfile, historicalMatchup, sportteryPools, dongqiudiComparison: fixtureContext?.dongqiudiComparison ?? null, externalIntelDataGaps: externalIntel.dataGaps })
       };
     })
   };
@@ -662,6 +791,7 @@ export function buildBattleContext(db: Database, input: BattleContextInput): Bat
     )
     .all(...params) as MatchRow[];
   const fixtureContextByMatch = listLatestFixtureContextByMatch(db);
+  const standings = loadWorldCupStandings(db);
 
   return {
     roundDate: input.roundDate,
@@ -672,8 +802,9 @@ export function buildBattleContext(db: Database, input: BattleContextInput): Bat
       const sportteryPools = fixtureContext?.sportteryPools ?? [];
       const homeTeamProfile = buildTeamProfile(row.home_team_name);
       const awayTeamProfile = buildTeamProfile(row.away_team_name);
-      const historicalMatchup = buildHistoricalMatchup(row.home_team_name, row.away_team_name);
+      const historicalMatchup = buildHistoricalMatchup(row.home_team_name, row.away_team_name, fixtureContext?.sportteryHistory);
       const externalIntel = getExternalIntelForMatch(db, row.id);
+      const groupStandings = resolveGroupStandingsForTeam(row.home_team_id, standings);
       const homeTeamName = resolveDisplayNameZh({
         teamId: row.home_team_id,
         originalName: row.home_team_name,
@@ -702,8 +833,57 @@ export function buildBattleContext(db: Database, input: BattleContextInput): Bat
         contextDomains: fixtureContext?.domains ?? [],
         sportteryPools,
         externalIntel,
-        dataGaps: [...buildDataGaps({ homeTeamProfile, awayTeamProfile, historicalMatchup, sportteryPools }), ...externalIntel.dataGaps]
+        groupStandings,
+        dongqiudiComparison: fixtureContext?.dongqiudiComparison ?? null,
+        dataGaps: buildDataGaps({ homeTeamProfile, awayTeamProfile, historicalMatchup, sportteryPools, dongqiudiComparison: fixtureContext?.dongqiudiComparison ?? null, externalIntelDataGaps: externalIntel.dataGaps })
       };
+    })
+  };
+}
+
+export interface SingleMatchEnrichment {
+  homeTeamProfile: BattleContextTeamProfile;
+  awayTeamProfile: BattleContextTeamProfile;
+  historicalMatchup: BattleContextHistoricalMatchup | null;
+  sportteryPools: BattleContextSportteryPool[];
+  externalIntel: ExternalIntelSummaryDto;
+  groupStandings: BattleContextGroupStanding[] | null;
+  dongqiudiComparison: DongqiudiComparison | null;
+  contextDomains: FixtureContextSummaryDto["domains"];
+  dataGaps: Array<string | StructuredDataGapDto>;
+}
+
+export function buildSingleMatchEnrichment(
+  db: Database,
+  input: { matchId: string; homeTeamName: string; awayTeamName: string; homeTeamId: string }
+): SingleMatchEnrichment {
+  const fixtureContextByMatch = listLatestFixtureContextByMatch(db);
+  const fixtureContext = fixtureContextByMatch.get(input.matchId);
+  const standings = loadWorldCupStandings(db);
+  const homeTeamProfile = buildTeamProfile(input.homeTeamName);
+  const awayTeamProfile = buildTeamProfile(input.awayTeamName);
+  const historicalMatchup = buildHistoricalMatchup(input.homeTeamName, input.awayTeamName, fixtureContext?.sportteryHistory);
+  const sportteryPools = fixtureContext?.sportteryPools ?? [];
+  const dongqiudiComparison = fixtureContext?.dongqiudiComparison ?? null;
+  const externalIntel = getExternalIntelForMatch(db, input.matchId);
+  const groupStandings = resolveGroupStandingsForTeam(input.homeTeamId, standings);
+
+  return {
+    homeTeamProfile,
+    awayTeamProfile,
+    historicalMatchup,
+    sportteryPools,
+    externalIntel,
+    groupStandings,
+    dongqiudiComparison,
+    contextDomains: fixtureContext?.domains ?? [],
+    dataGaps: buildDataGaps({
+      homeTeamProfile,
+      awayTeamProfile,
+      historicalMatchup,
+      sportteryPools,
+      dongqiudiComparison,
+      externalIntelDataGaps: externalIntel.dataGaps
     })
   };
 }

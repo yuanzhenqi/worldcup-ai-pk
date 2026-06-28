@@ -1,8 +1,24 @@
 import type { FixtureContextDomainStatus } from "@worldcup-ai-pk/shared";
 
+export interface DongqiudiContrastPair {
+  home: string;
+  away: string;
+}
+
+export interface DongqiudiComparison {
+  comprehensive: DongqiudiContrastPair | null;
+  h2h: DongqiudiContrastPair | null;
+  recentForm: DongqiudiContrastPair | null;
+  avgGoals: DongqiudiContrastPair | null;
+  avgConceded: DongqiudiContrastPair | null;
+  marketValue: DongqiudiContrastPair | null;
+  cards: DongqiudiContrastPair | null;
+}
+
 interface ParsedContextDomain {
   status: FixtureContextDomainStatus;
   summary: string;
+  structured: DongqiudiComparison | null;
   raw: unknown;
 }
 
@@ -44,9 +60,15 @@ function formatPair(label: string, pair: { home: string | null; away: string | n
   return `${label} 主${pair.home ?? "-"} / 客${pair.away ?? "-"}`;
 }
 
+function toContrastPair(pair: { home: string | null; away: string | null }): DongqiudiContrastPair | null {
+  if (!pair.home && !pair.away) return null;
+  return { home: pair.home ?? "", away: pair.away ?? "" };
+}
+
 /**
  * 解析懂球帝 pre_analyze_data_contrast 响应，产出赛前情报摘要：
  * 综合实力、近6场交锋、近10场战绩、场均进球/失球、身价、近10场场均红黄牌。
+ * structured 字段提供主客对比的结构化字段，便于前端展示和模型消费（含身价）。
  */
 export function parseDongqiudiIntelSummary(response: unknown): ParsedContextDomain {
   const data = (response as { data?: Record<string, unknown> })?.data;
@@ -59,12 +81,22 @@ export function parseDongqiudiIntelSummary(response: unknown): ParsedContextDoma
 
   const hasData = Boolean(comprehensive) || comprehensiveItems.length > 0 || statisticsItems.length > 0;
   if (!hasData) {
-    return { status: "unavailable", summary: "未获取懂球帝情报", raw: response };
+    return { status: "unavailable", summary: "未获取懂球帝情报", structured: null, raw: response };
   }
 
+  const structured: DongqiudiComparison = {
+    comprehensive: compScoreHome || compScoreAway ? { home: compScoreHome ?? "", away: compScoreAway ?? "" } : null,
+    h2h: toContrastPair(pickPair(findItem(comprehensiveItems, "近6场交锋"))),
+    recentForm: toContrastPair(pickPair(findItem(comprehensiveItems, "近10场战绩"))),
+    avgGoals: toContrastPair(pickPair(findItem(comprehensiveItems, "场均进球"))),
+    avgConceded: toContrastPair(pickPair(findItem(comprehensiveItems, "场均失球"))),
+    marketValue: toContrastPair(pickPair(findItem(comprehensiveItems, "身价"))),
+    cards: toContrastPair(pickPair(findItem(statisticsItems, "红黄牌")))
+  };
+
   const parts: string[] = [];
-  if (compScoreHome || compScoreAway) {
-    parts.push(`综合实力 主${compScoreHome ?? "-"} : 客${compScoreAway ?? "-"}`);
+  if (structured.comprehensive) {
+    parts.push(`综合实力 主${structured.comprehensive.home || "-"} : 客${structured.comprehensive.away || "-"}`);
   }
   parts.push(formatPair("近6场交锋", pickPair(findItem(comprehensiveItems, "近6场交锋"))));
   parts.push(formatPair("近10场战绩", pickPair(findItem(comprehensiveItems, "近10场战绩"))));
@@ -76,6 +108,7 @@ export function parseDongqiudiIntelSummary(response: unknown): ParsedContextDoma
   return {
     status: "cached",
     summary: parts.join("；"),
+    structured,
     raw: response
   };
 }

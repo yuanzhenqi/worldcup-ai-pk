@@ -225,7 +225,7 @@ describe("admin config API", () => {
       summarizerModelId: "",
       cacheMinutes: 60,
       maxResultsPerQuery: 5,
-      maxQueriesPerMatch: 4
+      maxQueriesPerMatch: 8
     });
 
     const saveResponse = await app.inject({

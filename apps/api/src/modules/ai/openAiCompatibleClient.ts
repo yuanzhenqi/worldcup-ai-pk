@@ -2,6 +2,10 @@ export interface OpenAiCompatibleModelConfig {
   baseUrl: string;
   apiKey: string;
   modelName: string;
+  contextWindowTokens?: number;
+  maxOutputTokens?: number;
+  requestTimeoutMs?: number;
+  requestRetryCount?: number;
 }
 
 export interface OpenAiCompatibleTestResult {
@@ -16,6 +20,9 @@ export interface OpenAiCompatiblePredictionResult {
   content: string;
   rawResponse: string;
 }
+
+const aiRequestTimeoutMs = 300_000;
+const aiRequestTimeoutRetryCount = 2;
 
 function buildChatCompletionsUrls(baseUrl: string): string[] {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
@@ -44,25 +51,82 @@ function isJsonResponse(response: Response): boolean {
   return getContentType(response).includes("application/json");
 }
 
-async function postChatCompletion(config: OpenAiCompatibleModelConfig, body: unknown): Promise<{ response: Response; rawResponse: string }> {
-  let latestResponse: Response | null = null;
-  let latestRawResponse = "";
+function getRequestTimeoutMs(config: OpenAiCompatibleModelConfig): number {
+  return typeof config.requestTimeoutMs === "number" && Number.isFinite(config.requestTimeoutMs) && config.requestTimeoutMs > 0 ? config.requestTimeoutMs : aiRequestTimeoutMs;
+}
 
-  for (const url of buildChatCompletionsUrls(config.baseUrl)) {
+function getRequestRetryCount(config: OpenAiCompatibleModelConfig): number {
+  return typeof config.requestRetryCount === "number" && Number.isInteger(config.requestRetryCount) && config.requestRetryCount >= 0
+    ? config.requestRetryCount
+    : aiRequestTimeoutRetryCount;
+}
+
+function getTimeoutMessage(timeoutMs: number): string {
+  return `AI request timed out after ${timeoutMs}ms`;
+}
+
+async function postChatCompletionOnce(
+  url: string,
+  config: OpenAiCompatibleModelConfig,
+  body: unknown
+): Promise<{ response: Response; rawResponse: string }> {
+  const controller = new AbortController();
+  const requestTimeoutMs = getRequestTimeoutMs(config);
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  try {
     const response = await fetch(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${config.apiKey}`,
         "content-type": "application/json"
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: controller.signal
     });
     const rawResponse = await response.text();
-    latestResponse = response;
-    latestRawResponse = rawResponse;
+    return { response, rawResponse };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(getTimeoutMessage(requestTimeoutMs));
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
-    if (response.ok && (isJsonResponse(response) || isEventStreamResponse(response))) {
-      return { response, rawResponse };
+async function postChatCompletion(config: OpenAiCompatibleModelConfig, body: unknown): Promise<{ response: Response; rawResponse: string }> {
+  let latestResponse: Response | null = null;
+  let latestRawResponse = "";
+  const requestRetryCount = getRequestRetryCount(config);
+  const timeoutMessage = getTimeoutMessage(getRequestTimeoutMs(config));
+
+  for (const url of buildChatCompletionsUrls(config.baseUrl)) {
+    for (let attempt = 0; attempt <= requestRetryCount; attempt += 1) {
+      const { response, rawResponse } = await postChatCompletionOnce(url, config, body).catch((error: unknown) => {
+        if (error instanceof Error && error.message === timeoutMessage && attempt < requestRetryCount) {
+          return { response: null, rawResponse: "" };
+        }
+        throw error;
+      });
+
+      if (!response) {
+        continue;
+      }
+
+      latestResponse = response;
+      latestRawResponse = rawResponse;
+
+      if (response.ok && (isJsonResponse(response) || isEventStreamResponse(response))) {
+        return { response, rawResponse };
+      }
+
+      if ((response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504 || response.status === 524) && attempt < requestRetryCount) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        continue;
+      }
+
+      break;
     }
   }
 
@@ -71,6 +135,18 @@ async function postChatCompletion(config: OpenAiCompatibleModelConfig, body: unk
   }
 
   return { response: latestResponse, rawResponse: latestRawResponse };
+}
+
+function getPredictionMaxTokens(config: OpenAiCompatibleModelConfig): number {
+  if (typeof config.maxOutputTokens === "number" && Number.isFinite(config.maxOutputTokens) && config.maxOutputTokens > 0) {
+    return Math.floor(config.maxOutputTokens);
+  }
+  return config.modelName === "gemini-3.5-flash" || config.modelName === "mimo-v2.5-pro" ? 20_000 : 4000;
+}
+
+function getModelTestMaxTokens(config: OpenAiCompatibleModelConfig, fallback: number): number {
+  const configured = getPredictionMaxTokens(config);
+  return Math.max(fallback, Math.min(configured, 1024));
 }
 
 function getJsonErrorMessage(rawResponse: string): string | null {
@@ -96,7 +172,11 @@ function buildHttpErrorMessage(prefix: string, status: number, rawResponse: stri
       ? `${prefix} rate limited with HTTP ${status}`
       : status === 503
         ? `${prefix} upstream unavailable with HTTP ${status}`
-        : `${prefix} failed with HTTP ${status}`;
+        : status === 524
+          ? `${prefix} Cloudflare timeout with HTTP ${status}（源站处理超时，可调大模型的 requestTimeoutMs 或简化 prompt）`
+          : status === 502 || status === 504
+            ? `${prefix} gateway error with HTTP ${status}`
+            : `${prefix} failed with HTTP ${status}`;
   const errorMessage = getJsonErrorMessage(rawResponse);
   if (errorMessage) {
     message = `${message}：${errorMessage}`;
@@ -239,7 +319,7 @@ export async function testOpenAiCompatibleModel(config: OpenAiCompatibleModelCon
       }
     ],
     temperature: 0,
-    max_tokens: 8,
+    max_tokens: getModelTestMaxTokens(config, 64),
     stream: false
   });
   if (!basicTest.response.ok) {
@@ -271,7 +351,7 @@ export async function testOpenAiCompatibleModel(config: OpenAiCompatibleModelCon
       }
     ],
     temperature: 0,
-    max_tokens: 120,
+    max_tokens: getModelTestMaxTokens(config, 256),
     stream: false
   });
   const latencyMs = Math.max(0, Math.round(now() - startedAt));
@@ -317,7 +397,7 @@ export async function runOpenAiCompatiblePrediction(config: OpenAiCompatibleMode
       }
     ],
     temperature: 0.2,
-    max_tokens: 1200,
+    max_tokens: getPredictionMaxTokens(config),
     stream: false
   });
 

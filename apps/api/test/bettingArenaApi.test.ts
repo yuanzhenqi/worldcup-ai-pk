@@ -73,6 +73,88 @@ describe("betting arena public API", () => {
     await app.close();
   });
 
+  it("returns the requested historical betting round instead of the latest round", async () => {
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const firstContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const firstRound = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext: firstContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T10:00:00.000Z")
+    });
+    db.prepare("UPDATE betting_arena_rounds SET status = ? WHERE id = ?").run("settled", firstRound.id);
+    db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id,
+          round_id,
+          model_id,
+          action,
+          status,
+          total_stake,
+          potential_return,
+          risk_level,
+          raw_response,
+          output_json,
+          parsed_slip_json,
+          account_context_json,
+          validation_error,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "slip-history",
+      firstRound.id,
+      "model-1",
+      "bet",
+      "settled",
+      100,
+      185,
+      "medium",
+      "{}",
+      "{}",
+      JSON.stringify({
+        strategySummary: "历史轮次主胜。",
+        singles: [{ matchId: "match-1", poolCode: "HAD", selectionCode: "h", selectionLabel: "主胜", lockedOdds: 1.85, stake: 100 }],
+        parlays: []
+      }),
+      "{}",
+      null,
+      "2026-06-17T10:00:00.000Z",
+      "2026-06-17T10:00:00.000Z"
+    );
+    const secondContext = buildBattleContext(db, {
+      roundDate: "2026-06-18",
+      lockTime: "2026-06-18T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    createBettingArenaRound(db, {
+      roundDate: "2026-06-18",
+      lockTime: "2026-06-18T10:00:00.000Z",
+      battleContext: secondContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-18T10:00:00.000Z")
+    });
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "GET", url: `/api/public/betting-arena/rounds/${firstRound.id}` });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.currentRound).toMatchObject({ id: firstRound.id, roundDate: "2026-06-17", roundSequence: 1 });
+    expect(body.slips).toMatchObject([{ id: "slip-history", strategySummary: "历史轮次主胜。" }]);
+    expect(body.history.map((round: { roundId: string }) => round.roundId)).toContain(firstRound.id);
+    await app.close();
+  });
+
   it("returns betting arena ledger history through the public API", async () => {
     const { db, databasePath } = createTestDatabase();
     seedModelAndMatch(db);
@@ -937,6 +1019,138 @@ describe("betting arena public API", () => {
     await app.close();
   });
 
+  it("force-regenerates an existing unsettled slip when force=true", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-21T10:00:00.000Z"));
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-21",
+      lockTime: "2026-06-21T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报由比赛级 externalIntel 提供", dataGaps: [] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-21",
+      lockTime: "2026-06-21T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报由比赛级 externalIntel 提供", dataGaps: [] },
+      now: new Date("2026-06-21T10:00:00.000Z")
+    });
+    db.prepare(
+      `INSERT INTO betting_arena_slips (
+        id, round_id, model_id, action, status, total_stake, potential_return, risk_level,
+        raw_response, output_json, parsed_slip_json, account_context_json, validation_error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "slip-old",
+      round.id,
+      "model-1",
+      "hold",
+      "accepted",
+      0,
+      0,
+      "low",
+      "{}",
+      "{}",
+      JSON.stringify({ action: "hold", singles: [], parlays: [], portfolioBuckets: [] }),
+      "{}",
+      null,
+      "2026-06-21T10:00:00.000Z",
+      "2026-06-21T10:00:00.000Z"
+    );
+    db.close();
+    const rawBody = JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              action: "hold",
+              total_stake: 0,
+              singles: [],
+              parlays: [],
+              strategy_summary: "强制重新生成后空仓。",
+              risk_level: "low",
+              bankroll_plan: "保留资金。",
+              skip_reasons: [],
+              data_gaps: []
+            })
+          }
+        }
+      ]
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(rawBody, { status: 200, headers: { "content-type": "application/json" } })
+    );
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "POST", url: `/api/public/betting-arena/rounds/${round.id}/models/model-1?force=true` });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(body.slips).toHaveLength(1);
+    expect(body.slips[0]).toMatchObject({ modelId: "model-1", action: "hold", status: "accepted", strategySummary: "强制重新生成后空仓。" });
+    expect(body.slips[0].id).not.toBe("slip-old");
+    await app.close();
+  });
+
+  it("refuses to force-regenerate an already settled slip", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-21T10:00:00.000Z"));
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-21",
+      lockTime: "2026-06-21T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报由比赛级 externalIntel 提供", dataGaps: [] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-21",
+      lockTime: "2026-06-21T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报由比赛级 externalIntel 提供", dataGaps: [] },
+      now: new Date("2026-06-21T10:00:00.000Z")
+    });
+    db.prepare(
+      `INSERT INTO betting_arena_slips (
+        id, round_id, model_id, action, status, total_stake, potential_return, risk_level,
+        raw_response, output_json, parsed_slip_json, account_context_json, validation_error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "slip-settled",
+      round.id,
+      "model-1",
+      "hold",
+      "settled",
+      0,
+      0,
+      "low",
+      "{}",
+      "{}",
+      JSON.stringify({ action: "hold", singles: [], parlays: [], portfolioBuckets: [] }),
+      "{}",
+      null,
+      "2026-06-21T10:00:00.000Z",
+      "2026-06-21T10:00:00.000Z"
+    );
+    db.prepare(
+      `INSERT INTO betting_arena_settlements (id, slip_id, round_id, model_id, stake, returned_amount, profit, status, settlement_json, settled_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run("settle-1", "slip-settled", round.id, "model-1", 0, 0, 0, "settled", "{}", "2026-06-21T11:00:00.000Z");
+    db.close();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      throw new Error("fetch should not be called for a settled slip");
+    });
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "POST", url: `/api/public/betting-arena/rounds/${round.id}/models/model-1?force=true` });
+
+    expect(response.statusCode).toBe(409);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.json().error).toContain("已结算");
+    await app.close();
+  });
+
   it("returns existing state before model lookup when duplicate slip belongs to an archived model", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-21T10:00:00.000Z"));
@@ -1284,6 +1498,382 @@ describe("betting arena public API", () => {
       currentRound: { id: round.id, status: "settled", settledReturn: 210 },
       accounts: [{ modelId: "model-1", availableBankroll: 10110, frozenStake: 0, totalReturned: 210, settledOrderCount: 1, hitCount: 1 }],
       slips: [{ id: "slip-auto", status: "settled" }]
+    });
+    await app.close();
+  });
+
+  it("settles ready slips while keeping slips with unfinished matches accepted", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-19T10:00:00.000Z"));
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    db.prepare(
+      `INSERT INTO ai_models (id, provider_id, model_name, display_name, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run("model-2", "provider-1", "model-2", "Model Two", 1, "2026-06-17T00:00:00.000Z", "2026-06-17T00:00:00.000Z");
+    db.prepare(
+      `INSERT INTO matches (
+        id, api_football_fixture_id, stage, kickoff_at, status, venue,
+        home_team_id, home_team_name, home_team_logo_url,
+        away_team_id, away_team_name, away_team_logo_url,
+        home_score, away_score, last_synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "match-2",
+      9002,
+      "Group Stage - 1",
+      "2026-06-19T12:00:00.000Z",
+      "scheduled",
+      "Test Stadium",
+      "home-2",
+      "Home Two",
+      null,
+      "away-2",
+      "Away Two",
+      null,
+      null,
+      null,
+      "2026-06-17T00:00:00.000Z"
+    );
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T10:00:00.000Z")
+    });
+    db.prepare("UPDATE betting_arena_rounds SET status = ? WHERE id = ?").run("locked", round.id);
+    db.prepare("UPDATE matches SET status = ?, home_score = ?, away_score = ? WHERE id = ?").run("finished", 2, 1, "match-1");
+    const insertSlip = db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id,
+          round_id,
+          model_id,
+          action,
+          status,
+          total_stake,
+          potential_return,
+          risk_level,
+          raw_response,
+          output_json,
+          parsed_slip_json,
+          account_context_json,
+          validation_error,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    );
+    insertSlip.run(
+      "slip-ready",
+      round.id,
+      "model-1",
+      "bet",
+      "accepted",
+      100,
+      180,
+      "medium",
+      "{}",
+      "{}",
+      JSON.stringify({
+        action: "bet",
+        totalStake: 100,
+        potentialReturn: 180,
+        riskLevel: "medium",
+        strategySummary: "主胜单场。",
+        bankrollPlan: "投入 100。",
+        singles: [
+          {
+            matchId: "match-1",
+            poolCode: "HAD",
+            selectionCode: "h",
+            selectionLabel: "主胜",
+            lockedOdds: 1.8,
+            stake: 100,
+            confidence: 0.62,
+            rationale: "主队更稳。"
+          }
+        ],
+        parlays: [],
+        skipReasons: [],
+        dataGaps: []
+      }),
+      "{}",
+      null,
+      "2026-06-17T10:00:00.000Z",
+      "2026-06-17T10:00:00.000Z"
+    );
+    insertSlip.run(
+      "slip-waiting",
+      round.id,
+      "model-2",
+      "bet",
+      "accepted",
+      100,
+      210,
+      "medium",
+      "{}",
+      "{}",
+      JSON.stringify({
+        action: "bet",
+        totalStake: 100,
+        potentialReturn: 210,
+        riskLevel: "medium",
+        strategySummary: "等待第二场。",
+        bankrollPlan: "投入 100。",
+        singles: [
+          {
+            matchId: "match-2",
+            poolCode: "HAD",
+            selectionCode: "a",
+            selectionLabel: "客胜",
+            lockedOdds: 2.1,
+            stake: 100,
+            confidence: 0.62,
+            rationale: "客队状态好。"
+          }
+        ],
+        parlays: [],
+        skipReasons: [],
+        dataGaps: []
+      }),
+      "{}",
+      null,
+      "2026-06-17T10:00:01.000Z",
+      "2026-06-17T10:00:01.000Z"
+    );
+    db.prepare(
+      `
+        UPDATE betting_arena_accounts
+        SET available_bankroll = 9900,
+            frozen_stake = 100,
+            total_staked = 100,
+            order_count = 1
+        WHERE model_id IN (?, ?)
+      `
+    ).run("model-1", "model-2");
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "POST", url: `/api/public/betting-arena/rounds/${round.id}/settle` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      currentRound: { id: round.id, status: "locked", settledReturn: 180 },
+      accounts: [
+        { modelId: "model-1", availableBankroll: 10080, frozenStake: 0, totalReturned: 180, settledOrderCount: 1, hitCount: 1 },
+        { modelId: "model-2", availableBankroll: 9900, frozenStake: 100, totalReturned: 0, settledOrderCount: 0, hitCount: 0 }
+      ],
+      slips: [
+        { id: "slip-ready", status: "settled" },
+        { id: "slip-waiting", status: "accepted" }
+      ]
+    });
+    await app.close();
+  });
+
+  it("syncs API-Football fixtures before manual betting arena settlement", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-19T10:00:00.000Z"));
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    db.prepare("INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)").run("apiFootball.apiKey", "football-secret", "2026-06-17T00:00:00.000Z");
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T10:00:00.000Z")
+    });
+    db.prepare("UPDATE betting_arena_rounds SET status = ? WHERE id = ?").run("locked", round.id);
+    db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id,
+          round_id,
+          model_id,
+          action,
+          status,
+          total_stake,
+          potential_return,
+          risk_level,
+          raw_response,
+          output_json,
+          parsed_slip_json,
+          account_context_json,
+          validation_error,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "slip-sync",
+      round.id,
+      "model-1",
+      "bet",
+      "accepted",
+      100,
+      185,
+      "medium",
+      "{}",
+      "{}",
+      JSON.stringify({
+        action: "bet",
+        totalStake: 100,
+        potentialReturn: 185,
+        riskLevel: "medium",
+        strategySummary: "主胜单场。",
+        bankrollPlan: "投入 100。",
+        singles: [
+          {
+            matchId: "match-1",
+            poolCode: "HAD",
+            selectionCode: "h",
+            selectionLabel: "主胜",
+            lockedOdds: 1.85,
+            stake: 100,
+            confidence: 0.62,
+            rationale: "主队更稳。"
+          }
+        ],
+        parlays: [],
+        skipReasons: [],
+        dataGaps: []
+      }),
+      "{}",
+      null,
+      "2026-06-17T10:00:00.000Z",
+      "2026-06-17T10:00:00.000Z"
+    );
+    db.prepare(
+      `
+        UPDATE betting_arena_accounts
+        SET available_bankroll = 9900,
+            frozen_stake = 100,
+            total_staked = 100,
+            order_count = 1
+        WHERE model_id = ?
+      `
+    ).run("model-1");
+    db.close();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          response: [
+            {
+              fixture: { id: 9001, date: "2026-06-18T12:00:00.000Z", venue: { name: "Test Stadium" }, status: { short: "FT" } },
+              league: { round: "Group Stage - 1" },
+              teams: {
+                home: { id: 1, name: "Home", logo: null },
+                away: { id: 2, name: "Away", logo: null }
+              },
+              goals: { home: 2, away: 1 }
+            }
+          ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "POST", url: `/api/public/betting-arena/rounds/${round.id}/settle` });
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("v3.football.api-sports.io/fixtures?league=1&season=2026"), expect.anything());
+    expect(response.json()).toMatchObject({
+      currentRound: { id: round.id, status: "settled", settledReturn: 185 },
+      accounts: [{ modelId: "model-1", availableBankroll: 10085, frozenStake: 0, totalReturned: 185, settledOrderCount: 1, hitCount: 1 }],
+      slips: [{ id: "slip-sync", status: "settled" }]
+    });
+    await app.close();
+  });
+
+  it("marks locked hold-only rounds settled when settlement is requested", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-19T10:00:00.000Z"));
+    const { db, databasePath } = createTestDatabase();
+    seedModelAndMatch(db);
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-17",
+      lockTime: "2026-06-17T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-17T10:00:00.000Z")
+    });
+    db.prepare("UPDATE betting_arena_rounds SET status = ? WHERE id = ?").run("locked", round.id);
+    db.prepare(
+      `
+        INSERT INTO betting_arena_slips (
+          id,
+          round_id,
+          model_id,
+          action,
+          status,
+          total_stake,
+          potential_return,
+          risk_level,
+          raw_response,
+          output_json,
+          parsed_slip_json,
+          account_context_json,
+          validation_error,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "slip-hold",
+      round.id,
+      "model-1",
+      "hold",
+      "accepted",
+      0,
+      0,
+      "low",
+      "{}",
+      "{}",
+      JSON.stringify({
+        action: "hold",
+        totalStake: 0,
+        potentialReturn: 0,
+        riskLevel: "low",
+        strategySummary: "空仓。",
+        bankrollPlan: "保留资金。",
+        singles: [],
+        parlays: [],
+        skipReasons: [],
+        dataGaps: []
+      }),
+      "{}",
+      null,
+      "2026-06-17T10:00:00.000Z",
+      "2026-06-17T10:00:00.000Z"
+    );
+    db.close();
+    const app = buildApp({ databasePath, logger: false });
+
+    const response = await app.inject({ method: "POST", url: `/api/public/betting-arena/rounds/${round.id}/settle` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      currentRound: { id: round.id, status: "settled", settledReturn: 0 },
+      slips: [{ id: "slip-hold", status: "accepted" }]
     });
     await app.close();
   });

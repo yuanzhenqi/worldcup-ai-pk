@@ -3,13 +3,15 @@ import type { Database } from "better-sqlite3";
 import type { BettingArenaDto, BettingArenaLedgerDto, BettingArenaParlayDto, BettingArenaSingleDto } from "@worldcup-ai-pk/shared";
 import { runOpenAiCompatiblePrediction } from "../ai/openAiCompatibleClient";
 import { refreshFixtureContext } from "../context/fixtureContext.service";
+import { parseWorldCupStandings, saveWorldCupStandings } from "../context/worldCupStandings";
 import { DongqiudiClient } from "../football/dongqiudiClient";
+import { FootballService } from "../football/football.service";
 import { getDongqiudiMappingByFixtureId } from "../football/dongqiudiMapping.repository";
 import { SportteryClient } from "../football/sportteryClient";
 import { getSportteryMappingByFixtureId } from "../football/sportteryMapping.repository";
 import { collectExternalIntelForMatch } from "../external-intel/externalIntelCollector";
 import { DuckDuckGoHtmlWebSearchProvider } from "../external-intel/webSearchProvider";
-import { isDongqiudiEnabled, isSportteryEnabled } from "../settings/settings.repository";
+import { getApiFootballKey, isDongqiudiEnabled, isSportteryEnabled } from "../settings/settings.repository";
 import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
 import { buildAccountContext, buildBattleContext, enrichBattleContext, type BattleContext } from "./bettingArena.context";
 import { buildBettingArenaPrompt } from "./bettingArenaPrompts";
@@ -183,6 +185,33 @@ function listMatchesForBattleContextRefresh(db: Database, matchWindowStart: stri
     .all(matchWindowStart, matchWindowEnd) as BettingArenaMatchContextRow[];
 }
 
+function listMatchesByIdsForRefresh(db: Database, matchIds: string[]): BettingArenaMatchContextRow[] {
+  if (matchIds.length === 0) return [];
+  const placeholders = matchIds.map(() => "?").join(", ");
+  return db
+    .prepare(
+      `
+        SELECT
+          matches.id,
+          matches.api_football_fixture_id,
+          matches.home_team_id,
+          matches.home_team_name,
+          home_display.display_name_zh AS home_team_display_name_zh,
+          home_display.source AS home_team_display_name_source,
+          matches.away_team_id,
+          matches.away_team_name,
+          away_display.display_name_zh AS away_team_display_name_zh,
+          away_display.source AS away_team_display_name_source
+        FROM matches
+        LEFT JOIN team_display_names AS home_display ON home_display.api_football_team_id = matches.home_team_id
+        LEFT JOIN team_display_names AS away_display ON away_display.api_football_team_id = matches.away_team_id
+        WHERE matches.id IN (${placeholders})
+        ORDER BY matches.kickoff_at ASC
+      `
+    )
+    .all(...matchIds) as BettingArenaMatchContextRow[];
+}
+
 function listCompletedRoundSlipModelIds(db: Database, roundId: string): Set<string> {
   const rows = db.prepare("SELECT model_id FROM betting_arena_slips WHERE round_id = ? AND status != ?").all(roundId, "generation_failed") as Array<{
     model_id: string;
@@ -337,6 +366,7 @@ function hasRoundSlipForModel(db: Database, input: { roundId: string; modelId: s
         FROM betting_arena_slips
         WHERE round_id = ?
           AND model_id = ?
+          AND status != 'generation_failed'
         LIMIT 1
       `
     )
@@ -416,6 +446,27 @@ function rollbackReplaceableSlipStake(db: Database, input: { roundId: string; mo
     ).run(stake, stake, stake, stake, stake, input.timestamp, input.modelId);
   }
   return true;
+}
+
+/** 该模型本轮的投注单是否已结算（已结算的单不能强制重新生成，否则会破坏账本）。 */
+function modelSlipHasSettlement(db: Database, input: { roundId: string; modelId: string }): boolean {
+  const row = db
+    .prepare(
+      `
+        SELECT 1
+        FROM betting_arena_slips
+        WHERE round_id = ?
+          AND model_id = ?
+          AND EXISTS (
+            SELECT 1
+            FROM betting_arena_settlements
+            WHERE betting_arena_settlements.slip_id = betting_arena_slips.id
+          )
+        LIMIT 1
+      `
+    )
+    .get(input.roundId, input.modelId);
+  return Boolean(row);
 }
 
 function updateRoundStatusFromSlips(db: Database, roundId: string, timestamp: string): void {
@@ -674,25 +725,34 @@ function settleRoundIfReady(db: Database, roundId: string, now = new Date()): bo
   const timestamp = now.toISOString();
   const slips = listUnsettledAcceptedBetSlips(db, roundId);
   if (slips.length === 0) {
-    return false;
+    markRoundSettledWhenComplete(db, { roundId, timestamp });
+    return true;
   }
 
   const parsedSlips = slips.map((slip) => ({ slip, parsed: parseSettlementSlip(slip.parsed_slip_json) }));
   const matchIds = [...new Set(parsedSlips.flatMap(({ parsed }) => getSlipMatchIds(parsed)))];
   const matchesById = listSettlementMatches(db, matchIds);
-  if (!areAllSelectedMatchesFinished(matchIds, matchesById)) {
+  const readySlips = parsedSlips.filter(({ parsed }) => areAllSelectedMatchesFinished(getSlipMatchIds(parsed), matchesById));
+  if (readySlips.length === 0) {
     return false;
   }
 
-  const matches = [...matchesById.values()].map((match) => ({
-    matchId: match.id,
-    status: match.status,
-    homeScore: match.home_score,
-    awayScore: match.away_score
-  }));
-
   const transaction = db.transaction(() => {
-    for (const { slip, parsed } of parsedSlips) {
+    for (const { slip, parsed } of readySlips) {
+      const slipMatchIds = getSlipMatchIds(parsed);
+      const matches = slipMatchIds.flatMap((matchId) => {
+        const match = matchesById.get(matchId);
+        return match
+          ? [
+              {
+                matchId: match.id,
+                status: match.status,
+                homeScore: match.home_score,
+                awayScore: match.away_score
+              }
+            ]
+          : [];
+      });
       const result = settleParsedSlip(parsed, matches);
       insertSettlement(db, { slip, result, timestamp });
       updateSlipAfterSettlement(db, { slipId: slip.id, status: result.status, timestamp });
@@ -720,9 +780,22 @@ function settleAutoReadyRounds(db: Database, now = new Date()): void {
   }
 }
 
+async function refreshWorldCupStandings(db: Database, now: Date): Promise<void> {
+  const apiKey = getApiFootballKey(db);
+  if (!apiKey) return;
+  try {
+    const footballService = new FootballService({ apiKey });
+    const response = await footballService.getWorldCupStandings();
+    saveWorldCupStandings(db, parseWorldCupStandings(response), now);
+  } catch {
+    // 积分榜刷新失败不阻塞出单，沿用上次缓存
+  }
+}
+
 async function refreshBettingArenaMatchContext(db: Database, input: { matchWindowStart: string; matchWindowEnd: string; now: Date }): Promise<void> {
   const dongqiudiClient = isDongqiudiEnabled(db) ? new DongqiudiClient() : null;
   const sportteryClient = isSportteryEnabled(db) ? new SportteryClient() : null;
+  await refreshWorldCupStandings(db, input.now);
   const matches = listMatchesForBattleContextRefresh(db, input.matchWindowStart, input.matchWindowEnd);
   for (const match of matches) {
     await refreshFixtureContext({
@@ -783,6 +856,123 @@ async function refreshBettingArenaMatchContext(db: Database, input: { matchWindo
   }
 }
 
+interface RoundContextRow {
+  battle_context_json: string;
+}
+
+/**
+ * 对指定轮次的所有比赛（不限状态/时间窗口）重新采集 fixture context（懂球帝/体彩/球队资料）和外部情报，
+ * 写入新的 snapshot。由于 enrichBattleContext 读取轮次时总是取最新 snapshot，
+ * 刷新后重新打开轮次详情即可看到补全后的数据。用于修复历史轮次的空情报。
+ */
+export async function refreshBettingArenaRoundContext(
+  db: Database,
+  input: { roundId: string; now?: Date }
+): Promise<{ refreshed: number; matches: Array<{ matchId: string; dongqiudiStatus: string; sportteryStatus: string; externalIntelStatus: string }> }> {
+  const now = input.now ?? new Date();
+  const row = db
+    .prepare("SELECT battle_context_json FROM betting_arena_rounds WHERE id = ?")
+    .get(input.roundId) as RoundContextRow | undefined;
+  if (!row) {
+    throw new Error(`Betting arena round not found: ${input.roundId}`);
+  }
+
+  let parsedContext: unknown;
+  try {
+    parsedContext = JSON.parse(row.battle_context_json);
+  } catch {
+    parsedContext = {};
+  }
+  const matchesField = parsedContext && typeof parsedContext === "object" && "matches" in parsedContext ? (parsedContext as { matches: unknown }).matches : [];
+  const matchIds = Array.isArray(matchesField)
+    ? matchesField.flatMap((m) => {
+        if (!m || typeof m !== "object" || !("matchId" in m)) return [];
+        const id = (m as { matchId: unknown }).matchId;
+        return typeof id === "string" && id.length > 0 ? [id] : [];
+      })
+    : [];
+
+  if (matchIds.length === 0) {
+    return { refreshed: 0, matches: [] };
+  }
+
+  const dongqiudiClient = isDongqiudiEnabled(db) ? new DongqiudiClient() : null;
+  const sportteryClient = isSportteryEnabled(db) ? new SportteryClient() : null;
+  const webSearchProvider = new DuckDuckGoHtmlWebSearchProvider();
+  const matches = listMatchesByIdsForRefresh(db, matchIds);
+  const results: Array<{ matchId: string; dongqiudiStatus: string; sportteryStatus: string; externalIntelStatus: string }> = [];
+
+  for (const match of matches) {
+    const homeTeamName = resolveDisplayNameZh({
+      teamId: match.home_team_id,
+      originalName: match.home_team_name,
+      displayNameZh: match.home_team_display_name_zh,
+      displayNameSource: match.home_team_display_name_source
+    });
+    const awayTeamName = resolveDisplayNameZh({
+      teamId: match.away_team_id,
+      originalName: match.away_team_name,
+      displayNameZh: match.away_team_display_name_zh,
+      displayNameSource: match.away_team_display_name_source
+    });
+
+    let dongqiudiStatus = "not_requested";
+    let sportteryStatus = "not_requested";
+    try {
+      const domains = await refreshFixtureContext({
+        db,
+        matchId: match.id,
+        apiFootballFixtureId: match.api_football_fixture_id,
+        homeTeamId: match.home_team_id,
+        homeTeamName,
+        awayTeamId: match.away_team_id,
+        awayTeamName,
+        footballService: null,
+        dongqiudiClient,
+        dongqiudiMatchId: getDongqiudiMappingByFixtureId(db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,
+        sportteryClient,
+        sportteryMatchId: getSportteryMappingByFixtureId(db, match.api_football_fixture_id)?.sportteryMatchId ?? null,
+        dataOptions: {
+          useOdds: false,
+          useApiFootballPrediction: false,
+          useHeadToHead: false,
+          usePlayerLineupInjuries: false,
+          useDongqiudiIntel: Boolean(dongqiudiClient),
+          useSporttery: Boolean(sportteryClient),
+          useTeamProfile: true
+        },
+        now
+      });
+      const findDomain = (domain: string) => domains.domains.find((d) => d.domain === domain);
+      dongqiudiStatus = findDomain("dongqiudi_intel")?.status ?? "not_requested";
+      sportteryStatus = findDomain("sporttery")?.status ?? "not_requested";
+    } catch {
+      dongqiudiStatus = "refresh_failed";
+      sportteryStatus = "refresh_failed";
+    }
+
+    let externalIntelStatus = "failed";
+    try {
+      const intel = await collectExternalIntelForMatch(db, {
+        matchId: match.id,
+        homeTeamName,
+        awayTeamName,
+        kickoffAt: match.kickoff_at,
+        webSearchProvider,
+        now,
+        forceRefresh: true
+      });
+      externalIntelStatus = intel.status;
+    } catch {
+      externalIntelStatus = "failed";
+    }
+
+    results.push({ matchId: match.id, dongqiudiStatus, sportteryStatus, externalIntelStatus });
+  }
+
+  return { refreshed: results.length, matches: results };
+}
+
 export function getBettingArena(db: Database): BettingArenaDto {
   settleAutoReadyRounds(db);
   return getBettingArenaSummary(db);
@@ -829,13 +1019,29 @@ export async function triggerBettingArenaRound(db: Database, now = new Date()): 
   return getBettingArenaSummary(db);
 }
 
-export async function triggerBettingArenaModel(db: Database, input: { roundId: string; modelId: string }, now = new Date()): Promise<BettingArenaDto> {
+export async function triggerBettingArenaModel(
+  db: Database,
+  input: { roundId: string; modelId: string; force?: boolean },
+  now = new Date()
+): Promise<BettingArenaDto> {
   ensureBettingArenaAccounts(db, now);
   const timestamp = now.toISOString();
-  if (hasRoundSlipForModel(db, { roundId: input.roundId, modelId: input.modelId })) {
+  const hasExisting = hasRoundSlipForModel(db, { roundId: input.roundId, modelId: input.modelId });
+
+  if (hasExisting && !input.force) {
     updateRoundStatusFromSlips(db, input.roundId, timestamp);
     return getBettingArenaSummary(db);
   }
+
+  if (input.force && hasExisting) {
+    if (modelSlipHasSettlement(db, { roundId: input.roundId, modelId: input.modelId })) {
+      throw new Error("该模型本轮投注单已结算，不能强制重新生成（会破坏账本一致性）");
+    }
+    rollbackReplaceableSlipStake(db, { roundId: input.roundId, modelId: input.modelId, timestamp });
+    db.prepare("DELETE FROM betting_arena_slips WHERE round_id = ? AND model_id = ?").run(input.roundId, input.modelId);
+  }
+
+  db.prepare("DELETE FROM betting_arena_slips WHERE round_id = ? AND model_id = ? AND status = 'generation_failed'").run(input.roundId, input.modelId);
   const model = getEnabledModel(db, input.modelId);
   if (!model) {
     throw new Error(`Betting arena model not found: ${input.modelId}`);
@@ -853,9 +1059,7 @@ export async function triggerBettingArenaModel(db: Database, input: { roundId: s
 
 export function getBettingArenaRound(db: Database, roundId: string): BettingArenaDto {
   settleRoundIfReady(db, roundId);
-  const summary = getBettingArenaSummary(db);
-  if (!summary.currentRound || summary.currentRound.id !== roundId) return summary;
-  return summary;
+  return getBettingArenaSummary(db, roundId);
 }
 
 export function settleBettingArenaRound(db: Database, roundId: string): BettingArenaDto {

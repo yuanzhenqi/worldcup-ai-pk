@@ -18,6 +18,13 @@ export interface ExternalIntelQueryInput {
   maxQueries: number;
 }
 
+/** 送给总结模型的搜索结果条数上限，避免输入/输出过大导致 JSON 被截断。 */
+const MAX_SUMMARIZER_INPUT_RESULTS = 12;
+/** 单条搜索结果摘要送给总结模型时的字符上限。 */
+const MAX_SUMMARIZER_SNIPPET_CHARS = 200;
+/** 总结模型未显式配置 max_output_tokens 时使用的输出预算。 */
+const DEFAULT_SUMMARY_MAX_OUTPUT_TOKENS = 8000;
+
 export interface CollectExternalIntelInput {
   matchId: string;
   homeTeamName: string;
@@ -34,7 +41,11 @@ export function buildExternalIntelQueries(input: ExternalIntelQueryInput): strin
     `${input.homeTeamName} ${input.awayTeamName} 伤停 首发 世界杯`,
     `${input.homeTeamName} ${input.awayTeamName} injury lineup World Cup`,
     `${input.homeTeamName} ${input.awayTeamName} press conference team news`,
-    `${input.homeTeamName} ${input.awayTeamName} motivation rotation World Cup`
+    `${input.homeTeamName} ${input.awayTeamName} motivation rotation World Cup`,
+    `${input.homeTeamName} ${input.awayTeamName} predicted lineup`,
+    `${input.homeTeamName} ${input.awayTeamName} recent form last matches`,
+    `${input.homeTeamName} ${input.awayTeamName} key players availability`,
+    `${input.homeTeamName} ${input.awayTeamName} squad market value`
   ].slice(0, Math.max(1, input.maxQueries));
 }
 
@@ -42,11 +53,54 @@ function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.flatMap((item) => (typeof item === "string" ? [item] : [])) : [];
 }
 
+/**
+ * 从模型返回文本中提取第一个完整 JSON 对象。
+ * 容错模型常见的 markdown 代码块包裹（```json ... ```）、前导说明文字和尾随补充。
+ */
+function extractFirstJsonObject(content: string): unknown {
+  const start = content.indexOf("{");
+  if (start < 0) {
+    throw new Error("summary JSON object not found");
+  }
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return JSON.parse(content.slice(start, index + 1));
+      }
+    }
+  }
+  throw new Error("summary JSON object not terminated");
+}
+
 function parseSummary(value: string, fallback: ExternalIntelSummaryDto): ExternalIntelSummaryDto {
   try {
-    const parsed = JSON.parse(value) as Partial<ExternalIntelSummaryDto>;
+    const parsed = extractFirstJsonObject(value) as Partial<ExternalIntelSummaryDto>;
+    if (!parsed || typeof parsed !== "object") {
+      return fallback;
+    }
     return {
-      status: parsed.status === "cached" ? "cached" : fallback.status,
+      // 只要模型返回的 JSON 能解析出来，总结流程就算成功（cached）。模型可能返回 no_search_results 等内部状态，
+      // 那代表"搜索无数据"而非"总结失败"，不应降级为 summary_failed。
+      status: "cached",
       summary: typeof parsed.summary === "string" ? parsed.summary : fallback.summary,
       injuryNews: readStringArray(parsed.injuryNews),
       lineupNews: readStringArray(parsed.lineupNews),
@@ -121,12 +175,23 @@ async function summarizeWithModel(
     });
   }
 
+  // 限制传给模型的搜索结果条数与每条长度，避免输入过大、输出 JSON 被截断（finish_reason=length）。
+  // fallback 的 sourceLinks 仍保留全部结果，只压缩送给总结模型的输入。
+  const trimmedResults = input.results.slice(0, MAX_SUMMARIZER_INPUT_RESULTS).map((result) => ({
+    title: result.title,
+    url: result.url,
+    snippet: result.snippet.length > MAX_SUMMARIZER_SNIPPET_CHARS ? `${result.snippet.slice(0, MAX_SUMMARIZER_SNIPPET_CHARS)}…` : result.snippet,
+    sourceDomain: result.sourceDomain,
+    publishedAt: result.publishedAt
+  }));
+
   const prompt = [
     "你是世界杯赛前情报整理员。只根据 search_results 总结，不得编造。",
-    "输出 JSON，字段：status,summary,injuryNews,lineupNews,motivation,recentFormNews,riskSignals,sourceLinks,confidence,dataGaps。",
+    "输出紧凑 JSON，字段：status,summary,injuryNews,lineupNews,motivation,recentFormNews,riskSignals,sourceLinks,confidence,dataGaps。",
+    "summary 控制在 200 字以内；每个数组最多 5 条、每条不超过 40 字；sourceLinks 只保留最相关的 5 条。",
     `match=${input.homeTeamName} vs ${input.awayTeamName}`,
     `collectedAt=${input.collectedAt}`,
-    `search_results=${JSON.stringify(input.results)}`
+    `search_results=${JSON.stringify(trimmedResults)}`
   ].join("\n");
 
   const fallback = buildFallbackSummary({
@@ -137,7 +202,12 @@ async function summarizeWithModel(
   });
 
   try {
-    const response = await runOpenAiCompatiblePrediction(model, prompt);
+    // 总结输出是结构化 JSON，需要足够大的输出预算；尊重模型显式配置，否则用默认上限避免被截断。
+    const summarizerConfig = {
+      ...model,
+      maxOutputTokens: typeof model.maxOutputTokens === "number" && model.maxOutputTokens > 0 ? model.maxOutputTokens : DEFAULT_SUMMARY_MAX_OUTPUT_TOKENS
+    };
+    const response = await runOpenAiCompatiblePrediction(summarizerConfig, prompt);
     return parseSummary(response.content, fallback);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

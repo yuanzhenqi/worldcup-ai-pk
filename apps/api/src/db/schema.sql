@@ -72,9 +72,9 @@ CREATE TABLE IF NOT EXISTS ai_models (
   model_name TEXT NOT NULL,
   display_name TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
-  context_window_tokens INTEGER NOT NULL DEFAULT 0,
+  context_window_tokens INTEGER NOT NULL DEFAULT 50000,
   max_output_tokens INTEGER NOT NULL DEFAULT 0,
-  request_timeout_ms INTEGER NOT NULL DEFAULT 90000,
+  request_timeout_ms INTEGER NOT NULL DEFAULT 150000,
   request_retry_count INTEGER NOT NULL DEFAULT 1,
   deleted_at TEXT,
   created_at TEXT NOT NULL,
@@ -277,15 +277,18 @@ ALTER TABLE fixture_context_snapshots ADD COLUMN sporttery_summary_json TEXT NOT
 
 ALTER TABLE fixture_context_snapshots ADD COLUMN team_profile_summary_json TEXT NOT NULL DEFAULT '{}';
 
-ALTER TABLE ai_models ADD COLUMN context_window_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ai_models ADD COLUMN context_window_tokens INTEGER NOT NULL DEFAULT 50000;
 
 ALTER TABLE ai_models ADD COLUMN max_output_tokens INTEGER NOT NULL DEFAULT 0;
 
-ALTER TABLE ai_models ADD COLUMN request_timeout_ms INTEGER NOT NULL DEFAULT 90000;
+ALTER TABLE ai_models ADD COLUMN request_timeout_ms INTEGER NOT NULL DEFAULT 150000;
 
 ALTER TABLE ai_models ADD COLUMN request_retry_count INTEGER NOT NULL DEFAULT 1;
 
 ALTER TABLE ai_models ADD COLUMN deleted_at TEXT;
+
+UPDATE ai_models SET context_window_tokens = 50000 WHERE context_window_tokens = 0;
+UPDATE ai_models SET request_timeout_ms = 150000 WHERE request_timeout_ms = 90000;
 
 CREATE TABLE IF NOT EXISTS fixture_sporttery_mappings (
   api_football_fixture_id INTEGER PRIMARY KEY,
@@ -312,7 +315,8 @@ CREATE TABLE IF NOT EXISTS betting_arena_accounts (
 
 CREATE TABLE IF NOT EXISTS betting_arena_rounds (
   id TEXT PRIMARY KEY,
-  round_date TEXT NOT NULL UNIQUE,
+  round_date TEXT NOT NULL,
+  round_sequence INTEGER NOT NULL DEFAULT 1,
   status TEXT NOT NULL,
   lock_time TEXT NOT NULL,
   battle_context_json TEXT NOT NULL,
@@ -321,6 +325,8 @@ CREATE TABLE IF NOT EXISTS betting_arena_rounds (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+ALTER TABLE betting_arena_rounds ADD COLUMN round_sequence INTEGER NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS betting_arena_slips (
   id TEXT PRIMARY KEY,
@@ -368,3 +374,6 @@ CREATE INDEX IF NOT EXISTS idx_betting_arena_slips_round_status
 
 CREATE INDEX IF NOT EXISTS idx_betting_arena_settlements_round
   ON betting_arena_settlements(round_id, model_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_betting_arena_rounds_date_sequence
+  ON betting_arena_rounds(round_date, round_sequence);

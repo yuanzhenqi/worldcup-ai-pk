@@ -249,8 +249,8 @@ function reconstructSettlementItems(parsedSlipJson: string, legs: ParsedSettleme
   });
   const parlayItems = parsedSlip.parlays.map((parlay) => {
     const parlayLegs = parlay.legs.map((leg) => takeLegacyLeg(legs, usedIndexes, leg.matchId));
-    const voided = parlayLegs.length > 0 && parlayLegs.every((leg) => leg.voided);
-    const won = parlayLegs.length > 0 && parlayLegs.every((leg) => leg.won || leg.voided) && parlayLegs.some((leg) => leg.won);
+    const voided = parlayLegs.some((leg) => leg.voided);
+    const won = !voided && parlayLegs.length > 0 && parlayLegs.every((leg) => leg.won);
     const returnedAmount = voided ? parlay.stake : won ? parlay.stake * parlay.combinedOdds : 0;
     return {
       type: "parlay" as const,

@@ -1,16 +1,28 @@
-import { BookOpen } from "lucide-react";
+import { BarChart3, ChevronRight, ClipboardList, History, Loader2, Play, ReceiptText, RefreshCw, Target, Trophy, Wallet } from "lucide-react";
 import type { BettingArenaDto, BettingArenaLedgerDto, BettingArenaRoundDto, BettingArenaRoundStatus, BettingArenaSlipDto } from "@worldcup-ai-pk/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  domainLabel,
+  domainStatusLabel,
+  formatAuditValue,
+  formatDataGap,
+  formatJsonText,
+  getBattleContextSummary,
+  isRecord,
+  parlayDisplayName,
+  poolDisplayName
+} from "./bettingArenaViewModels";
 
 interface BettingArenaPageProps {
   arena: BettingArenaDto | null;
   loading: boolean;
   error: string | null;
   onTriggerRound: () => Promise<BettingArenaDto>;
-  onTriggerModel: (roundId: string, modelId: string) => Promise<BettingArenaDto>;
+  onTriggerModel: (roundId: string, modelId: string, force?: boolean) => Promise<BettingArenaDto>;
   onSettleRound: (roundId: string) => Promise<BettingArenaDto>;
   onLoadLedger?: (params?: { modelId?: string | null; limit?: number; offset?: number }) => Promise<BettingArenaLedgerDto>;
   onLoadRound?: (roundId: string) => Promise<BettingArenaDto>;
+  onRefreshRoundContext?: (roundId: string) => Promise<void>;
 }
 
 function percent(value: number): string {
@@ -49,273 +61,7 @@ function roundStatusLabel(status: BettingArenaRoundStatus | null | undefined): s
   return status ? labels[status] : "待启动";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function formatAuditValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === null || value === undefined) return "";
-  return JSON.stringify(value, null, 2);
-}
-
-function formatJsonText(value: string): string {
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return value;
-  }
-}
-
-function readString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function readNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function formatDataGap(value: unknown): string | null {
-  if (typeof value === "string") return value;
-  if (!isRecord(value)) return null;
-  const source = readString(value.source);
-  const code = readString(value.code);
-  const message = readString(value.message);
-  if (!source && !code && !message) return JSON.stringify(value);
-  return `${source || "unknown"} · ${code || "unknown"}：${message || "未提供说明"}`;
-}
-
-function readSourceLinks(value: unknown): Array<{ title: string; url: string; sourceDomain: string; publishedAt: string | null }> {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!isRecord(item)) return [];
-    const url = readString(item.url);
-    if (!url) return [];
-    return [
-      {
-        title: readString(item.title) || url,
-        url,
-        sourceDomain: readString(item.sourceDomain),
-        publishedAt: typeof item.publishedAt === "string" ? item.publishedAt : null
-      }
-    ];
-  });
-}
-
-function domainLabel(domain: string): string {
-  const labels: Record<string, string> = {
-    odds: "指数",
-    api_prediction: "官方预测",
-    head_to_head: "历史交锋",
-    squad: "阵容伤停",
-    dongqiudi_intel: "懂球帝情报",
-    sporttery: "体彩数据",
-    team_profile: "球队资料"
-  };
-  return labels[domain] ?? domain;
-}
-
-function domainStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    cached: "已缓存",
-    unavailable: "暂无",
-    refresh_failed: "刷新失败",
-    not_requested: "未请求"
-  };
-  return labels[status] ?? status;
-}
-
-function poolDisplayName(poolCode: string): string {
-  const labels: Record<string, string> = {
-    HAD: "胜平负",
-    HHAD: "让球胜平负",
-    CRS: "比分",
-    TTG: "总进球",
-    HAFU: "半全场"
-  };
-  return labels[poolCode] ?? poolCode;
-}
-
-function parlayDisplayName(legsCount: number): string {
-  return `${legsCount} 串 1`;
-}
-
-function summarizeSourceDomains(
-  contextDomains: Array<{ domain: string; status: string; summary: string; error: string }>,
-  domains: string[],
-  emptyText: string
-): string {
-  const rows = contextDomains.filter((entry) => domains.includes(entry.domain));
-  if (rows.length === 0) return emptyText;
-  return rows
-    .map((entry) => {
-      const detail = entry.summary || entry.error || "暂无摘要";
-      return `${domainLabel(entry.domain)} ${domainStatusLabel(entry.status)}：${detail}`;
-    })
-    .join("；");
-}
-
-function summarizeExternalIntelSource(externalIntel: { status: string; summary: string; collectedAt: string }): string {
-  if (!externalIntel.status && !externalIntel.summary) {
-    return "当前模型可基于自身联网能力补充公开情报；本地统一采集源尚未配置";
-  }
-  const statusText = externalIntel.status ? domainStatusLabel(externalIntel.status) : "已采集";
-  const summary = externalIntel.summary || "暂无摘要";
-  return `统一采集${statusText}：${summary}`;
-}
-
-function buildSourceBreakdown(input: {
-  contextDomains: Array<{ domain: string; status: string; summary: string; error: string }>;
-  sportteryPoolsCount: number;
-  externalIntel: { status: string; summary: string; collectedAt: string };
-}) {
-  return [
-    {
-      source: "API-Football",
-      detail: "仅赛程：比赛时间、场地、球队、状态和比分"
-    },
-    {
-      source: "体彩",
-      detail:
-        input.sportteryPoolsCount > 0
-          ? `投注玩法与赔率：已注入 ${input.sportteryPoolsCount} 个体彩玩法池，并读取体彩赛前摘要`
-          : summarizeSourceDomains(input.contextDomains, ["sporttery"], "投注玩法与赔率：未读取到体彩玩法池")
-    },
-    {
-      source: "懂球帝",
-      detail: summarizeSourceDomains(input.contextDomains, ["dongqiudi_intel"], "未读取到懂球帝赛前对比数据")
-    },
-    {
-      source: "本地资料",
-      detail: summarizeSourceDomains(input.contextDomains, ["team_profile"], "已注入本地球队资料框架，部分球队资料可能为空")
-    },
-    {
-      source: "外部联网情报",
-      detail: summarizeExternalIntelSource(input.externalIntel)
-    }
-  ];
-}
-
-function formatTeamProfile(profile: unknown) {
-  const source = isRecord(profile) ? profile : {};
-  const keyPlayers = Array.isArray(source.keyPlayers)
-    ? source.keyPlayers.flatMap((player) => {
-        if (!isRecord(player)) return [];
-        const name = readString(player.name);
-        const position = readString(player.position);
-        const club = readString(player.club);
-        return name ? [`${name}${position ? ` / ${position}` : ""}${club ? ` / ${club}` : ""}`] : [];
-      })
-    : [];
-  const injuries = Array.isArray(source.injuries)
-    ? source.injuries.flatMap((injury) => {
-        if (!isRecord(injury)) return [];
-        const player = readString(injury.player);
-        const status = readString(injury.status);
-        const injuryText = readString(injury.injury);
-        return player ? [`${player}${status ? ` / ${status}` : ""}${injuryText ? ` / ${injuryText}` : ""}`] : [];
-      })
-    : [];
-  const worldCupHistory = isRecord(source.worldCupHistory) ? source.worldCupHistory : null;
-  const appearances = worldCupHistory ? readNumber(worldCupHistory.appearances) : null;
-  const bestResult = worldCupHistory ? readString(worldCupHistory.bestResult) : "";
-  const titles = worldCupHistory ? readNumber(worldCupHistory.titles) : null;
-
-  return {
-    wc26TeamId: readString(source.wc26TeamId),
-    coach: readString(source.coach),
-    playingStyle: readString(source.playingStyle),
-    keyPlayers,
-    injuries,
-    worldCupHistory:
-      appearances !== null || bestResult || titles !== null
-        ? `参赛 ${appearances ?? "-"} 次 · 最好成绩 ${bestResult || "-"} · 冠军 ${titles ?? "-"} 次`
-        : "",
-    qualifyingSummary: readString(source.qualifyingSummary),
-    marketValue: source.marketValue === null ? "暂无身价数据源" : readString(source.marketValue)
-  };
-}
-
-function formatHistoricalMatchup(matchup: unknown): string {
-  if (!isRecord(matchup)) return "暂无两队世界杯历史交锋数据";
-  const totalMatches = readNumber(matchup.totalMatches);
-  const homeWins = readNumber(matchup.homeWins);
-  const draws = readNumber(matchup.draws);
-  const awayWins = readNumber(matchup.awayWins);
-  const summary = readString(matchup.summary);
-  const record =
-    totalMatches !== null
-      ? `${totalMatches} 场 · 主 ${homeWins ?? "-"} 胜 / ${draws ?? "-"} 平 / 客 ${awayWins ?? "-"} 胜`
-      : "暂无战绩统计";
-  return summary ? `${record}。${summary}` : record;
-}
-
-function getBattleContextSummary(round: BettingArenaRoundDto | null | undefined) {
-  const battleContext = round?.battleContext;
-  const matches = isRecord(battleContext) && Array.isArray(battleContext.matches) ? battleContext.matches : [];
-  const matchRows = matches.flatMap((match) => {
-    if (!isRecord(match)) return [];
-    const sportteryPools = Array.isArray(match.sportteryPools) ? match.sportteryPools : [];
-    const dataGaps = Array.isArray(match.dataGaps) ? match.dataGaps : [];
-    const contextDomains = Array.isArray(match.contextDomains)
-      ? match.contextDomains.flatMap((domain) => {
-          if (!isRecord(domain)) return [];
-          return [
-            {
-              domain: readString(domain.domain),
-              status: readString(domain.status),
-              summary: readString(domain.summary),
-              error: readString(domain.error)
-            }
-          ];
-        })
-      : [];
-    const externalIntel = isRecord(match.externalIntel) ? match.externalIntel : null;
-    const externalIntelSummary = {
-      status: readString(externalIntel?.status),
-      summary: readString(externalIntel?.summary),
-      sourceLinks: readSourceLinks(externalIntel?.sourceLinks),
-      collectedAt: readString(externalIntel?.collectedAt)
-    };
-    const optionsCount = sportteryPools.reduce((total, pool) => {
-      if (!isRecord(pool) || !Array.isArray(pool.options)) return total;
-      return total + pool.options.length;
-    }, 0);
-    return [
-      {
-        matchId: readString(match.matchId),
-        homeTeamName: readString(match.homeTeamName),
-        awayTeamName: readString(match.awayTeamName),
-        kickoffAt: readString(match.kickoffAt),
-        status: readString(match.status),
-        homeScore: readNumber(match.homeScore),
-        awayScore: readNumber(match.awayScore),
-        poolsCount: sportteryPools.length,
-        optionsCount,
-        dataGapsCount: dataGaps.length,
-        dataGaps: dataGaps.flatMap((item) => {
-          const formatted = formatDataGap(item);
-          return formatted ? [formatted] : [];
-        }),
-        homeTeamProfile: formatTeamProfile(match.homeTeamProfile),
-        awayTeamProfile: formatTeamProfile(match.awayTeamProfile),
-        historicalMatchup: formatHistoricalMatchup(match.historicalMatchup),
-        contextDomains,
-        externalIntel: externalIntelSummary,
-        sourceBreakdown: buildSourceBreakdown({ contextDomains, sportteryPoolsCount: sportteryPools.length, externalIntel: externalIntelSummary })
-      }
-    ];
-  });
-
-  return {
-    matches: matchRows,
-    poolsCount: matchRows.reduce((total, match) => total + match.poolsCount, 0),
-    optionsCount: matchRows.reduce((total, match) => total + match.optionsCount, 0),
-    dataGapsCount: matchRows.reduce((total, match) => total + match.dataGapsCount, 0)
-  };
-}
-
-function getMatchLabel(matches: ReturnType<typeof getBattleContextSummary>["matches"], matchId: string): string {
+function getMatchLabelForId(matches: ReturnType<typeof getBattleContextSummary>["matches"], matchId: string): string {
   const match = matches.find((entry) => entry.matchId === matchId);
   if (!match) return matchId;
   if (!match.homeTeamName && !match.awayTeamName) return matchId;
@@ -368,6 +114,49 @@ function getSlipSettlementStats(slip: BettingArenaSlipDto) {
   };
 }
 
+function getSingleSettlement(slip: BettingArenaSlipDto, singleIndex: number): { settled: boolean; hit: boolean; voided: boolean; profit: number } | null {
+  const items = slip.settlement?.items ?? [];
+  const item = items[singleIndex];
+  if (!item || item.type !== "single") return null;
+  return {
+    settled: true,
+    hit: item.won,
+    voided: item.voided,
+    profit: item.returnedAmount - item.stake
+  };
+}
+
+function judgeSingleResult(
+  single: { poolCode: string; selectionCode: string; goalLine?: number | null },
+  match: { status: string; homeScore: number | null; awayScore: number | null }
+): "hit" | "miss" | null {
+  if (match.status !== "finished" || match.homeScore === null || match.awayScore === null) {
+    return null;
+  }
+  const homeScore =
+    single.poolCode === "HHAD" && typeof single.goalLine === "number"
+      ? match.homeScore + single.goalLine
+      : match.homeScore;
+  if (single.selectionCode === "h") return homeScore > match.awayScore ? "hit" : "miss";
+  if (single.selectionCode === "d") return homeScore === match.awayScore ? "hit" : "miss";
+  if (single.selectionCode === "a") return homeScore < match.awayScore ? "hit" : "miss";
+  return null;
+}
+
+function getParlayLegSettlement(slip: BettingArenaSlipDto, parlayIndex: number, legIndex: number): { settled: boolean; hit: boolean; voided: boolean } | null {
+  const items = slip.settlement?.items ?? [];
+  const itemIndex = slip.singles.length + parlayIndex;
+  const item = items[itemIndex];
+  if (!item || item.type !== "parlay" || !item.legs) return null;
+  const leg = item.legs[legIndex];
+  if (!leg) return null;
+  return {
+    settled: true,
+    hit: leg.won,
+    voided: leg.voided
+  };
+}
+
 function roundLabel(round: Pick<BettingArenaRoundDto, "roundDate" | "roundSequence"> | null | undefined): string {
   if (!round) return "未创建";
   return `${round.roundDate} 第 ${round.roundSequence} 轮`;
@@ -417,14 +206,15 @@ function splitPrompt(prompt: string) {
   };
 }
 
-export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTriggerModel, onSettleRound, onLoadLedger, onLoadRound }: BettingArenaPageProps) {
+export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTriggerModel, onSettleRound, onLoadLedger, onLoadRound, onRefreshRoundContext }: BettingArenaPageProps) {
   const [selectedSlip, setSelectedSlip] = useState<BettingArenaSlipDto | null>(null);
   const [selectedSlipRound, setSelectedSlipRound] = useState<BettingArenaRoundDto | null>(null);
-  const [inputPanelOpen, setInputPanelOpen] = useState(false);
   const [ledger, setLedger] = useState<BettingArenaLedgerDto | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [refreshingRoundId, setRefreshingRoundId] = useState<string | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [ledgerModelId, setLedgerModelId] = useState<string | null>(null);
   const [historyRoundArena, setHistoryRoundArena] = useState<BettingArenaDto | null>(null);
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -432,6 +222,16 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
   const [busyModelIds, setBusyModelIds] = useState<Set<string>>(() => new Set());
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!actionMessage && !actionError) return undefined;
+    const timeout = window.setTimeout(() => {
+      setActionMessage(null);
+      setActionError(null);
+    }, 6000);
+    return () => window.clearTimeout(timeout);
+  }, [actionMessage, actionError]);
+
   const roundGenerating = arena?.currentRound?.status === "generating";
   const busyModelCount = busyModelIds.size;
   const battleContextSummary = getBattleContextSummary(arena?.currentRound);
@@ -449,12 +249,13 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
     setSelectedSlipRound(null);
   }
 
-  async function openLedger() {
+  async function openLedger(modelId: string | null = null) {
     if (!onLoadLedger) return;
     setLedgerLoading(true);
     setLedgerError(null);
+    setLedgerModelId(modelId);
     try {
-      const nextLedger = await onLoadLedger({ limit: 50, offset: 0 });
+      const nextLedger = await onLoadLedger({ modelId, limit: 50, offset: 0 });
       setLedger(nextLedger);
       setLedgerOpen(true);
     } catch (requestError) {
@@ -499,14 +300,14 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
     }
   }
 
-  async function triggerModel(modelId: string, displayName: string) {
+  async function triggerModel(modelId: string, displayName: string, force = false) {
     if (!arena?.currentRound) return;
     setBusyModelIds((current) => new Set(current).add(modelId));
     setActionError(null);
-    setActionMessage(`已发送 ${displayName} 单独出单请求。`);
+    setActionMessage(force ? `正在重新生成 ${displayName} 出单...` : `已发送 ${displayName} 单独出单请求。`);
     try {
-      await onTriggerModel(arena.currentRound.id, modelId);
-      setActionMessage(`${displayName} 出单已返回，列表已刷新。`);
+      await onTriggerModel(arena.currentRound.id, modelId, force);
+      setActionMessage(force ? `${displayName} 已重新出单，列表已刷新。` : `${displayName} 出单已返回，列表已刷新。`);
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : `${displayName} 单独出单失败`;
       setActionError(message);
@@ -535,6 +336,23 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
     }
   }
 
+  async function refreshHistoryRoundContext(roundId: string) {
+    if (!onRefreshRoundContext || !onLoadRound) return;
+    setHistoryError(null);
+    setRefreshingRoundId(roundId);
+    try {
+      await onRefreshRoundContext(roundId);
+      const nextArena = await onLoadRound(roundId);
+      setHistoryRoundArena(nextArena);
+      setActionMessage("已重新采集该轮比赛情报，输入与情报已刷新。");
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "重新采集情报失败";
+      setHistoryError(message);
+    } finally {
+      setRefreshingRoundId(null);
+    }
+  }
+
   return (
     <section id="betting-arena" className="page-section betting-arena">
       <div className="section-heading">
@@ -544,16 +362,14 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
         </div>
         <div className="section-actions">
           <button className="app-button app-button-primary" type="button" onClick={triggerRound} disabled={busy || roundGenerating}>
-            {busy || roundGenerating ? "生成中" : "生成今日出单"}
+            {busy || roundGenerating ? <><Loader2 size={16} aria-hidden="true" /> 生成中</> : <><Play size={16} aria-hidden="true" /> 生成今日出单</>}
           </button>
-          <button className="app-button app-button-secondary" type="button" onClick={() => setInputPanelOpen(true)} disabled={!arena?.currentRound}>
-            投注输入面板
-          </button>
-          <button className="app-button app-button-secondary" type="button" onClick={() => void openLedger()} disabled={!onLoadLedger || ledgerLoading}>
-            <BookOpen aria-hidden="true" size={16} />
+          <button className="app-button app-button-secondary" type="button" onClick={() => void openLedger(null)} disabled={!onLoadLedger || ledgerLoading}>
+            <ClipboardList aria-hidden="true" size={16} />
             查看投注账本
           </button>
           <button className="app-button app-button-secondary" type="button" onClick={settleRound} disabled={busy || !arena?.currentRound}>
+            <RefreshCw size={16} aria-hidden="true" />
             结算当前轮
           </button>
         </div>
@@ -603,11 +419,11 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                 <div className="arena-rank-chip">{account.rank}</div>
                 <div>
                   <strong>{account.modelDisplayName}</strong>
-                  <span>余额 {money(account.availableBankroll)} · 冻结 {money(account.frozenStake)}</span>
+                  <span><Wallet size={13} aria-hidden="true" /> 余额 {money(account.availableBankroll)} · 冻结 {money(account.frozenStake)}</span>
                 </div>
-                <span>收益率 {percent(account.returnRate)}</span>
-                <span>投注项命中率 {account.hitPickCount}/{account.settledPickCount}</span>
-                <span>盈利出单 {account.profitableSlipCount}/{account.settledOrderCount}</span>
+                <span><BarChart3 size={13} aria-hidden="true" /> 收益率 {percent(account.returnRate)}</span>
+                <span><Target size={13} aria-hidden="true" /> 投注项命中率 {account.hitPickCount}/{account.settledPickCount}</span>
+                <span><Trophy size={13} aria-hidden="true" /> 盈利出单 {account.profitableSlipCount}/{account.settledOrderCount}</span>
               </div>
             ))}
             {(arena?.accounts ?? []).length === 0 ? <p className="muted">暂无模型账户。</p> : null}
@@ -621,31 +437,53 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
               const slip = (arena?.slips ?? []).find((entry) => entry.modelId === account.modelId) ?? null;
               const settlement = slip?.settlement ?? null;
               const profit = settlement ? settlement.profit : null;
+              const canRegenerate = Boolean(slip) && slip!.status !== "generation_failed" && !settlement;
               return (
-                <div className="arena-slip-row" key={account.modelId}>
-                  <button
-                    aria-label={slip ? `${account.modelDisplayName} 投注详情` : `${account.modelDisplayName} 暂无出单`}
-                    className="arena-slip-main"
-                    type="button"
-                    onClick={() => (slip ? openSlipDetail(slip, arena?.currentRound) : null)}
-                    disabled={!slip}
-                  >
-                    <div>
-                      <strong>{account.modelDisplayName}</strong>
-                      <span>{slip ? `${actionLabel(slip.action)} · ${statusLabel(slip.status)}` : "暂无出单"}</span>
+                <div className="arena-slip-card" key={account.modelId}>
+                  <div className="arena-slip-card-header">
+                    <button
+                      aria-label={slip ? `${account.modelDisplayName} 投注详情` : `${account.modelDisplayName} 暂无出单`}
+                      className="arena-slip-card-title"
+                      type="button"
+                      onClick={() => (slip ? openSlipDetail(slip, arena?.currentRound) : null)}
+                      disabled={!slip}
+                    >
+                      <ReceiptText size={18} aria-hidden="true" />
+                      <div>
+                        <strong>{account.modelDisplayName}</strong>
+                        <span>{slip ? `${actionLabel(slip.action)} · ${statusLabel(slip.status)}` : "暂无出单"}</span>
+                      </div>
+                    </button>
+                    <div className="arena-slip-card-actions">
+                      <button
+                        aria-label={canRegenerate ? `重新生成 ${account.modelDisplayName} 投注单` : `生成 ${account.modelDisplayName} 投注单`}
+                        className="icon-action-button"
+                        type="button"
+                        onClick={() => triggerModel(account.modelId, account.modelDisplayName, canRegenerate)}
+                        disabled={!arena?.currentRound || busyModelIds.has(account.modelId)}
+                      >
+                        {busyModelIds.has(account.modelId) ? <Loader2 size={17} aria-hidden="true" /> : canRegenerate ? <RefreshCw size={17} aria-hidden="true" /> : <Play size={17} aria-hidden="true" />}
+                        <span>{busyModelIds.has(account.modelId) ? "生成中" : canRegenerate ? "重新生成" : "单独生成"}</span>
+                      </button>
+                      <button
+                        aria-label={`查看 ${account.modelDisplayName} 投注账本`}
+                        className="icon-action-button icon-action-button-secondary"
+                        type="button"
+                        onClick={() => void openLedger(account.modelId)}
+                        disabled={!onLoadLedger || ledgerLoading}
+                      >
+                        <History size={17} aria-hidden="true" />
+                        <span>账本</span>
+                      </button>
                     </div>
+                  </div>
+                  <div className="arena-slip-card-metrics">
                     <span>投入 {money(slip?.totalStake ?? 0)}</span>
                     <span>{settlement ? `返还 ${money(settlement.returnedAmount)}` : `潜在 ${money(slip?.potentialReturn ?? 0)}`}</span>
-                    <span>{profit === null ? "待结算" : `盈亏 ${profit >= 0 ? "+" : ""}${money(profit)}`}</span>
-                  </button>
-                  <button
-                    className="app-button app-button-secondary arena-slip-generate"
-                    type="button"
-                    onClick={() => triggerModel(account.modelId, account.modelDisplayName)}
-                    disabled={!arena?.currentRound || busyModelIds.has(account.modelId)}
-                  >
-                    {busyModelIds.has(account.modelId) ? "生成中" : `单独生成 ${account.modelDisplayName}`}
-                  </button>
+                    <span className={profit === null || profit >= 0 ? "arena-profit-positive" : "arena-profit-negative"}>
+                      {profit === null ? "待结算" : `盈亏 ${profit >= 0 ? "+" : ""}${money(profit)}`}
+                    </span>
+                  </div>
                 </div>
               );
             })}
@@ -693,58 +531,64 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
 
       {ledgerOpen ? (
         <div className="arena-detail-drawer" role="dialog" aria-modal="true">
-          <div className="arena-detail-panel arena-history-detail-panel">
+          <div className="arena-detail-panel arena-ledger-panel">
             <div className="arena-detail-header">
               <div>
-                <p className="eyebrow">共享投注账本</p>
+                <p className="eyebrow">{ledgerModelId ? "模型投注流水" : "全量投注流水"}</p>
                 <h3>投注账本</h3>
               </div>
               <button className="app-button app-button-secondary" type="button" onClick={() => setLedgerOpen(false)}>
                 关闭
               </button>
             </div>
-            <div className="arena-input-summary">
-              <div>
-                <span>记录</span>
-                <strong>{ledger?.total ?? 0}</strong>
-              </div>
-              <div>
-                <span>分页</span>
-                <strong>
-                  {ledger?.offset ?? 0} / {ledger?.limit ?? 0}
-                </strong>
-              </div>
-              <div>
-                <span>模型</span>
-                <strong>{ledger?.modelId ?? "全部模型"}</strong>
-              </div>
+            {ledgerError ? <p className="status-line error">{ledgerError}</p> : null}
+            <div className="arena-ledger-list">
+              {(ledger?.items ?? []).map((entry) => {
+                const stats = getSlipSettlementStats(entry.slip);
+                const hasSettlement = entry.slip.settlement !== null;
+                return (
+                  <button
+                    aria-label={`查看 ${entry.slip.modelDisplayName} ${roundLabel(entry.round)}投注明细`}
+                    className="arena-ledger-row"
+                    key={entry.slip.id}
+                    type="button"
+                    onClick={() => {
+                      setLedgerOpen(false);
+                      openSlipDetail(entry.slip, entry.round);
+                    }}
+                  >
+                    <div>
+                      <strong>{entry.slip.modelDisplayName}</strong>
+                      <span>{roundLabel(entry.round)} · {actionLabel(entry.slip.action)} · {statusLabel(entry.slip.status)}</span>
+                    </div>
+                    <span>投入 {money(entry.slip.totalStake)}</span>
+                    {hasSettlement ? (
+                      <>
+                        <span>返还 {money(stats.returnedAmount)}</span>
+                        <span className={stats.profit >= 0 ? "arena-profit-positive" : "arena-profit-negative"}>
+                          盈亏 {stats.profit >= 0 ? "+" : ""}{money(stats.profit)}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>潜在 {money(entry.slip.potentialReturn)}</span>
+                        <span className="arena-status-pill void">待结算</span>
+                      </>
+                    )}
+                    {hasSettlement ? <span>命中 {stats.hit}/{stats.total}</span> : <span>命中待定</span>}
+                    <ChevronRight size={18} aria-hidden="true" />
+                  </button>
+                );
+              })}
             </div>
-            <div className="arena-history-slip-list">
-              {(ledger?.items ?? []).map((entry, index) => (
-                <button
-                  aria-label={`查看 ${entry.slip.modelDisplayName} ${roundLabel(entry.round)}投注明细`}
-                  className="arena-history-slip-row"
-                  key={`${entry.slip.id}-${index}`}
-                  onClick={() => {
-                    setLedgerOpen(false);
-                    openSlipDetail(entry.slip, entry.round);
-                  }}
-                  type="button"
-                >
-                  <strong>{entry.slip.modelDisplayName}</strong>
-                  <span>{roundLabel(entry.round)}</span>
-                  <span>{actionLabel(entry.slip.action)} · {statusLabel(entry.slip.status)}</span>
-                  <span>投入 {money(entry.slip.totalStake)}</span>
-                  <span>潜在 {money(entry.slip.potentialReturn)}</span>
-                </button>
-              ))}
-              {(ledger?.items ?? []).length === 0 ? <p className="muted">暂无投注账本记录。</p> : null}
-            </div>
+            {(ledger?.items ?? []).length === 0 ? <p className="muted">暂无投注流水。</p> : null}
           </div>
         </div>
       ) : null}
 
-      {historyRoundArena?.currentRound ? (
+      {historyRoundArena?.currentRound ? (() => {
+        const historyRoundId = historyRoundArena.currentRound.id;
+        return (
         <div className="arena-detail-drawer" role="dialog" aria-modal="true">
           <div className="arena-detail-panel arena-history-detail-panel">
             <div className="arena-detail-header">
@@ -752,9 +596,21 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                 <p className="eyebrow">历史结算追溯</p>
                 <h3>历史轮次详情</h3>
               </div>
-              <button className="app-button app-button-secondary" type="button" onClick={() => setHistoryRoundArena(null)}>
-                关闭
-              </button>
+              <div className="section-actions">
+                {onRefreshRoundContext ? (
+                  <button
+                    className="app-button app-button-secondary"
+                    type="button"
+                    disabled={refreshingRoundId === historyRoundId}
+                    onClick={() => refreshHistoryRoundContext(historyRoundId)}
+                  >
+                    {refreshingRoundId === historyRoundId ? "采集中..." : "重新采集情报"}
+                  </button>
+                ) : null}
+                <button className="app-button app-button-secondary" type="button" onClick={() => setHistoryRoundArena(null)}>
+                  关闭
+                </button>
+              </div>
             </div>
             <div className="arena-input-summary">
               <div>
@@ -803,7 +659,8 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
             </div>
           </div>
         </div>
-      ) : null}
+        );
+      })() : null}
 
       {selectedSlip ? (
         <div className="arena-detail-drawer" role="dialog" aria-modal="true">
@@ -818,6 +675,29 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
               </button>
             </div>
             <p>{selectedSlip.strategySummary || selectedSlip.validationError || "暂无详细说明。"}</p>
+            <div className="arena-slip-summary-row">
+              <div>
+                <span>投入</span>
+                <strong>{money(selectedSlip.totalStake)}</strong>
+              </div>
+              <div>
+                <span>潜在返还</span>
+                <strong>{money(selectedSlip.potentialReturn)}</strong>
+              </div>
+              <div>
+                <span>投注项</span>
+                <strong>{selectedSlip.singles.length} 单场 + {selectedSlip.parlays.length} 串关</strong>
+              </div>
+              {selectedSlip.settlement ? (
+                <div>
+                  <span>盈亏</span>
+                  <strong className={selectedSlip.settlement.profit >= 0 ? "arena-profit-positive" : "arena-profit-negative"}>
+                    {selectedSlip.settlement.profit >= 0 ? "+" : ""}{money(selectedSlip.settlement.profit)}
+                  </strong>
+                </div>
+              ) : null}
+            </div>
+
             {selectedSlipProgress ? (
               <div className="arena-result-progress">
                 <strong>
@@ -826,23 +706,124 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                 <div>
                   {selectedSlipProgress.matchIds.map((matchId) => (
                     <span className="arena-result-match" key={matchId}>
-                      <span>{getMatchLabel(selectedSlipContextSummary.matches, matchId)}</span>
+                      <span>{getMatchLabelForId(selectedSlipContextSummary.matches, matchId)}</span>
                       <span>{getMatchResultLabel(selectedSlipContextSummary.matches, matchId)}</span>
                     </span>
                   ))}
                 </div>
               </div>
             ) : null}
-            <div className="arena-settlement-box">
-              <strong>结算明细</strong>
-              {selectedSlip.settlement ? (
+
+            <div className="arena-detail-table">
+              <h4>单场投注</h4>
+              {selectedSlip.singles.length === 0 ? <span className="muted">无单场投入</span> : null}
+              {selectedSlip.singles.map((single, singleIndex) => {
+                const settlement = getSingleSettlement(selectedSlip, singleIndex);
+                const matchForSingle = selectedSlipContextSummary.matches.find((m) => m.matchId === single.matchId);
+                const liveResult = !settlement && matchForSingle
+                  ? judgeSingleResult(single, matchForSingle)
+                  : null;
+                const hasLiveResult = liveResult !== null;
+                return (
+                <div className="arena-pick-card" key={`${single.matchId}-${single.poolCode}-${single.selectionCode}`}>
+                  <div className="arena-pick-card-header">
+                    <strong>{getMatchLabelForId(selectedSlipContextSummary.matches, single.matchId)}</strong>
+                    <div className="arena-pick-card-header-meta">
+                      {settlement ? (
+                        <span className={`arena-status-pill ${settlement.voided ? "void" : settlement.hit ? "hit" : "miss"}`}>
+                          {settlement.voided ? "退回" : settlement.hit ? "命中" : "未中"}
+                        </span>
+                      ) : hasLiveResult ? (
+                        <span className={`arena-status-pill ${liveResult === "hit" ? "hit" : "miss"}`}>
+                          赛果判定：{liveResult === "hit" ? "命中" : "未中"}
+                        </span>
+                      ) : null}
+                      <span className="arena-pick-odds">赔率 {single.lockedOdds.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="arena-pick-card-body">
+                    <span>{poolDisplayName(single.poolCode)} · {single.selectionLabel}</span>
+                    <span>
+                      投入 {money(single.stake)}
+                      {settlement
+                        ? ` · 返还 ${money(settlement.hit ? single.stake * single.lockedOdds : settlement.voided ? single.stake : 0)}`
+                        : hasLiveResult
+                          ? ` · 赛果返还 ${money(liveResult === "hit" ? single.stake * single.lockedOdds : 0)}`
+                          : ` · 潜在 ${money(single.stake * single.lockedOdds)}`}
+                    </span>
+                  </div>
+                  {single.rationale ? <p className="arena-pick-card-reason">{single.rationale}</p> : null}
+                </div>
+                );
+              })}
+
+              <h4>串关</h4>
+              {selectedSlip.parlays.length === 0 ? <span className="muted">无串关投入</span> : null}
+              {selectedSlip.parlays.map((parlay, parlayIndex) => (
+                <div className="arena-pick-card" key={parlay.parlayName}>
+                  <div className="arena-pick-card-header">
+                    <strong>{parlayDisplayName(parlay.legs.length)} · {parlay.parlayName}</strong>
+                    <span className="arena-pick-odds">组合赔率 {parlay.combinedOdds.toFixed(2)}</span>
+                  </div>
+                  <div className="arena-pick-card-body">
+                    <span>投入 {money(parlay.stake)} · 潜在 {money(parlay.stake * parlay.combinedOdds)}</span>
+                  </div>
+                  <div className="arena-pick-card-legs">
+                    {parlay.legs.map((leg, legIndex) => {
+                      const legSettlement = getParlayLegSettlement(selectedSlip, parlayIndex, legIndex);
+                      const matchForLeg = selectedSlipContextSummary.matches.find((m) => m.matchId === leg.matchId);
+                      const liveLegResult = !legSettlement && matchForLeg
+                        ? judgeSingleResult(leg, matchForLeg)
+                        : null;
+                      return (
+                      <span key={`${parlay.parlayName}-${leg.matchId}-${leg.poolCode}-${leg.selectionCode}`}>
+                        {getMatchLabelForId(selectedSlipContextSummary.matches, leg.matchId)} · {poolDisplayName(leg.poolCode)} · {leg.selectionLabel} · {leg.lockedOdds.toFixed(2)}
+                        {legSettlement ? (
+                          <span className={`arena-status-pill ${legSettlement.voided ? "void" : legSettlement.hit ? "hit" : "miss"}`} style={{ marginLeft: 6, fontSize: 11 }}>
+                            {legSettlement.voided ? "退回" : legSettlement.hit ? "命中" : "未中"}
+                          </span>
+                        ) : liveLegResult ? (
+                          <span className={`arena-status-pill ${liveLegResult === "hit" ? "hit" : "miss"}`} style={{ marginLeft: 6, fontSize: 11 }}>
+                            判定：{liveLegResult === "hit" ? "命中" : "未中"}
+                          </span>
+                        ) : null}
+                      </span>
+                      );
+                    })}
+                  </div>
+                  {parlay.rationale ? <p className="arena-pick-card-reason">{parlay.rationale}</p> : null}
+                </div>
+              ))}
+
+              <h4>风险分桶汇总</h4>
+              <p className="arena-pick-hint">以下为上方单场 + 串关按风险类型的分类汇总，不是额外投注。小计为该桶下投注项总投入，合计应等于出单总投入 {money(selectedSlip.totalStake)}。</p>
+              {selectedSlip.portfolioBuckets.length === 0 ? <span className="muted">模型未输出分桶。</span> : null}
+              {selectedSlip.portfolioBuckets.map((bucket) => (
+                <div className="arena-pick-card" key={`${bucket.bucket}-${bucket.label}`}>
+                  <div className="arena-pick-card-header">
+                    <strong>{bucket.label}</strong>
+                    {bucket.stake > 0 ? <span className="arena-pick-odds">小计 {money(bucket.stake)}</span> : null}
+                  </div>
+                  {bucket.items.length > 0 ? (
+                    <div className="arena-pick-card-body">
+                      <span>{bucket.items.join("、")}</span>
+                    </div>
+                  ) : null}
+                  {bucket.rationale ? <p className="arena-pick-card-reason">{bucket.rationale}</p> : null}
+                </div>
+              ))}
+            </div>
+
+            {selectedSlip.settlement ? (
+              <div className="arena-settlement-box">
+                <strong>结算明细</strong>
                 <div className="arena-settlement-list">
                   {selectedSlip.settlement.items.map((item, index) => {
                     const single = item.type === "single" ? findSingleForSettlementItem(selectedSlip, index) : null;
                     const parlay = item.type === "parlay" ? findParlayForSettlementItem(selectedSlip, index) : null;
                     const primaryLabel =
                       item.type === "single" && single
-                        ? `${getMatchLabel(selectedSlipContextSummary.matches, single.matchId)} · ${poolDisplayName(single.poolCode)} · ${single.selectionLabel}`
+                        ? `${getMatchLabelForId(selectedSlipContextSummary.matches, single.matchId)} · ${poolDisplayName(single.poolCode)} · ${single.selectionLabel}`
                         : `${parlayDisplayName(parlay?.legs.length ?? item.legs.length)} · ${item.name || parlay?.parlayName || "串关"}`;
                     const profit = item.returnedAmount - item.stake;
                     return (
@@ -858,7 +839,7 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                         {item.type === "parlay"
                           ? item.legs.map((leg) => (
                               <small key={`${index}-${leg.matchId}-${leg.won}-${leg.voided}`}>
-                                {getMatchLabel(selectedSlipContextSummary.matches, leg.matchId)} · {leg.voided ? "待退回" : leg.won ? "命中" : "未中"}
+                                {getMatchLabelForId(selectedSlipContextSummary.matches, leg.matchId)} · {leg.voided ? "待退回" : leg.won ? "命中" : "未中"}
                               </small>
                             ))
                           : null}
@@ -866,49 +847,8 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
                     );
                   })}
                 </div>
-              ) : (
-                <span className="muted">暂无结算记录。</span>
-              )}
-            </div>
-            <div className="arena-detail-table">
-              <strong>单场</strong>
-              {selectedSlip.singles.length === 0 ? <span className="muted">无单场投入</span> : null}
-              {selectedSlip.singles.map((single) => (
-                <div className="arena-pick-row" key={`${single.matchId}-${single.poolCode}-${single.selectionCode}`}>
-                  <span>{getMatchLabel(selectedSlipContextSummary.matches, single.matchId)}</span>
-                  <span>
-                    {poolDisplayName(single.poolCode)} · {single.selectionLabel} · 赔率 {single.lockedOdds.toFixed(2)} · 投入 {money(single.stake)} · 潜在{" "}
-                    {money(single.stake * single.lockedOdds)}
-                  </span>
-                </div>
-              ))}
-              <strong>组合分桶</strong>
-              {selectedSlip.portfolioBuckets.length === 0 ? <span className="muted">暂无组合分桶</span> : null}
-              {selectedSlip.portfolioBuckets.map((bucket) => (
-                <div className="arena-pick-row" key={`${bucket.bucket}-${bucket.label}`}>
-                  <span>
-                    {bucket.label} · 投入 {money(bucket.stake)}
-                  </span>
-                  <span>{bucket.rationale}</span>
-                </div>
-              ))}
-              <strong>串关</strong>
-              {selectedSlip.parlays.length === 0 ? <span className="muted">无串关投入</span> : null}
-              {selectedSlip.parlays.map((parlay) => (
-                <div className="arena-pick-row" key={parlay.parlayName}>
-                  <span>
-                    {parlayDisplayName(parlay.legs.length)} · {parlay.parlayName} · 组合赔率 {parlay.combinedOdds.toFixed(2)} · 投入 {money(parlay.stake)} · 潜在{" "}
-                    {money(parlay.stake * parlay.combinedOdds)}
-                  </span>
-                  {parlay.legs.map((leg) => (
-                    <span key={`${parlay.parlayName}-${leg.matchId}-${leg.poolCode}-${leg.selectionCode}`}>
-                      {getMatchLabel(selectedSlipContextSummary.matches, leg.matchId)} · {poolDisplayName(leg.poolCode)} · {leg.selectionLabel} · 赔率{" "}
-                      {leg.lockedOdds.toFixed(2)}
-                    </span>
-                  ))}
-                </div>
-              ))}
-            </div>
+              </div>
+            ) : null}
             <div className="arena-audit-stack">
               <h4>输入 / 输出审计</h4>
               <h4>提示词拆解</h4>
@@ -945,130 +885,6 @@ export function BettingArenaPage({ arena, loading, error, onTriggerRound, onTrig
         </div>
       ) : null}
 
-      {inputPanelOpen && arena?.currentRound ? (
-        <div className="arena-detail-drawer" role="dialog" aria-modal="true">
-          <div className="arena-detail-panel arena-input-panel">
-            <div className="arena-detail-header">
-              <div>
-                <p className="eyebrow">投注输入审计</p>
-                <h3>投注输入面板</h3>
-              </div>
-              <button className="app-button app-button-secondary" type="button" onClick={() => setInputPanelOpen(false)}>
-                关闭
-              </button>
-            </div>
-            <div className="arena-input-summary">
-              <div>
-                <span>比赛</span>
-                <strong>{battleContextSummary.matches.length}</strong>
-              </div>
-              <div>
-                <span>玩法池</span>
-                <strong>{battleContextSummary.poolsCount}</strong>
-              </div>
-              <div>
-                <span>选项</span>
-                <strong>{battleContextSummary.optionsCount}</strong>
-              </div>
-              <div>
-                <span>数据缺口</span>
-                <strong>{battleContextSummary.dataGapsCount}</strong>
-              </div>
-            </div>
-            <div className="arena-input-match-list">
-              {battleContextSummary.matches.map((match) => (
-                <details className="arena-input-match" key={match.matchId}>
-                  <summary>
-                    <strong>
-                      {match.homeTeamName || match.matchId} 对 {match.awayTeamName || "对手"}
-                    </strong>
-                    <span>{match.kickoffAt}</span>
-                    <span>
-                      玩法 {match.poolsCount} · 选项 {match.optionsCount} · 缺口 {match.dataGapsCount}
-                    </span>
-                  </summary>
-                  <div className="arena-context-grid">
-                    <section>
-                      <h4>主队资料</h4>
-                      <p>教练：{match.homeTeamProfile.coach || "暂无"}</p>
-                      <p>打法：{match.homeTeamProfile.playingStyle || "暂无"}</p>
-                      <p>世界杯履历：{match.homeTeamProfile.worldCupHistory || "暂无"}</p>
-                      <p>身价：{match.homeTeamProfile.marketValue}</p>
-                      <p>核心球员：{match.homeTeamProfile.keyPlayers.slice(0, 4).join("、") || "暂无"}</p>
-                      <p>伤停：{match.homeTeamProfile.injuries.slice(0, 4).join("、") || "暂无"}</p>
-                    </section>
-                    <section>
-                      <h4>客队资料</h4>
-                      <p>教练：{match.awayTeamProfile.coach || "暂无"}</p>
-                      <p>打法：{match.awayTeamProfile.playingStyle || "暂无"}</p>
-                      <p>世界杯履历：{match.awayTeamProfile.worldCupHistory || "暂无"}</p>
-                      <p>身价：{match.awayTeamProfile.marketValue}</p>
-                      <p>核心球员：{match.awayTeamProfile.keyPlayers.slice(0, 4).join("、") || "暂无"}</p>
-                      <p>伤停：{match.awayTeamProfile.injuries.slice(0, 4).join("、") || "暂无"}</p>
-                    </section>
-                    <section>
-                      <h4>历史交锋</h4>
-                      <p>{match.historicalMatchup}</p>
-                    </section>
-                    <section>
-                      <h4>上下文摘要</h4>
-                      {match.contextDomains.length === 0 ? <p>暂无上下文快照。</p> : null}
-                      {match.contextDomains.map((domain) => (
-                        <p key={`${match.matchId}-${domain.domain}`}>
-                          {domainLabel(domain.domain)} · {domainStatusLabel(domain.status)}：{domain.summary || domain.error || "暂无"}
-                        </p>
-                      ))}
-                    </section>
-                    <section>
-                      <h4>外部情报</h4>
-                      <p>{match.externalIntel.summary || "暂无外部情报摘要"}</p>
-                      <p>采集时间：{match.externalIntel.collectedAt || "暂无"}</p>
-                      {match.externalIntel.sourceLinks.length > 0 ? (
-                        <div className="arena-source-links">
-                          {match.externalIntel.sourceLinks.map((source) => (
-                            <a key={`${match.matchId}-${source.url}`} href={source.url} target="_blank" rel="noreferrer">
-                              {source.title}
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                    </section>
-                    <section className="arena-source-breakdown">
-                      <h4>数据来源拆解</h4>
-                      {match.sourceBreakdown.map((source) => (
-                        <p key={`${match.matchId}-${source.source}`}>
-                          <strong>{source.source}</strong>：{source.detail}
-                        </p>
-                      ))}
-                    </section>
-                    <section>
-                      <h4>数据缺口</h4>
-                      <p>{match.dataGaps.length > 0 ? match.dataGaps.join("；") : "暂无明显缺口"}</p>
-                    </section>
-                  </div>
-                </details>
-              ))}
-              {battleContextSummary.matches.length === 0 ? <p className="muted">当前轮没有可注入比赛。</p> : null}
-            </div>
-            <details>
-              <summary>本轮完整输入 JSON</summary>
-              <pre className="arena-audit-code">{formatAuditValue(arena.currentRound.battleContext)}</pre>
-            </details>
-            <details>
-              <summary>各模型输入快照</summary>
-              <div className="arena-model-inputs">
-                {(arena.slips ?? []).map((slip) => (
-                  <details key={slip.id}>
-                    <summary>{slip.modelDisplayName}</summary>
-                    <pre className="arena-audit-code">{slip.prompt || "暂无提示词快照。"}</pre>
-                  </details>
-                ))}
-                {(arena.slips ?? []).length === 0 ? <p className="muted">当前轮还没有模型输入快照。</p> : null}
-              </div>
-            </details>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

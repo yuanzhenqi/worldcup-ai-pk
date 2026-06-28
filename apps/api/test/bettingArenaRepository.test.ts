@@ -697,6 +697,111 @@ describe("betting arena repository and context", () => {
     db.close();
   });
 
+  it("reconstructs a mixed voided legacy parlay as stake returned instead of a parlay hit", () => {
+    const { db } = createTestDatabase();
+    insertModel(db, "model-1", "Model One");
+    insertMatch(db, "match-1", { status: "finished", homeTeamName: "德国", awayTeamName: "日本" });
+    insertMatch(db, "match-2", {
+      apiFootballFixtureId: 9002,
+      status: "finished",
+      homeTeamId: "home-2",
+      homeTeamName: "荷兰",
+      awayTeamId: "away-2",
+      awayTeamName: "瑞典"
+    });
+    ensureBettingArenaAccounts(db, new Date("2026-06-20T00:00:00.000Z"));
+    const battleContext = buildBattleContext(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] }
+    });
+    const round = createBettingArenaRound(db, {
+      roundDate: "2026-06-20",
+      lockTime: "2026-06-20T10:00:00.000Z",
+      battleContext,
+      externalIntel: { summary: "统一外部情报未配置", dataGaps: ["未配置外部联网情报采集"] },
+      now: new Date("2026-06-20T00:00:00.000Z")
+    });
+    insertBetSlip(db, {
+      id: "slip-legacy-void",
+      roundId: round.id,
+      modelId: "model-1",
+      totalStake: 100,
+      potentialReturn: 378,
+      parsedSlip: {
+        action: "bet",
+        singles: [],
+        parlays: [
+          {
+            parlayName: "退回双关",
+            stake: 100,
+            legs: [
+              { matchId: "match-1", poolCode: "HAD", selectionCode: "h", selectionLabel: "主胜", lockedOdds: 1.8 },
+              { matchId: "match-2", poolCode: "HAD", selectionCode: "h", selectionLabel: "主胜", lockedOdds: 2.1 }
+            ],
+            combinedOdds: 3.78,
+            confidence: 0.58,
+            rationale: "一场退回。"
+          }
+        ],
+        portfolioBuckets: [],
+        skipReasons: [],
+        dataGaps: []
+      }
+    });
+    db.prepare(
+      `
+        INSERT INTO betting_arena_settlements (
+          id, slip_id, round_id, model_id, stake, returned_amount, profit, status, settlement_json, settled_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      "settlement-legacy-void",
+      "slip-legacy-void",
+      round.id,
+      "model-1",
+      100,
+      100,
+      0,
+      "void",
+      JSON.stringify({
+        stake: 100,
+        returnedAmount: 100,
+        profit: 0,
+        status: "void",
+        hit: false,
+        legs: [
+          { matchId: "match-1", won: true, voided: false },
+          { matchId: "match-2", won: false, voided: true }
+        ]
+      }),
+      "2026-06-21T14:00:00.000Z"
+    );
+
+    const summary = getBettingArenaSummary(db, round.id);
+
+    expect(summary.accounts[0]).toMatchObject({
+      settledPickCount: 0,
+      hitPickCount: 0,
+      pickHitRate: 0
+    });
+    expect(summary.slips[0]?.settlement?.items).toEqual([
+      {
+        type: "parlay",
+        name: "退回双关",
+        stake: 100,
+        returnedAmount: 100,
+        won: false,
+        voided: true,
+        legs: [
+          { matchId: "match-1", won: true, voided: false },
+          { matchId: "match-2", won: false, voided: true }
+        ]
+      }
+    ]);
+    db.close();
+  });
+
   it("summarizes historical round best and worst models and can focus a historical round", () => {
     const { db } = createTestDatabase();
     insertModel(db, "model-1", "Model One");

@@ -70,6 +70,48 @@ function buildStandardOptions(poolCode: string, item: Obj): SportteryOddsPoolDto
   ];
 }
 
+function formatOptionLabel(poolCode: string, code: string): string {
+  if (poolCode === "HAFU") {
+    const labels: Record<string, string> = {
+      HH: "胜/胜",
+      HD: "胜/平",
+      HA: "胜/负",
+      DH: "平/胜",
+      DD: "平/平",
+      DA: "平/负",
+      AH: "负/胜",
+      AD: "负/平",
+      AA: "负/负"
+    };
+    return labels[code] ?? code;
+  }
+  if (poolCode === "TTG") {
+    return `${code}球`;
+  }
+  return code;
+}
+
+function buildGenericOptions(poolCode: string, item: Obj): SportteryOddsPoolDto["options"] {
+  const odds = item.odds;
+  if (Array.isArray(odds)) {
+    return odds.flatMap((opt): SportteryOddsPoolDto["options"][number][] => {
+      if (!isObj(opt)) return [];
+      const code = poolString(opt.code);
+      const value = poolString(opt.value ?? opt.odds);
+      if (!code || !value) return [];
+      return [{ code, label: poolString(opt.label) ?? formatOptionLabel(poolCode, code), value }];
+    });
+  }
+  if (isObj(odds)) {
+    return Object.entries(odds).flatMap(([code, value]): SportteryOddsPoolDto["options"][number][] => {
+      const valueStr = poolString(value);
+      if (!valueStr) return [];
+      return [{ code, label: formatOptionLabel(poolCode, code), value: valueStr }];
+    });
+  }
+  return [];
+}
+
 export function parseSportteryOddsPools(oddsList: unknown): SportteryOddsPoolDto[] {
   if (!Array.isArray(oddsList)) return [];
   return oddsList.map((item) => {
@@ -86,7 +128,8 @@ export function parseSportteryOddsPools(oddsList: unknown): SportteryOddsPoolDto
     }
 
     const poolCode = poolString(item.poolCode) ?? "UNKNOWN";
-    const options = poolCode === "HAD" || poolCode === "HHAD" ? buildStandardOptions(poolCode, item) : [];
+    const options =
+      poolCode === "HAD" || poolCode === "HHAD" ? buildStandardOptions(poolCode, item) : buildGenericOptions(poolCode, item);
     return {
       poolCode,
       status: options.length > 0 ? "available" : "unavailable",

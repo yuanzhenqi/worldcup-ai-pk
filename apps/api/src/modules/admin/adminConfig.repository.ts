@@ -15,6 +15,10 @@ export interface SaveAiModelInput {
   modelName: string;
   displayName: string;
   enabled: boolean;
+  contextWindowTokens: number;
+  maxOutputTokens: number;
+  requestTimeoutMs: number;
+  requestRetryCount: number;
 }
 
 export interface SavePromptTemplateInput {
@@ -36,6 +40,10 @@ export interface AiModelConnectionConfig {
   providerDisplayName: string;
   baseUrl: string;
   apiKey: string;
+  contextWindowTokens: number;
+  maxOutputTokens: number;
+  requestTimeoutMs: number;
+  requestRetryCount: number;
 }
 
 interface AiProviderRow {
@@ -53,6 +61,10 @@ interface AiModelRow {
   model_name: string;
   display_name: string;
   enabled: number;
+  context_window_tokens: number;
+  max_output_tokens: number;
+  request_timeout_ms: number;
+  request_retry_count: number;
 }
 
 interface PromptTemplateRow {
@@ -105,7 +117,11 @@ function toModelDto(row: AiModelRow): AiModelConfigDto {
     providerId: row.provider_id,
     modelName: row.model_name,
     displayName: row.display_name,
-    enabled: row.enabled > 0
+    enabled: row.enabled > 0,
+    contextWindowTokens: row.context_window_tokens,
+    maxOutputTokens: row.max_output_tokens,
+    requestTimeoutMs: row.request_timeout_ms,
+    requestRetryCount: row.request_retry_count
   };
 }
 
@@ -128,6 +144,7 @@ function getProviderById(db: Database, id: string): AiProviderConfigDto {
       SELECT id, name, display_name, base_url, api_key, enabled
       FROM ai_providers
       WHERE id = ?
+        AND deleted_at IS NULL
     `
   ).get(id) as AiProviderRow | undefined;
 
@@ -141,9 +158,12 @@ function getProviderById(db: Database, id: string): AiProviderConfigDto {
 function getModelById(db: Database, id: string): AiModelConfigDto {
   const row = db.prepare(
     `
-      SELECT id, provider_id, model_name, display_name, enabled
+      SELECT ai_models.id, ai_models.provider_id, ai_models.model_name, ai_models.display_name, ai_models.enabled, ai_models.context_window_tokens, ai_models.max_output_tokens, ai_models.request_timeout_ms, ai_models.request_retry_count
       FROM ai_models
-      WHERE id = ?
+      INNER JOIN ai_providers ON ai_providers.id = ai_models.provider_id
+      WHERE ai_models.id = ?
+        AND ai_models.deleted_at IS NULL
+        AND ai_providers.deleted_at IS NULL
     `
   ).get(id) as AiModelRow | undefined;
 
@@ -237,6 +257,7 @@ export function listAiProviders(db: Database): AiProviderConfigDto[] {
     `
       SELECT id, name, display_name, base_url, api_key, enabled
       FROM ai_providers
+      WHERE deleted_at IS NULL
       ORDER BY display_name ASC, name ASC
     `
   ).all() as AiProviderRow[];
@@ -262,22 +283,27 @@ export function updateAiProvider(db: Database, id: string, input: SaveAiProvider
       UPDATE ai_providers
       SET name = ?, display_name = ?, base_url = ?, api_key = ?, enabled = ?, updated_at = ?
       WHERE id = ?
+        AND deleted_at IS NULL
     `
   ).run(input.name, input.displayName, input.baseUrl, input.apiKey, input.enabled ? 1 : 0, now.toISOString(), id);
 
   return getProviderById(db, id);
 }
 
-export function deleteAiProvider(db: Database, id: string): void {
-  db.prepare("DELETE FROM ai_providers WHERE id = ?").run(id);
+export function deleteAiProvider(db: Database, id: string, now = new Date()): void {
+  const timestamp = now.toISOString();
+  db.prepare("UPDATE ai_providers SET enabled = 0, deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL").run(timestamp, timestamp, id);
 }
 
 export function listAiModels(db: Database): AiModelConfigDto[] {
   const rows = db.prepare(
     `
-      SELECT id, provider_id, model_name, display_name, enabled
+      SELECT ai_models.id, ai_models.provider_id, ai_models.model_name, ai_models.display_name, ai_models.enabled, ai_models.context_window_tokens, ai_models.max_output_tokens, ai_models.request_timeout_ms, ai_models.request_retry_count
       FROM ai_models
-      ORDER BY display_name ASC, model_name ASC
+      INNER JOIN ai_providers ON ai_providers.id = ai_models.provider_id
+      WHERE ai_models.deleted_at IS NULL
+        AND ai_providers.deleted_at IS NULL
+      ORDER BY ai_models.display_name ASC, ai_models.model_name ASC
     `
   ).all() as AiModelRow[];
 
@@ -288,10 +314,34 @@ export function createAiModel(db: Database, input: SaveAiModelInput, now = new D
   const id = randomUUID();
   db.prepare(
     `
-      INSERT INTO ai_models (id, provider_id, model_name, display_name, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ai_models (
+        id,
+        provider_id,
+        model_name,
+        display_name,
+        enabled,
+        context_window_tokens,
+        max_output_tokens,
+        request_timeout_ms,
+        request_retry_count,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(id, input.providerId, input.modelName, input.displayName, input.enabled ? 1 : 0, now.toISOString(), now.toISOString());
+  ).run(
+    id,
+    input.providerId,
+    input.modelName,
+    input.displayName,
+    input.enabled ? 1 : 0,
+    input.contextWindowTokens,
+    input.maxOutputTokens,
+    input.requestTimeoutMs,
+    input.requestRetryCount,
+    now.toISOString(),
+    now.toISOString()
+  );
 
   return getModelById(db, id);
 }
@@ -300,16 +350,37 @@ export function updateAiModel(db: Database, id: string, input: SaveAiModelInput,
   db.prepare(
     `
       UPDATE ai_models
-      SET provider_id = ?, model_name = ?, display_name = ?, enabled = ?, updated_at = ?
+      SET provider_id = ?,
+          model_name = ?,
+          display_name = ?,
+          enabled = ?,
+          context_window_tokens = ?,
+          max_output_tokens = ?,
+          request_timeout_ms = ?,
+          request_retry_count = ?,
+          updated_at = ?
       WHERE id = ?
+        AND deleted_at IS NULL
     `
-  ).run(input.providerId, input.modelName, input.displayName, input.enabled ? 1 : 0, now.toISOString(), id);
+  ).run(
+    input.providerId,
+    input.modelName,
+    input.displayName,
+    input.enabled ? 1 : 0,
+    input.contextWindowTokens,
+    input.maxOutputTokens,
+    input.requestTimeoutMs,
+    input.requestRetryCount,
+    now.toISOString(),
+    id
+  );
 
   return getModelById(db, id);
 }
 
-export function deleteAiModel(db: Database, id: string): void {
-  db.prepare("DELETE FROM ai_models WHERE id = ?").run(id);
+export function deleteAiModel(db: Database, id: string, now = new Date()): void {
+  const timestamp = now.toISOString();
+  db.prepare("UPDATE ai_models SET enabled = 0, deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL").run(timestamp, timestamp, id);
 }
 
 export function getAiModelConnectionConfig(db: Database, id: string): AiModelConnectionConfig {
@@ -320,6 +391,10 @@ export function getAiModelConnectionConfig(db: Database, id: string): AiModelCon
           ai_models.id AS model_id,
           ai_models.model_name,
           ai_models.display_name AS model_display_name,
+          ai_models.context_window_tokens,
+          ai_models.max_output_tokens,
+          ai_models.request_timeout_ms,
+          ai_models.request_retry_count,
           ai_providers.id AS provider_id,
           ai_providers.name AS provider_name,
           ai_providers.display_name AS provider_display_name,
@@ -328,6 +403,8 @@ export function getAiModelConnectionConfig(db: Database, id: string): AiModelCon
         FROM ai_models
         INNER JOIN ai_providers ON ai_providers.id = ai_models.provider_id
         WHERE ai_models.id = ?
+          AND ai_models.deleted_at IS NULL
+          AND ai_providers.deleted_at IS NULL
       `
     )
     .get(id) as
@@ -335,6 +412,10 @@ export function getAiModelConnectionConfig(db: Database, id: string): AiModelCon
         model_id: string;
         model_name: string;
         model_display_name: string;
+        context_window_tokens: number;
+        max_output_tokens: number;
+        request_timeout_ms: number;
+        request_retry_count: number;
         provider_id: string;
         provider_name: string;
         provider_display_name: string;
@@ -355,7 +436,11 @@ export function getAiModelConnectionConfig(db: Database, id: string): AiModelCon
     providerName: row.provider_name,
     providerDisplayName: row.provider_display_name,
     baseUrl: row.base_url,
-    apiKey: row.api_key
+    apiKey: row.api_key,
+    contextWindowTokens: row.context_window_tokens,
+    maxOutputTokens: row.max_output_tokens,
+    requestTimeoutMs: row.request_timeout_ms,
+    requestRetryCount: row.request_retry_count
   };
 }
 

@@ -16,6 +16,7 @@ import type {
   PredictionRunStatusDto,
   SingleCombinationAgentOutputDto
 } from "@worldcup-ai-pk/shared";
+import type { SingleMatchEnrichment } from "../betting-arena/bettingArena.context";
 import { runOpenAiCompatiblePrediction } from "../ai/openAiCompatibleClient";
 import { buildMatchAnalysisPrompt, buildSingleCombinationPrompt } from "./predictionAgentPrompts";
 import { parseMatchAnalysisOutput, parseSingleCombinationOutput } from "./predictionAgentOutputs";
@@ -38,6 +39,10 @@ interface EnabledModelRow {
   provider_display_name: string;
   base_url: string;
   api_key: string;
+  context_window_tokens: number;
+  max_output_tokens: number;
+  request_timeout_ms: number;
+  request_retry_count: number;
 }
 
 interface PromptTemplateRow {
@@ -58,6 +63,7 @@ interface ExecutePredictionInput {
   runId: string;
   predictionInput: PredictionRequestInputDto;
   context: FixtureContextSummaryDto | null;
+  enrichment?: SingleMatchEnrichment | null;
   now?: Date;
 }
 
@@ -108,13 +114,19 @@ function listEnabledModels(db: Database): EnabledModelRow[] {
           ai_models.id AS model_id,
           ai_models.model_name,
           ai_models.display_name AS model_display_name,
+          ai_models.context_window_tokens,
+          ai_models.max_output_tokens,
+          ai_models.request_timeout_ms,
+          ai_models.request_retry_count,
           ai_providers.display_name AS provider_display_name,
           ai_providers.base_url,
           ai_providers.api_key
         FROM ai_models
         INNER JOIN ai_providers ON ai_providers.id = ai_models.provider_id
         WHERE ai_models.enabled = 1
+          AND ai_models.deleted_at IS NULL
           AND ai_providers.enabled = 1
+          AND ai_providers.deleted_at IS NULL
         ORDER BY ai_models.display_name ASC, ai_models.model_name ASC
       `
     )
@@ -501,7 +513,8 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
     outputStyle: input.predictionInput.outputStyle,
     customPrompt: input.predictionInput.customPrompt,
     context: input.context,
-    promptTemplate
+    promptTemplate,
+    enrichment: input.enrichment
   });
 
   for (const model of models) {
@@ -512,7 +525,11 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
         {
           baseUrl: model.base_url,
           apiKey: model.api_key,
-          modelName: model.model_name
+          modelName: model.model_name,
+          contextWindowTokens: model.context_window_tokens,
+          maxOutputTokens: model.max_output_tokens,
+          requestTimeoutMs: model.request_timeout_ms,
+          requestRetryCount: model.request_retry_count
         },
         matchAnalysisPrompt
       );
@@ -549,7 +566,11 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
             {
               baseUrl: model.base_url,
               apiKey: model.api_key,
-              modelName: model.model_name
+              modelName: model.model_name,
+              contextWindowTokens: model.context_window_tokens,
+              maxOutputTokens: model.max_output_tokens,
+              requestTimeoutMs: model.request_timeout_ms,
+              requestRetryCount: model.request_retry_count
             },
             buildSingleCombinationPrompt({
               match: input.match,
@@ -558,7 +579,8 @@ export async function executeManualPredictionRequest(input: ExecutePredictionInp
               outputStyle: input.predictionInput.outputStyle,
               customPrompt: input.predictionInput.customPrompt,
               context: input.context,
-              matchAnalysis
+              matchAnalysis,
+              enrichment: input.enrichment
             })
           );
           singleCombination = parseSingleCombinationOutput(singleCombinationResult.content);

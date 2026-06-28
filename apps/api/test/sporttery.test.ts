@@ -97,6 +97,63 @@ describe("Sporttery parser", () => {
     expect(pools[2]?.raw).toMatchObject({ poolCode: "CRS", odds: "" });
   });
 
+  it("parses CRS, TTG and HAFU pools from generic option arrays", () => {
+    const pools = parseSportteryOddsPools([
+      {
+        poolCode: "CRS",
+        odds: [
+          { code: "1:0", value: "6.50" },
+          { code: "2:1", value: "8.00" }
+        ],
+        updateDate: "2026-06-15",
+        updateTime: "10:00:00"
+      },
+      {
+        poolCode: "TTG",
+        odds: [
+          { code: "0", label: "0球", value: "12.00" },
+          { code: "1", label: "1球", value: "6.00" }
+        ],
+        updateDate: "2026-06-15",
+        updateTime: "10:00:00"
+      },
+      {
+        poolCode: "HAFU",
+        odds: { HH: "3.50", HD: "15.00", HA: "25.00" },
+        updateDate: "2026-06-15",
+        updateTime: "10:00:00"
+      }
+    ]);
+
+    expect(pools).toMatchObject([
+      {
+        poolCode: "CRS",
+        status: "available",
+        options: [
+          { code: "1:0", label: "1:0", value: "6.50" },
+          { code: "2:1", label: "2:1", value: "8.00" }
+        ]
+      },
+      {
+        poolCode: "TTG",
+        status: "available",
+        options: [
+          { code: "0", label: "0球", value: "12.00" },
+          { code: "1", label: "1球", value: "6.00" }
+        ]
+      },
+      {
+        poolCode: "HAFU",
+        status: "available",
+        options: [
+          { code: "HH", label: "胜/胜", value: "3.50" },
+          { code: "HD", label: "胜/平", value: "15.00" },
+          { code: "HA", label: "胜/负", value: "25.00" }
+        ]
+      }
+    ]);
+  });
+
   it("keeps malformed Sporttery odds entries unavailable", () => {
     expect(parseSportteryOddsPools([null, "bad-entry"])).toEqual([
       {

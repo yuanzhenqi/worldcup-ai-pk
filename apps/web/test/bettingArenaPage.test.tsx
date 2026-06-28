@@ -199,7 +199,7 @@ describe("BettingArenaPage", () => {
     return panel;
   }
 
-  it("shows betting input audit data and per-model input output details", () => {
+  it("shows model detail with prompt audit and settlement", () => {
     render(
       <BettingArenaPage
         arena={arena}
@@ -211,30 +211,12 @@ describe("BettingArenaPage", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "投注输入面板" }));
-    expect(screen.getByRole("heading", { name: "投注输入面板" })).toBeInTheDocument();
-    expect(screen.getAllByText("德国 对 科特迪瓦").length).toBeGreaterThan(0);
-    expect(screen.getByText("玩法 1 · 选项 1 · 缺口 2")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("德国 对 科特迪瓦"));
-    expect(screen.getByText("主队资料")).toBeInTheDocument();
-    expect(screen.getByText("数据来源拆解")).toBeInTheDocument();
-    expect(screen.getAllByText((_text, element) => element?.textContent?.includes("API-Football：仅赛程") ?? false).length).toBeGreaterThan(0);
-    expect(screen.getAllByText((_text, element) => element?.textContent?.includes("体彩：投注玩法与赔率") ?? false).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/懂球帝/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/本地资料/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/外部联网情报/).length).toBeGreaterThan(0);
-    expect(screen.getByText((_text, element) => element?.textContent === "外部联网情报：统一采集已缓存：德国主力前锋可出场。")).toBeInTheDocument();
-    expect(screen.getByText("外部情报")).toBeInTheDocument();
-    expect(screen.getByText("德国主力前锋可出场。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Team news" })).toHaveAttribute("href", "https://example.com/news");
-    expect(screen.getAllByText(/Home Star/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/暂无球队身价数据源/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/external_intel · search_partial_failed：部分外部情报搜索失败：timeout/)).toBeInTheDocument();
+    expect(screen.queryByText("投注输入面板")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
     expect(screen.getByRole("heading", { name: "Model One" })).toBeInTheDocument();
-    expect(screen.getByText("组合分桶")).toBeInTheDocument();
-    expect(screen.getByText("稳胆 · 投入 200")).toBeInTheDocument();
+    expect(screen.getByText("投注分桶")).toBeInTheDocument();
+    expect(screen.getByText("稳胆")).toBeInTheDocument();
     expect(screen.getByText("输入 / 输出审计")).toBeInTheDocument();
     expect(screen.getByText("提示词拆解")).toBeInTheDocument();
     expect(screen.getByText("提示规则")).toBeInTheDocument();
@@ -309,7 +291,7 @@ describe("BettingArenaPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "查看投注账本" }));
 
-    expect(onLoadLedger).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    expect(onLoadLedger).toHaveBeenCalledWith({ modelId: null, limit: 50, offset: 0 });
     const ledgerHeading = await screen.findByRole("heading", { name: "投注账本" });
     const ledgerDialog = ledgerHeading.closest('[role="dialog"]');
     if (!(ledgerDialog instanceof HTMLElement)) {
@@ -321,6 +303,74 @@ describe("BettingArenaPage", () => {
 
     expect(screen.getByRole("heading", { name: "Model One" })).toBeInTheDocument();
     expect(screen.getByText("命中 · 返还 370 · 盈亏 170")).toBeInTheDocument();
+  });
+
+  it("marks unsettled betting ledger rows without showing zero settlement values", async () => {
+    const unsettledSlip = {
+      ...arena.slips[0],
+      settlement: null,
+      settlementSummary: null
+    };
+    const onLoadLedger = vi.fn().mockResolvedValue({
+      items: [{ round: arena.currentRound, slip: unsettledSlip }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+      modelId: null
+    });
+    render(
+      <BettingArenaPage
+        arena={arena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+        onLoadLedger={onLoadLedger}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "查看投注账本" }));
+
+    const ledgerHeading = await screen.findByRole("heading", { name: "投注账本" });
+    const ledgerDialog = ledgerHeading.closest('[role="dialog"]');
+    if (!(ledgerDialog instanceof HTMLElement)) {
+      throw new Error("Ledger dialog not found");
+    }
+    expect(within(ledgerDialog).getByText("待结算")).toBeInTheDocument();
+    expect(within(ledgerDialog).getByText("潜在 370")).toBeInTheDocument();
+    expect(within(ledgerDialog).queryByText("返还 0")).not.toBeInTheDocument();
+    expect(within(ledgerDialog).queryByText("盈亏 +0")).not.toBeInTheDocument();
+  });
+
+  it("shows hit item counts in betting ledger rows", async () => {
+    const onLoadLedger = vi.fn().mockResolvedValue({
+      items: [{ round: arena.currentRound, slip: arena.slips[0] }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+      modelId: null
+    });
+    render(
+      <BettingArenaPage
+        arena={arena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+        onLoadLedger={onLoadLedger}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "查看投注账本" }));
+
+    const ledgerHeading = await screen.findByRole("heading", { name: "投注账本" });
+    const ledgerDialog = ledgerHeading.closest('[role="dialog"]');
+    if (!(ledgerDialog instanceof HTMLElement)) {
+      throw new Error("Ledger dialog not found");
+    }
+    expect(within(ledgerDialog).getByText("命中 1/1")).toBeInTheDocument();
   });
 
   it("loads historical round details and opens one historical model slip", async () => {
@@ -383,8 +433,9 @@ describe("BettingArenaPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
 
     expect(screen.getAllByText("德国 对 科特迪瓦").length).toBeGreaterThan(0);
-    expect(screen.getByText("胜平负 · 主胜 · 赔率 1.85 · 投入 200 · 潜在 370")).toBeInTheDocument();
-    expect(screen.queryByText("match-1 · HAD · 主胜 · 200")).not.toBeInTheDocument();
+    expect(screen.getByText("胜平负 · 主胜")).toBeInTheDocument();
+    expect(screen.getByText("赔率 1.85")).toBeInTheDocument();
+    expect(screen.getByText("投入 200 · 潜在 370")).toBeInTheDocument();
   });
 
   it("shows readable parlay structure in model slip details", () => {
@@ -424,9 +475,11 @@ describe("BettingArenaPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
 
-    expect(screen.getByText("2 串 1 · 稳健双关 · 组合赔率 3.18 · 投入 100 · 潜在 318")).toBeInTheDocument();
-    expect(screen.getByText("德国 对 科特迪瓦 · 胜平负 · 主胜 · 赔率 1.85")).toBeInTheDocument();
-    expect(screen.getByText("德国 对 科特迪瓦 · 让球胜平负 · 让负 · 赔率 1.72")).toBeInTheDocument();
+    expect(screen.getByText("2 串 1 · 稳健双关")).toBeInTheDocument();
+    expect(screen.getByText("组合赔率 3.18")).toBeInTheDocument();
+    expect(screen.getByText("投入 100 · 潜在 318")).toBeInTheDocument();
+    expect(screen.getByText(/胜平负 · 主胜 · 1.85/)).toBeInTheDocument();
+    expect(screen.getByText(/让球胜平负 · 让负 · 1.72/)).toBeInTheDocument();
   });
 
   it("lets one model generate a slip and shows result progress", async () => {
@@ -455,12 +508,34 @@ describe("BettingArenaPage", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "单独生成 Model One" }));
+    fireEvent.click(screen.getByRole("button", { name: "生成 Model One 投注单" }));
 
-    expect(onTriggerModel).toHaveBeenCalledWith("round-1", "model-1");
+    expect(onTriggerModel).toHaveBeenCalledWith("round-1", "model-1", false);
     fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
     expect(screen.getByText("赛果进度 1/1 已出")).toBeInTheDocument();
     expect(screen.getByText("已完赛 2-1")).toBeInTheDocument();
+  });
+
+  it("force-regenerates an unsettled slip through the regenerate button", async () => {
+    const onTriggerModel = vi.fn().mockResolvedValue(arena);
+    const unsettledArena: BettingArenaDto = {
+      ...arena,
+      slips: arena.slips.map((slip) => (slip.modelId === "model-1" ? { ...slip, settlement: null, settlementSummary: null } : slip))
+    };
+    render(
+      <BettingArenaPage
+        arena={unsettledArena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={onTriggerModel}
+        onSettleRound={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成 Model One 投注单" }));
+
+    expect(onTriggerModel).toHaveBeenCalledWith("round-1", "model-1", true);
   });
 
   it("allows multiple model generation buttons to be busy at the same time", async () => {
@@ -492,13 +567,32 @@ describe("BettingArenaPage", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "单独生成 Model One" }));
-    fireEvent.click(screen.getByRole("button", { name: "单独生成 Model Two" }));
+    fireEvent.click(screen.getByRole("button", { name: "生成 Model One 投注单" }));
+    fireEvent.click(screen.getByRole("button", { name: "生成 Model Two 投注单" }));
 
     expect(screen.getAllByText("生成中").length).toBe(2);
     expect(screen.getByText("正在生成 2 个模型")).toBeInTheDocument();
 
     resolveFirst(arenaWithTwoModels);
     resolveSecond(arenaWithTwoModels);
+  });
+
+  it("keeps raw prompt and battle context out of first-level betting arena", () => {
+    render(
+      <BettingArenaPage
+        arena={arena}
+        loading={false}
+        error={null}
+        onTriggerRound={vi.fn()}
+        onTriggerModel={vi.fn()}
+        onSettleRound={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("heading", { name: "AI 实盘投注场" })).toBeInTheDocument();
+    expect(screen.queryByText("投注输入面板")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Model One 投注详情" }));
+    expect(screen.getByText("提示词拆解")).toBeInTheDocument();
   });
 });

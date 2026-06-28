@@ -46,6 +46,7 @@ export function listPublicLeaderboard(db: Database): LeaderboardDto {
         FROM prediction_scores
         INNER JOIN ai_predictions ON ai_predictions.id = prediction_scores.ai_prediction_id
         INNER JOIN ai_models ON ai_models.id = prediction_scores.model_id
+        WHERE ai_models.deleted_at IS NULL
         GROUP BY ai_models.id, ai_models.display_name
         ORDER BY total_score DESC, result_hits DESC, exact_score_hits DESC, model_display_name ASC
       `
@@ -65,6 +66,8 @@ export function listPublicLeaderboard(db: Database): LeaderboardDto {
               ORDER BY prediction_scores.scored_at DESC, prediction_scores.id DESC
             ) AS row_number
           FROM prediction_scores
+          INNER JOIN ai_models ON ai_models.id = prediction_scores.model_id
+          WHERE ai_models.deleted_at IS NULL
         )
         WHERE row_number <= 5
         ORDER BY model_id ASC, row_number ASC
@@ -111,6 +114,7 @@ export function listPublicLeaderboard(db: Database): LeaderboardDto {
           MAX(ai_predictions.created_at) AS latest_prediction_at
         FROM ai_predictions
         INNER JOIN ai_models ON ai_models.id = ai_predictions.model_id
+        WHERE ai_models.deleted_at IS NULL
         GROUP BY ai_models.id, ai_models.display_name
         ORDER BY predictions_count DESC, matches_covered DESC, parsed_predictions_count DESC, model_display_name ASC
       `

@@ -32,11 +32,11 @@ const taskOptions: Array<{ value: PredictionTaskType; label: string }> = [
 ];
 
 const defaultDataOptions: PredictionDataOptionsDto = {
-  useOdds: false,
-  useApiFootballPrediction: false,
-  useHeadToHead: false,
-  usePlayerLineupInjuries: false,
-  useDongqiudiIntel: false,
+  useOdds: true,
+  useApiFootballPrediction: true,
+  useHeadToHead: true,
+  usePlayerLineupInjuries: true,
+  useDongqiudiIntel: true,
   useSporttery: true,
   useTeamProfile: true
 };
@@ -79,15 +79,15 @@ export function PredictionRequestDrawer({
     });
   }
 
-  function setSportteryDataOption(value: boolean) {
+  function setAllDataOptions(value: boolean) {
     setDataOptions({
-      useOdds: false,
-      useApiFootballPrediction: false,
-      useHeadToHead: false,
-      usePlayerLineupInjuries: false,
-      useDongqiudiIntel: false,
+      useOdds: value,
+      useApiFootballPrediction: value,
+      useHeadToHead: value,
+      usePlayerLineupInjuries: value,
+      useDongqiudiIntel: value,
       useSporttery: value,
-      useTeamProfile: true
+      useTeamProfile: value
     });
   }
 
@@ -133,8 +133,8 @@ export function PredictionRequestDrawer({
             </label>
             <div className="drawer-option-grid">
               <label>
-                <input type="checkbox" checked={dataOptions.useSporttery} onChange={(event) => setSportteryDataOption(event.target.checked)} />
-                <span>使用体彩赛前情报</span>
+                <input type="checkbox" checked={dataOptions.useSporttery} onChange={(event) => setAllDataOptions(event.target.checked)} />
+                <span>使用全部数据源（体彩/懂球帝/球队资料/外部情报等）</span>
               </label>
             </div>
           </section>

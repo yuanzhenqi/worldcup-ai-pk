@@ -8,6 +8,7 @@ import {
   listAdminContextCacheLogs,
   refreshAdminMatchExternalIntel,
   saveAdminExternalIntelSettings,
+  syncAdminDongqiudiMappings,
   syncAdminSportteryMappings,
   testAdminAiModel,
   updateAdminAiModel,
@@ -48,16 +49,18 @@ const { model, promptTemplate, provider } = vi.hoisted(() => ({
 
 vi.mock("../src/api/client", () => ({
   getAdminApiFootballSettings: vi.fn().mockResolvedValue({ configured: true }),
+  getAdminDongqiudiSettings: vi.fn().mockResolvedValue({ enabled: false }),
   getAdminExternalIntelSettings: vi.fn().mockResolvedValue({
     enabled: false,
     provider: "duckduckgo_html",
     summarizerModelId: "",
     cacheMinutes: 60,
     maxResultsPerQuery: 5,
-    maxQueriesPerMatch: 4
+    maxQueriesPerMatch: 8
   }),
   getAdminSportterySettings: vi.fn().mockResolvedValue({ enabled: true }),
   getAdminSummary: vi.fn().mockResolvedValue({ matchCount: 72, scheduledCount: 70, liveCount: 0, finishedCount: 2, latestSyncLog: null }),
+  listAdminDongqiudiMappings: vi.fn().mockResolvedValue([]),
   listAdminSportteryMappings: vi.fn().mockResolvedValue([{ apiFootballFixtureId: 1001, sportteryMatchId: 2040170, updatedAt: "2026-06-14T08:00:00.000Z" }]),
   listAdminAiProviders: vi.fn().mockResolvedValue([provider]),
   listAdminAiModels: vi.fn().mockResolvedValue([model]),
@@ -73,6 +76,7 @@ vi.mock("../src/api/client", () => ({
   listAdminPromptTemplates: vi.fn().mockResolvedValue([promptTemplate]),
   listAdminTeamDisplayNames: vi.fn().mockResolvedValue([]),
   saveAdminApiFootballKey: vi.fn(),
+  saveAdminDongqiudiSettings: vi.fn().mockResolvedValue({ enabled: false }),
   saveAdminSportterySettings: vi.fn().mockResolvedValue({ enabled: false }),
   syncApiFootballFixtures: vi.fn(),
   syncAdminSportteryMappings: vi.fn().mockResolvedValue({ matched: 12, unmatched: 10, totalSportteryMatches: 22 }),
@@ -82,10 +86,13 @@ vi.mock("../src/api/client", () => ({
   testAdminAiModel: vi.fn().mockResolvedValue({ ok: true, status: 200, message: "模型测试成功", latencyMs: 128 }),
   deleteAdminAiProvider: vi.fn().mockResolvedValue({ deleted: true }),
   deleteAdminAiModel: vi.fn().mockResolvedValue({ deleted: true }),
+  deleteAdminDongqiudiMapping: vi.fn().mockResolvedValue({ deleted: true }),
   deleteAdminPromptTemplate: vi.fn().mockResolvedValue({ deleted: true }),
   saveAdminPromptTemplate: vi.fn(),
   updateAdminPromptTemplate: vi.fn().mockResolvedValue(promptTemplate),
   saveAdminTeamDisplayName: vi.fn(),
+  saveAdminDongqiudiMapping: vi.fn().mockResolvedValue({ apiFootballFixtureId: 1001, dongqiudiMatchId: 12345, updatedAt: "2026-06-14T08:00:00.000Z" }),
+  syncAdminDongqiudiMappings: vi.fn().mockResolvedValue({ matched: 3, unmatched: 1, totalDongqiudiMatches: 4 }),
   refreshAdminMatchExternalIntel: vi.fn().mockResolvedValue({ status: "cached" }),
   saveAdminExternalIntelSettings: vi.fn().mockResolvedValue({
     enabled: false,
@@ -93,7 +100,7 @@ vi.mock("../src/api/client", () => ({
     summarizerModelId: "",
     cacheMinutes: 60,
     maxResultsPerQuery: 5,
-    maxQueriesPerMatch: 4
+    maxQueriesPerMatch: 8
   })
 }));
 
@@ -125,6 +132,18 @@ describe("AdminPage", () => {
 
     expect(syncAdminSportteryMappings).toHaveBeenCalled();
     expect(await screen.findByText("体彩映射同步完成：匹配 12 场，未匹配 10 场")).toBeInTheDocument();
+  });
+
+  it("syncs dongqiudi mappings with one click", async () => {
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "懂球帝" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步懂球帝映射" }));
+
+    expect(syncAdminDongqiudiMappings).toHaveBeenCalledWith();
+    expect(
+      await screen.findByText("懂球帝映射同步完成：匹配 3 场，未匹配 1 场（懂球帝共 4 场）")
+    ).toBeInTheDocument();
   });
 
   it("edits external intelligence settings", async () => {

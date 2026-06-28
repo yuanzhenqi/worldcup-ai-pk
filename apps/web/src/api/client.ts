@@ -81,6 +81,16 @@ export interface AdminSportteryMappingSyncResult {
   totalSportteryMatches: number;
 }
 
+export interface DongqiudiSettingsStatus {
+  enabled: boolean;
+}
+
+export interface AdminDongqiudiMappingDto {
+  apiFootballFixtureId: number;
+  dongqiudiMatchId: number;
+  updatedAt: string;
+}
+
 export interface RawFixturesCaptureResult {
   captured: boolean;
   error?: string;
@@ -197,12 +207,14 @@ export async function triggerBettingArenaRound(): Promise<BettingArenaDto> {
   return (await response.json()) as BettingArenaDto;
 }
 
-export async function triggerBettingArenaModel(roundId: string, modelId: string): Promise<BettingArenaDto> {
-  const response = await request(`${apiBaseUrl}/api/public/betting-arena/rounds/${roundId}/models/${modelId}`, {
+export async function triggerBettingArenaModel(roundId: string, modelId: string, force = false): Promise<BettingArenaDto> {
+  const query = force ? "?force=true" : "";
+  const response = await request(`${apiBaseUrl}/api/public/betting-arena/rounds/${roundId}/models/${modelId}${query}`, {
     method: "POST"
   });
   if (!response.ok) {
-    throw new Error(`Public betting arena model request failed with status ${response.status}`);
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Public betting arena model request failed with status ${response.status}`);
   }
   return (await response.json()) as BettingArenaDto;
 }
@@ -374,6 +386,97 @@ export async function syncAdminSportteryMappings(): Promise<AdminSportteryMappin
     throw new Error(`Admin Sporttery mappings sync failed with status ${response.status}`);
   }
   return (await response.json()) as AdminSportteryMappingSyncResult;
+}
+
+export async function getAdminDongqiudiSettings(): Promise<DongqiudiSettingsStatus> {
+  const response = await request(`${apiBaseUrl}/api/admin/settings/dongqiudi`);
+  if (!response.ok) {
+    throw new Error(`Admin Dongqiudi settings request failed with status ${response.status}`);
+  }
+  return (await response.json()) as DongqiudiSettingsStatus;
+}
+
+export async function saveAdminDongqiudiSettings(enabled: boolean): Promise<DongqiudiSettingsStatus> {
+  const response = await request(`${apiBaseUrl}/api/admin/settings/dongqiudi`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ enabled })
+  });
+  if (!response.ok) {
+    throw new Error(`Admin Dongqiudi settings save failed with status ${response.status}`);
+  }
+  return (await response.json()) as DongqiudiSettingsStatus;
+}
+
+export async function listAdminDongqiudiMappings(): Promise<AdminDongqiudiMappingDto[]> {
+  const response = await request(`${apiBaseUrl}/api/admin/dongqiudi-mappings`);
+  if (!response.ok) {
+    throw new Error(`Admin Dongqiudi mappings request failed with status ${response.status}`);
+  }
+  const body = (await response.json()) as { mappings: AdminDongqiudiMappingDto[] };
+  return body.mappings;
+}
+
+export async function saveAdminDongqiudiMapping(apiFootballFixtureId: number, dongqiudiMatchId: number): Promise<AdminDongqiudiMappingDto> {
+  const response = await request(`${apiBaseUrl}/api/admin/dongqiudi-mappings`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ apiFootballFixtureId, dongqiudiMatchId })
+  });
+  if (!response.ok) {
+    throw new Error(`Admin Dongqiudi mapping save failed with status ${response.status}`);
+  }
+  return (await response.json()) as AdminDongqiudiMappingDto;
+}
+
+export async function deleteAdminDongqiudiMapping(apiFootballFixtureId: number): Promise<void> {
+  const response = await request(`${apiBaseUrl}/api/admin/dongqiudi-mappings/${apiFootballFixtureId}`, {
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    throw new Error(`Admin Dongqiudi mapping delete failed with status ${response.status}`);
+  }
+}
+
+export interface DongqiudiSyncResult {
+  matched: number;
+  unmatched: number;
+  totalDongqiudiMatches: number;
+}
+
+export async function syncAdminDongqiudiMappings(input?: { tabId?: number }): Promise<DongqiudiSyncResult> {
+  const response = await request(`${apiBaseUrl}/api/admin/dongqiudi-mappings/sync`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(input ?? {})
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Admin Dongqiudi mappings sync failed with status ${response.status}`);
+  }
+  return (await response.json()) as DongqiudiSyncResult;
+}
+
+export interface BettingArenaRoundRefreshResult {
+  refreshed: number;
+  matches: Array<{ matchId: string; dongqiudiStatus: string; sportteryStatus: string; externalIntelStatus: string }>;
+}
+
+export async function refreshAdminBettingArenaRoundContext(roundId: string): Promise<BettingArenaRoundRefreshResult> {
+  const response = await request(`${apiBaseUrl}/api/admin/betting-arena/rounds/${roundId}/refresh-context`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Betting arena round context refresh failed with status ${response.status}`);
+  }
+  return (await response.json()) as BettingArenaRoundRefreshResult;
 }
 
 export async function captureApiFootballFixturesRaw(): Promise<RawFixturesCaptureResult> {

@@ -52,11 +52,11 @@ const statusTabs: Array<{ status: FixtureTab; label: string }> = [
 ];
 
 const defaultContextDataOptions: PredictionDataOptionsDto = {
-  useOdds: false,
-  useApiFootballPrediction: false,
-  useHeadToHead: false,
-  usePlayerLineupInjuries: false,
-  useDongqiudiIntel: false,
+  useOdds: true,
+  useApiFootballPrediction: true,
+  useHeadToHead: true,
+  usePlayerLineupInjuries: true,
+  useDongqiudiIntel: true,
   useSporttery: true,
   useTeamProfile: true
 };
@@ -255,7 +255,10 @@ function MatchCard({
   onOpenReport,
   selectedForParlay,
   onToggleParlay,
-  canSelectParlay
+  canSelectParlay,
+  selectableForBatch,
+  selectedForBatch,
+  onToggleBatchSelect
 }: {
   match: MatchDto;
   feedback?: PredictionFeedback;
@@ -267,6 +270,9 @@ function MatchCard({
   selectedForParlay: boolean;
   onToggleParlay: (matchId: string) => void;
   canSelectParlay: boolean;
+  selectableForBatch: boolean;
+  selectedForBatch: boolean;
+  onToggleBatchSelect?: (matchId: string) => void;
 }) {
   const hasHistory = match.hasAiPrediction || Boolean(feedback?.predictions.length);
   const failedPredictionCount = feedback?.logs.filter((log) => log.level === "error").length ?? 0;
@@ -274,7 +280,18 @@ function MatchCard({
   const latestSingleCombination = getLatestSingleCombination(feedback);
 
   return (
-    <article className={`match-card match-card-shell status-${match.status}`}>
+    <article className={`match-card match-card-shell status-${match.status} ${selectableForBatch ? "match-card-selectable" : ""} ${selectedForBatch ? "match-card-selected" : ""}`}>
+      {selectableForBatch ? (
+        <button
+          aria-label={selectedForBatch ? `取消选择 ${match.homeTeam.displayNameZh} vs ${match.awayTeam.displayNameZh}` : `选择 ${match.homeTeam.displayNameZh} vs ${match.awayTeam.displayNameZh} 进行批量预测`}
+          className={`batch-select-checkbox ${selectedForBatch ? "checked" : ""}`}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleBatchSelect?.(match.id);
+          }}
+        />
+      ) : null}
       <div className="match-time-block">
         <time>{timeFormatter.format(new Date(match.kickoffAt))}</time>
         <span>{match.venue ?? "场馆待同步"}</span>
@@ -411,7 +428,9 @@ function FixtureDateGroups({
   onOpenReport,
   selectedParlayMatchIds,
   onToggleParlay,
-  canSelectParlay
+  canSelectParlay,
+  batchSelectedMatchIds,
+  onToggleBatchSelect
 }: {
   groups: Array<{ key: string; label: string; matches: MatchDto[] }>;
   predictionFeedbackByMatchId: Record<string, PredictionFeedback>;
@@ -423,6 +442,8 @@ function FixtureDateGroups({
   selectedParlayMatchIds: Set<string>;
   onToggleParlay: (matchId: string) => void;
   canSelectParlay: boolean;
+  batchSelectedMatchIds: Set<string>;
+  onToggleBatchSelect: (matchId: string) => void;
 }) {
   return (
     <div className="fixture-date-groups">
@@ -446,6 +467,9 @@ function FixtureDateGroups({
                 selectedForParlay={selectedParlayMatchIds.has(match.id)}
                 onToggleParlay={onToggleParlay}
                 canSelectParlay={canSelectParlay}
+                selectableForBatch={match.status === "scheduled" && match.canRequestPrediction}
+                selectedForBatch={batchSelectedMatchIds.has(match.id)}
+                onToggleBatchSelect={onToggleBatchSelect}
               />
             ))}
           </div>
@@ -485,6 +509,20 @@ export function FixturesPage({
   const [parlayGenerating, setParlayGenerating] = useState(false);
   const [parlayResult, setParlayResult] = useState<ParlayCombinationRunDto | null>(null);
   const [parlayError, setParlayError] = useState<string | null>(null);
+  const [batchPredicting, setBatchPredicting] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
+  const [batchMessage, setBatchMessage] = useState<string | null>(null);
+  const [batchSelectedMatchIds, setBatchSelectedMatchIds] = useState<Set<string>>(() => new Set());
+  const [batchConfigOpen, setBatchConfigOpen] = useState(false);
+  const [batchTaskTypes, setBatchTaskTypes] = useState<PredictionRequestInputDto["taskTypes"]>(["match_analysis", "scoreline", "single_bet_combo"]);
+  const [batchDataOptions, setBatchDataOptions] = useState<PredictionDataOptionsDto>(defaultContextDataOptions);
+  const [batchOutputStyle, setBatchOutputStyle] = useState<PredictionRequestInputDto["outputStyle"]>("concise");
+
+  const batchMode = batchSelectedMatchIds.size > 0;
+  const selectedBatchMatches = useMemo(
+    () => matches.filter((match) => batchSelectedMatchIds.has(match.id)),
+    [matches, batchSelectedMatchIds]
+  );
   const selectedParlayMatchIdsRef = useRef(selectedParlayMatchIds);
   const parlayRequestVersionRef = useRef(0);
 
@@ -507,7 +545,11 @@ export function FixturesPage({
     () => (activeStatus === "scheduled" ? filteredMatches.filter((match) => !scheduledDateKeys.has(getDateKey(match))) : []),
     [activeStatus, filteredMatches, scheduledDateKeys]
   );
-  const dateGroups = useMemo(() => groupMatchesByDate(primaryMatches), [primaryMatches]);
+  const displayedMatches = useMemo(() => {
+    if (activeStatus !== "finished") return primaryMatches;
+    return [...primaryMatches].sort((a, b) => new Date(b.kickoffAt).getTime() - new Date(a.kickoffAt).getTime());
+  }, [activeStatus, primaryMatches]);
+  const dateGroups = useMemo(() => groupMatchesByDate(displayedMatches), [displayedMatches]);
   const foldedDateGroups = useMemo(() => groupMatchesByDate(foldedMatches), [foldedMatches]);
   const parlayReadyMatchIds = useMemo(
     () =>
@@ -578,12 +620,11 @@ export function FixturesPage({
     };
   }, [loadedHistoryMatchIds, matches, onLoadPredictionHistory]);
 
-  async function handlePredictionSubmit(input: PredictionRequestInputDto) {
-    if (!onRequestPrediction || !activePredictionMatch) {
+  async function predictSingleMatch(match: MatchDto, input: PredictionRequestInputDto): Promise<void> {
+    if (!onRequestPrediction) {
       return;
     }
 
-    const match = activePredictionMatch;
     setRequestingMatchIds((currentIds) => new Set(currentIds).add(match.id));
 
     try {
@@ -595,7 +636,6 @@ export function FixturesPage({
       if (response.context) {
         setContextByMatchId((currentContexts) => ({ ...currentContexts, [match.id]: response.context as FixtureContextSummaryDto }));
       }
-      setActivePredictionMatch(null);
 
       if (response.status === "running" && response.runId && onLoadPredictionRunStatus) {
         let latestStatus: PredictionRunStatusDto | null = null;
@@ -628,6 +668,121 @@ export function FixturesPage({
         return nextIds;
       });
     }
+  }
+
+  async function handlePredictionSubmit(input: PredictionRequestInputDto) {
+    if (!activePredictionMatch) {
+      return;
+    }
+
+    const match = activePredictionMatch;
+    await predictSingleMatch(match, input);
+    setActivePredictionMatch(null);
+  }
+
+  function toggleBatchTaskType(value: PredictionRequestInputDto["taskTypes"][number]) {
+    setBatchTaskTypes((currentTypes) => {
+      if (currentTypes.includes(value)) {
+        const nextTypes = currentTypes.filter((type) => type !== value);
+        return nextTypes.length > 0 ? nextTypes : currentTypes;
+      }
+      return [...currentTypes, value];
+    });
+  }
+
+  const batchTaskOptions: Array<{ value: PredictionRequestInputDto["taskTypes"][number]; label: string }> = [
+    { value: "match_analysis", label: "赛果" },
+    { value: "scoreline", label: "比分" },
+    { value: "single_bet_combo", label: "单场组合" }
+  ];
+
+  async function handlePredictTomorrow() {
+    if (!onRequestPrediction || batchPredicting) {
+      return;
+    }
+
+    const tomorrowKey = getLocalDateKey(addDays(new Date(), 1));
+    const tomorrowMatches = matches.filter(
+      (match) => match.status === "scheduled" && match.canRequestPrediction && getDateKey(match) === tomorrowKey
+    );
+
+    if (tomorrowMatches.length === 0) {
+      const allScheduledTomorrow = matches.filter(
+        (match) => match.status === "scheduled" && getDateKey(match) === tomorrowKey
+      );
+      if (allScheduledTomorrow.length === 0) {
+        setBatchMessage("明天没有未开始的比赛");
+      } else {
+        setBatchMessage(`明天 ${allScheduledTomorrow.length} 场未开始比赛暂不支持预测（可能已被限制频次）`);
+      }
+      window.setTimeout(() => setBatchMessage(null), 5000);
+      return;
+    }
+
+    setBatchPredicting(true);
+    setBatchProgress({ current: 0, total: tomorrowMatches.length });
+    setBatchMessage(null);
+
+    const batchInput: PredictionRequestInputDto = {
+      taskTypes: batchTaskTypes,
+      dataOptions: batchDataOptions,
+      promptTemplateId: null,
+      customPrompt: "",
+      outputStyle: batchOutputStyle,
+      refreshContext: true
+    };
+
+    for (let i = 0; i < tomorrowMatches.length; i += 1) {
+      setBatchProgress({ current: i + 1, total: tomorrowMatches.length });
+      await predictSingleMatch(tomorrowMatches[i], batchInput);
+    }
+
+    setBatchPredicting(false);
+    setBatchProgress(null);
+    setBatchMessage(`已完成 ${tomorrowMatches.length} 场比赛预测`);
+    window.setTimeout(() => setBatchMessage(null), 5000);
+  }
+
+  function handleToggleBatchSelect(matchId: string) {
+    setBatchSelectedMatchIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      if (nextIds.has(matchId)) {
+        nextIds.delete(matchId);
+      } else {
+        nextIds.add(matchId);
+      }
+      return nextIds;
+    });
+  }
+
+  async function handlePredictSelected() {
+    if (!onRequestPrediction || batchPredicting || selectedBatchMatches.length === 0) {
+      return;
+    }
+
+    setBatchPredicting(true);
+    setBatchProgress({ current: 0, total: selectedBatchMatches.length });
+    setBatchMessage(null);
+
+    const batchInput: PredictionRequestInputDto = {
+      taskTypes: batchTaskTypes,
+      dataOptions: batchDataOptions,
+      promptTemplateId: null,
+      customPrompt: "",
+      outputStyle: batchOutputStyle,
+      refreshContext: true
+    };
+
+    for (let i = 0; i < selectedBatchMatches.length; i += 1) {
+      setBatchProgress({ current: i + 1, total: selectedBatchMatches.length });
+      await predictSingleMatch(selectedBatchMatches[i], batchInput);
+    }
+
+    setBatchPredicting(false);
+    setBatchProgress(null);
+    setBatchSelectedMatchIds(new Set());
+    setBatchMessage(`已完成 ${selectedBatchMatches.length} 场比赛预测`);
+    window.setTimeout(() => setBatchMessage(null), 5000);
   }
 
   async function loadContext(match: MatchDto) {
@@ -748,8 +903,87 @@ export function FixturesPage({
           <p className="eyebrow">World Cup Match Console</p>
           <h2>赛程控制台</h2>
         </div>
-        <span className="sync-chip">{latestSyncHint}</span>
+        <div className="fixtures-heading-actions">
+          {batchMessage ? (
+            <span className={`batch-progress-chip ${batchMessage.includes("不") || batchMessage.includes("限制") ? "batch-message-warn" : ""}`}>
+              {batchMessage}
+            </span>
+          ) : null}
+          {batchProgress ? (
+            <span className="batch-progress-chip">
+              一键预测中 {batchProgress.current}/{batchProgress.total}
+            </span>
+          ) : null}
+          <button
+            className="app-button app-button-primary"
+            disabled={batchPredicting || !onRequestPrediction}
+            type="button"
+            onClick={handlePredictTomorrow}
+          >
+            {batchPredicting ? "预测中..." : "一键预测明日"}
+          </button>
+          <button
+            className={`app-button app-button-secondary ${batchConfigOpen ? "active" : ""}`}
+            type="button"
+            onClick={() => setBatchConfigOpen((open) => !open)}
+          >
+            ⚙ 配置 {batchConfigOpen ? "▲" : "▼"}
+          </button>
+          <span className="sync-chip">{latestSyncHint}</span>
+        </div>
       </div>
+
+      {batchConfigOpen ? (
+        <div className="batch-config-panel">
+          <div className="batch-config-row">
+            <span className="batch-config-label">任务</span>
+            <div className="batch-config-chips">
+              {batchTaskOptions.map((option) => (
+                <button
+                  key={option.value}
+                  className={`batch-config-chip ${batchTaskTypes.includes(option.value) ? "active" : ""}`}
+                  type="button"
+                  onClick={() => toggleBatchTaskType(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="batch-config-row">
+            <span className="batch-config-label">数据</span>
+            <label className="batch-config-switch">
+              <input
+                type="checkbox"
+                checked={batchDataOptions.useSporttery}
+                onChange={(event) =>
+                  setBatchDataOptions({ ...batchDataOptions, useSporttery: event.target.checked })
+                }
+              />
+              <span>体彩</span>
+            </label>
+          </div>
+          <div className="batch-config-row">
+            <span className="batch-config-label">输出</span>
+            <div className="batch-config-chips">
+              <button
+                className={`batch-config-chip ${batchOutputStyle === "concise" ? "active" : ""}`}
+                type="button"
+                onClick={() => setBatchOutputStyle("concise")}
+              >
+                简洁
+              </button>
+              <button
+                className={`batch-config-chip ${batchOutputStyle === "detailed" ? "active" : ""}`}
+                type="button"
+                onClick={() => setBatchOutputStyle("detailed")}
+              >
+                详细
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="fixture-metrics" aria-label="赛程统计">
         <div>
@@ -870,6 +1104,8 @@ export function FixturesPage({
         selectedParlayMatchIds={selectedParlayMatchIds}
         onToggleParlay={toggleParlayMatch}
         canSelectParlay={Boolean(onCreateParlayCombination)}
+        batchSelectedMatchIds={batchSelectedMatchIds}
+        onToggleBatchSelect={handleToggleBatchSelect}
       />
 
       {activeStatus === "scheduled" && foldedMatches.length > 0 ? (
@@ -889,9 +1125,39 @@ export function FixturesPage({
               selectedParlayMatchIds={selectedParlayMatchIds}
               onToggleParlay={toggleParlayMatch}
               canSelectParlay={Boolean(onCreateParlayCombination)}
+              batchSelectedMatchIds={batchSelectedMatchIds}
+              onToggleBatchSelect={handleToggleBatchSelect}
             />
           ) : null}
         </section>
+      ) : null}
+
+      {batchMode ? (
+        <div className="batch-action-bar">
+          <div className="batch-action-bar-inner">
+            <span>
+              <strong>已选 {batchSelectedMatchIds.size} 场</strong>
+            </span>
+            <div className="batch-action-bar-buttons">
+              <button
+                className="app-button app-button-secondary"
+                type="button"
+                onClick={() => setBatchSelectedMatchIds(new Set())}
+                disabled={batchPredicting}
+              >
+                取消选择
+              </button>
+              <button
+                className="app-button app-button-primary"
+                type="button"
+                onClick={handlePredictSelected}
+                disabled={batchPredicting || selectedBatchMatches.length === 0}
+              >
+                {batchPredicting ? "预测中..." : `一键预测已选 ${selectedBatchMatches.length} 场`}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <PredictionRequestDrawer

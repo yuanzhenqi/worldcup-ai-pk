@@ -253,6 +253,49 @@ describe("public leaderboard API", () => {
     await app.close();
   });
 
+  it("hides archived models from public leaderboard sections", async () => {
+    const { db, databasePath } = createTestDatabase();
+    insertMatch(db, { id: "match-1", status: "finished", homeScore: 2, awayScore: 1 });
+    insertAiConfig(db);
+    insertPredictionRun(db);
+    insertAiPrediction(db, {
+      id: "prediction-1",
+      modelId: "model-1",
+      result: "home",
+      confidence: 0.8,
+      createdAt: "2026-06-13T08:00:02.000Z"
+    });
+    db.prepare(
+      `
+        INSERT INTO prediction_scores (
+          id,
+          ai_prediction_id,
+          match_id,
+          model_id,
+          result_points,
+          exact_score_points,
+          home_goals_points,
+          away_goals_points,
+          total_points,
+          scored_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run("score-1", "prediction-1", "match-1", "model-1", 3, 5, 1, 1, 10, "2026-06-13T22:00:00.000Z");
+    db.prepare("UPDATE ai_models SET deleted_at = ?, enabled = 0 WHERE id = ?").run("2026-06-14T00:00:00.000Z", "model-1");
+    db.close();
+
+    const app = buildApp({ databasePath, logger: false });
+    const response = await app.inject({ method: "GET", url: "/api/public/leaderboard" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      settledRows: [],
+      activeRows: []
+    });
+
+    await app.close();
+  });
+
   it("settles eligible finished-match predictions before returning the public leaderboard", async () => {
     const { db, databasePath } = createTestDatabase();
     insertMatch(db, { id: "match-1", status: "finished", homeScore: 2, awayScore: 1 });

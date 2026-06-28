@@ -17,11 +17,15 @@ import {
 } from "../src/api/client";
 
 vi.mock("../src/pages/AdminPage", () => ({
-  AdminPage: () => null
+  AdminPage: () => <section aria-label="后台配置页面">后台配置页面</section>
 }));
 
 vi.mock("../src/pages/LeaderboardPage", () => ({
-  LeaderboardPage: vi.fn(() => null)
+  LeaderboardPage: vi.fn(() => <section aria-label="排行榜页面">排行榜页面</section>)
+}));
+
+vi.mock("../src/pages/BettingIntelPage", () => ({
+  BettingIntelPage: () => <section aria-label="投注输入与情报页面">投注输入与情报页面</section>
 }));
 
 vi.mock("../src/api/client", () => ({
@@ -66,6 +70,20 @@ function buildMatch(input: { status: MatchDto["status"]; homeScore: number | nul
     hasAiPrediction: false,
     canRequestPrediction: input.status === "scheduled"
   };
+}
+
+function setupDefaultMocks() {
+  vi.mocked(getPublicMatches).mockResolvedValue([buildMatch({ status: "scheduled", homeScore: null, awayScore: null })]);
+  vi.mocked(getPublicLeaderboard).mockResolvedValue({ settledRows: [], activeRows: [] });
+  vi.mocked(listAdminPromptTemplates).mockResolvedValue([]);
+  vi.mocked(syncApiFootballFixtures).mockResolvedValue({ synced: true, imported: 1 });
+  vi.mocked(getBettingArena).mockResolvedValue(emptyBettingArena);
+  vi.mocked(getBettingArenaLedger).mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0, modelId: null });
+  vi.mocked(getBettingArenaRound).mockResolvedValue(emptyBettingArena);
+  vi.mocked(createParlayCombination).mockRejectedValue(new Error("not used in this test"));
+  vi.mocked(triggerBettingArenaModel).mockResolvedValue(emptyBettingArena);
+  vi.mocked(triggerBettingArenaRound).mockResolvedValue(emptyBettingArena);
+  vi.mocked(settleBettingArenaRound).mockResolvedValue(emptyBettingArena);
 }
 
 describe("App", () => {
@@ -117,7 +135,6 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "2026 世界杯 AI 预测竞技场" })).toBeInTheDocument();
     expect(screen.getByText("多模型同场预测，赛后真实结算，用排行榜看谁更懂比赛。")).toBeInTheDocument();
-    expect(screen.queryByText("赛程、赔率与 AI 预测对比")).not.toBeInTheDocument();
     expect(screen.getByText("美国")).toBeInTheDocument();
 
     await act(async () => {
@@ -136,24 +153,37 @@ describe("App", () => {
   });
 
   it("wires betting arena ledger loading through App", async () => {
-    vi.mocked(getPublicMatches).mockResolvedValue([buildMatch({ status: "scheduled", homeScore: null, awayScore: null })]);
-    vi.mocked(getPublicLeaderboard).mockResolvedValue({ settledRows: [], activeRows: [] });
-    vi.mocked(listAdminPromptTemplates).mockResolvedValue([]);
-    vi.mocked(syncApiFootballFixtures).mockResolvedValue({ synced: true, imported: 1 });
-    vi.mocked(getBettingArena).mockResolvedValue(emptyBettingArena);
-    vi.mocked(getBettingArenaLedger).mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0, modelId: null });
-    vi.mocked(getBettingArenaRound).mockResolvedValue(emptyBettingArena);
-    vi.mocked(createParlayCombination).mockRejectedValue(new Error("not used in this test"));
-    vi.mocked(triggerBettingArenaModel).mockResolvedValue(emptyBettingArena);
-    vi.mocked(triggerBettingArenaRound).mockResolvedValue(emptyBettingArena);
-    vi.mocked(settleBettingArenaRound).mockResolvedValue(emptyBettingArena);
+    setupDefaultMocks();
 
     render(<App />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /AI 实盘投注场/ }));
 
     expect(await screen.findByRole("button", { name: "查看投注账本" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "查看投注账本" }));
 
-    expect(getBettingArenaLedger).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    expect(getBettingArenaLedger).toHaveBeenCalledWith({ modelId: null, limit: 50, offset: 0 });
+  });
+
+  it("switches major modules through top-level tabs", async () => {
+    setupDefaultMocks();
+
+    render(<App />);
+
+    expect(await screen.findByRole("tab", { name: /赛程预测/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByLabelText("排行榜页面")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /AI 实盘投注场/ }));
+    expect(await screen.findByRole("button", { name: "生成今日出单" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /投注输入与情报/ }));
+    expect(screen.getByLabelText("投注输入与情报页面")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /排行榜/ }));
+    expect(screen.getByLabelText("排行榜页面")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /后台配置/ }));
+    expect(screen.getByLabelText("后台配置页面")).toBeInTheDocument();
   });
 });

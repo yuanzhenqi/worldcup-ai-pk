@@ -14,6 +14,7 @@ interface SportteryOptionInput {
   code: string;
   label: string;
   value: string;
+  goalLine?: string | null;
 }
 
 interface SportteryPoolInput {
@@ -290,6 +291,12 @@ function findLockedOption(
   return option;
 }
 
+function parseGoalLine(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function validateLeg(
   rawLeg: JsonRecord,
   battleContext: BattleContextInput,
@@ -313,6 +320,7 @@ function validateLeg(
     selectionCode,
     selectionLabel: option.label,
     lockedOdds: lockedOptionOdds,
+    goalLine: parseGoalLine(option.goalLine),
     stake: 0,
     confidence: 0,
     rationale: ""
@@ -363,7 +371,8 @@ function parseParlay(rawParlay: unknown, battleContext: BattleContextInput, inde
       poolCode: leg.poolCode,
       selectionCode: leg.selectionCode,
       selectionLabel: leg.selectionLabel,
-      lockedOdds: leg.lockedOdds
+      lockedOdds: leg.lockedOdds,
+      goalLine: leg.goalLine
     };
   });
 
@@ -427,17 +436,14 @@ export function parseBettingArenaSlip(
 ): ParsedBettingArenaSlip {
   const slip = extractJsonObject(content);
   const action = assertAction(slip.action);
-  const declaredTotalStake = assertNumber(slip.total_stake, "total_stake");
-  const singlesInput = assertArray(slip.singles, "singles");
-  const parlaysInput = assertArray(slip.parlays, "parlays");
-  const strategySummary = assertString(slip.strategy_summary, "strategy_summary");
   const riskLevel = assertRiskLevel(slip.risk_level);
-  const bankrollPlan = coerceString(slip.bankroll_plan, "bankroll_plan");
-  const skipReasons = assertStringArray(slip.skip_reasons, "skip_reasons");
-  const dataGaps = assertStringArray(slip.data_gaps, "data_gaps");
   const portfolioBuckets = parsePortfolioBuckets(slip.portfolio_buckets ?? slip.portfolioBuckets);
 
   if (action === "hold") {
+    const declaredTotalStake = typeof slip.total_stake === "number" ? slip.total_stake : 0;
+    const singlesInput = Array.isArray(slip.singles) ? slip.singles : [];
+    const parlaysInput = Array.isArray(slip.parlays) ? slip.parlays : [];
+
     if (declaredTotalStake !== 0) {
       throw new Error("hold action requires total_stake 0");
     }
@@ -448,18 +454,26 @@ export function parseBettingArenaSlip(
 
     return {
       action,
-      totalStake: declaredTotalStake,
+      totalStake: 0,
       potentialReturn: 0,
       riskLevel,
-      strategySummary,
-      bankrollPlan,
+      strategySummary: typeof slip.strategy_summary === "string" ? slip.strategy_summary : isRecord(slip.strategy_summary) ? JSON.stringify(slip.strategy_summary) : "",
+      bankrollPlan: typeof slip.bankroll_plan === "string" ? slip.bankroll_plan : isRecord(slip.bankroll_plan) ? JSON.stringify(slip.bankroll_plan) : Array.isArray(slip.bankroll_plan) ? JSON.stringify(slip.bankroll_plan) : "",
       singles: [],
       parlays: [],
       portfolioBuckets,
-      skipReasons,
-      dataGaps
+      skipReasons: Array.isArray(slip.skip_reasons) ? assertStringArray(slip.skip_reasons, "skip_reasons") : [],
+      dataGaps: Array.isArray(slip.data_gaps) ? assertStringArray(slip.data_gaps, "data_gaps") : []
     };
   }
+
+  const declaredTotalStake = assertNumber(slip.total_stake, "total_stake");
+  const singlesInput = assertArray(slip.singles, "singles");
+  const parlaysInput = assertArray(slip.parlays, "parlays");
+  const strategySummary = assertString(slip.strategy_summary, "strategy_summary");
+  const bankrollPlan = coerceString(slip.bankroll_plan, "bankroll_plan");
+  const skipReasons = assertStringArray(slip.skip_reasons, "skip_reasons");
+  const dataGaps = assertStringArray(slip.data_gaps, "data_gaps");
 
   if (declaredTotalStake < 0) {
     throw new Error("total_stake must be non-negative");

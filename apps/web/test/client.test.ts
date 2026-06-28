@@ -153,7 +153,7 @@ describe("web API client", () => {
       summarizerModelId: "model-1",
       cacheMinutes: 60,
       maxResultsPerQuery: 5,
-      maxQueriesPerMatch: 4
+      maxQueriesPerMatch: 8
     };
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

@@ -25,6 +25,8 @@ import { FootballService } from "../football/football.service";
 import { writeSystemLog } from "../logs/log.service";
 import { DongqiudiClient } from "../football/dongqiudiClient";
 import { deleteDongqiudiMapping, getDongqiudiMappingByFixtureId, listDongqiudiMappings, upsertDongqiudiMapping } from "../football/dongqiudiMapping.repository";
+import { syncDongqiudiMappingsForMatches } from "../football/dongqiudiMapping.service";
+import { refreshBettingArenaRoundContext } from "../betting-arena/bettingArena.service";
 import { SportteryClient } from "../football/sportteryClient";
 import {
   deleteSportteryMapping,
@@ -62,9 +64,9 @@ const aiModelSchema = z.object({
   modelName: z.string().min(1),
   displayName: z.string().min(1),
   enabled: z.boolean(),
-  contextWindowTokens: z.number().int().min(0).default(0),
+  contextWindowTokens: z.number().int().min(0).default(50000),
   maxOutputTokens: z.number().int().min(0).default(0),
-  requestTimeoutMs: z.number().int().min(1000).default(90000),
+  requestTimeoutMs: z.number().int().min(1000).default(150000),
   requestRetryCount: z.number().int().min(0).default(1)
 });
 
@@ -89,6 +91,10 @@ const dongqiudiSettingsSchema = z.object({
 const dongqiudiMappingSchema = z.object({
   apiFootballFixtureId: z.number().int(),
   dongqiudiMatchId: z.number().int()
+});
+
+const dongqiudiSyncSchema = z.object({
+  tabId: z.number().int().min(1).optional()
 });
 
 const sportterySettingsSchema = z.object({
@@ -210,6 +216,33 @@ export async function registerAdminRoutes(app: FastifyInstance, options: AdminRo
   app.delete("/dongqiudi-mappings/:apiFootballFixtureId", async (request) => {
     deleteDongqiudiMapping(options.db, Number(getIdParam(request, "apiFootballFixtureId")));
     return { deleted: true };
+  });
+
+  app.post("/dongqiudi-mappings/sync", async (request, reply) => {
+    const parsed = dongqiudiSyncSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid dongqiudi sync payload" });
+    }
+
+    try {
+      return await syncDongqiudiMappingsForMatches(options.db, {
+        tabId: parsed.data.tabId,
+        client: new DongqiudiClient()
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Dongqiudi sync failed";
+      return reply.code(502).send({ error: message });
+    }
+  });
+
+  app.post<{ Params: { roundId: string } }>("/betting-arena/rounds/:roundId/refresh-context", async (request, reply) => {
+    const roundId = getIdParam(request, "roundId");
+    try {
+      return await refreshBettingArenaRoundContext(options.db, { roundId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Betting arena round context refresh failed";
+      return reply.code(404).send({ error: message });
+    }
   });
 
   app.get("/settings/sporttery", async () => ({

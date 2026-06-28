@@ -287,6 +287,11 @@ export interface BettingArenaAccountDto {
   settledOrderCount: number;
   hitCount: number;
   hitRate: number;
+  profitableSlipCount: number;
+  profitableSlipRate: number;
+  settledPickCount: number;
+  hitPickCount: number;
+  pickHitRate: number;
   failedGenerationCount: number;
   orderRate: number;
   failureRate: number;
@@ -300,6 +305,7 @@ export interface BettingArenaLegDto {
   selectionCode: string;
   selectionLabel: string;
   lockedOdds: number;
+  goalLine?: number | null;
 }
 
 export interface BettingArenaSingleDto extends BettingArenaLegDto {
@@ -315,6 +321,33 @@ export interface BettingArenaParlayDto {
   combinedOdds: number;
   confidence: number;
   rationale: string;
+}
+
+export interface BettingArenaSettlementLegResultDto {
+  matchId: string;
+  won: boolean;
+  voided: boolean;
+}
+
+export interface BettingArenaSettlementItemDto {
+  type: "single" | "parlay";
+  name: string | null;
+  stake: number;
+  returnedAmount: number;
+  won: boolean;
+  voided: boolean;
+  legs: BettingArenaSettlementLegResultDto[];
+}
+
+export interface BettingArenaSettlementDto {
+  stake: number;
+  returnedAmount: number;
+  profit: number;
+  status: "settled" | "void";
+  hit: boolean;
+  legs: BettingArenaSettlementLegResultDto[];
+  items: BettingArenaSettlementItemDto[];
+  settledAt: string;
 }
 
 export interface BettingArenaPortfolioBucketDto {
@@ -348,12 +381,14 @@ export interface BettingArenaSlipDto {
   rawResponse: string;
   outputJson: string;
   settlementSummary: string | null;
+  settlement: BettingArenaSettlementDto | null;
   createdAt: string;
 }
 
 export interface BettingArenaRoundDto {
   id: string;
   roundDate: string;
+  roundSequence: number;
   status: BettingArenaRoundStatus;
   lockTime: string;
   eligibleMatchCount: number;
@@ -369,6 +404,7 @@ export interface BettingArenaRoundDto {
 export interface BettingArenaDailySummaryDto {
   roundId: string;
   roundDate: string;
+  roundSequence: number;
   status: BettingArenaRoundStatus;
   totalStaked: number;
   totalReturned: number;

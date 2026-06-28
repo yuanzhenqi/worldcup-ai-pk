@@ -104,7 +104,7 @@ export function getExternalIntelSettings(db: Database): ExternalIntelSettingsDto
     summarizerModelId: readSetting(db, externalIntelSummarizerModelIdKey) ?? "",
     cacheMinutes: readPositiveInt(readSetting(db, externalIntelCacheMinutesKey), 60),
     maxResultsPerQuery: readPositiveInt(readSetting(db, externalIntelMaxResultsPerQueryKey), 5),
-    maxQueriesPerMatch: readPositiveInt(readSetting(db, externalIntelMaxQueriesPerMatchKey), 4)
+    maxQueriesPerMatch: readPositiveInt(readSetting(db, externalIntelMaxQueriesPerMatchKey), 8)
   };
 }
 

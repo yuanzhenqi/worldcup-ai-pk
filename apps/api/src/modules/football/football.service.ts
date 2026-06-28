@@ -42,4 +42,9 @@ export class FootballService {
   getTeamSquad(teamId: string) {
     return this.client.getJson<unknown>("/players/squads", { team: teamId });
   }
+
+  /** 世界杯小组赛积分榜（含分组、积分、出线状态），用于注入出线形势。 */
+  getWorldCupStandings() {
+    return this.client.getJson<unknown>("/standings", { league: 1, season: 2026 });
+  }
 }

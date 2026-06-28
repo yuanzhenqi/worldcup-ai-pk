@@ -19,16 +19,20 @@ import { DongqiudiClient } from "../football/dongqiudiClient";
 import { getDongqiudiMappingByFixtureId } from "../football/dongqiudiMapping.repository";
 import { SportteryClient } from "../football/sportteryClient";
 import { getSportteryMappingByFixtureId } from "../football/sportteryMapping.repository";
+import { importApiFootballFixturesResponse } from "../football/fixtureImport.service";
 import { getApiFootballKey, isDongqiudiEnabled, isSportteryEnabled } from "../settings/settings.repository";
 import { settleFinishedMatchPredictions } from "../predictions/predictionSettlement.service";
 import { worldCupTeamNamesZh } from "../teams/worldCupTeamNames.zh";
+import { buildSingleMatchEnrichment } from "../betting-arena/bettingArena.context";
 import {
   getBettingArena,
   getBettingArenaLedger,
   getBettingArenaRound,
   settleBettingArenaRound,
+  triggerBettingArenaModel,
   triggerBettingArenaRound
 } from "../betting-arena/bettingArena.service";
+import { writeSystemLog } from "../logs/log.service";
 
 export interface PublicRoutesOptions {
   db: Database;
@@ -115,6 +119,54 @@ function resolveDisplayNameZh(input: { teamId: string; originalName: string; dis
   return input.displayNameSource === "admin" ? input.displayNameZh ?? input.originalName : worldCupTeamNamesZh[input.teamId] ?? input.displayNameZh ?? input.originalName;
 }
 
+function getApiFootballErrors(response: unknown): unknown | null {
+  if (!response || typeof response !== "object" || !("errors" in response)) {
+    return null;
+  }
+
+  const errors = (response as { errors: unknown }).errors;
+  if (!errors || typeof errors !== "object") {
+    return null;
+  }
+
+  return Object.keys(errors).length > 0 ? errors : null;
+}
+
+async function trySyncApiFootballFixtures(db: Database): Promise<void> {
+  const apiKey = getApiFootballKey(db);
+  if (!apiKey) return;
+
+  try {
+    const footballService = new FootballService({ apiKey });
+    const fixturesResponse = await footballService.getWorldCupFixtures();
+    const errors = getApiFootballErrors(fixturesResponse);
+    if (errors) {
+      writeSystemLog(db, {
+        level: "error",
+        source: "api-football",
+        message: "API-Football fixtures sync failed before betting arena settlement",
+        details: { errors }
+      });
+      return;
+    }
+
+    const importResult = importApiFootballFixturesResponse(db, fixturesResponse);
+    writeSystemLog(db, {
+      level: "info",
+      source: "api-football",
+      message: "API-Football fixtures synced before betting arena settlement",
+      details: importResult
+    });
+  } catch (error) {
+    writeSystemLog(db, {
+      level: "warn",
+      source: "api-football",
+      message: "API-Football fixtures sync skipped before betting arena settlement",
+      details: { error: error instanceof Error ? error.message : String(error) }
+    });
+  }
+}
+
 export async function registerPublicRoutes(app: FastifyInstance, options: PublicRoutesOptions): Promise<void> {
   app.get("/health", async () => ({
     ok: true,
@@ -134,6 +186,19 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
 
   app.post("/betting-arena/rounds", async () => triggerBettingArenaRound(options.db));
 
+  app.post<{ Params: { roundId: string; modelId: string }; Querystring: { force?: string } }>("/betting-arena/rounds/:roundId/models/:modelId", async (request, reply) => {
+    try {
+      return await triggerBettingArenaModel(options.db, {
+        roundId: request.params.roundId,
+        modelId: request.params.modelId,
+        force: request.query.force === "true" || request.query.force === "1"
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Betting arena model generation failed";
+      return reply.code(409).send({ error: message });
+    }
+  });
+
   app.get<{ Querystring: { modelId?: string; limit?: string; offset?: string } }>("/betting-arena/ledger", async (request) =>
     getBettingArenaLedger(options.db, {
       modelId: request.query.modelId ?? null,
@@ -146,9 +211,10 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
     getBettingArenaRound(options.db, request.params.roundId)
   );
 
-  app.post<{ Params: { roundId: string } }>("/betting-arena/rounds/:roundId/settle", async (request) =>
-    settleBettingArenaRound(options.db, request.params.roundId)
-  );
+  app.post<{ Params: { roundId: string } }>("/betting-arena/rounds/:roundId/settle", async (request) => {
+    await trySyncApiFootballFixtures(options.db);
+    return settleBettingArenaRound(options.db, request.params.roundId);
+  });
 
   app.post("/parlay-combinations", async (request, reply) => {
     const parsed = parlayCombinationSchema.safeParse(request.body);
@@ -319,6 +385,17 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
     const predictionInput = parsePredictionRequestBody(request.body);
     let context = getFixtureContextSummary(options.db, match.id);
 
+    // Always refresh with all data sources (sync with betting arena data sources)
+    const fullDataOptions: PredictionDataOptionsDto = {
+      useOdds: true,
+      useApiFootballPrediction: true,
+      useHeadToHead: true,
+      usePlayerLineupInjuries: true,
+      useDongqiudiIntel: isDongqiudiEnabled(options.db),
+      useSporttery: isSportteryEnabled(options.db),
+      useTeamProfile: true
+    };
+
     if (predictionInput.refreshContext) {
       const apiKey = getApiFootballKey(options.db);
       const footballService = apiKey ? new FootballService({ apiKey }) : null;
@@ -345,9 +422,29 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
         dongqiudiMatchId: getDongqiudiMappingByFixtureId(options.db, match.api_football_fixture_id)?.dongqiudiMatchId ?? null,
         sportteryClient: isSportteryEnabled(options.db) ? new SportteryClient() : null,
         sportteryMatchId: getSportteryMappingByFixtureId(options.db, match.api_football_fixture_id)?.sportteryMatchId ?? null,
-        dataOptions: predictionInput.dataOptions
+        dataOptions: fullDataOptions
       });
     }
+
+    // Build enrichment matching betting arena data sources
+    const homeDisplayName = resolveDisplayNameZh({
+      teamId: match.home_team_id,
+      originalName: match.home_team_name,
+      displayNameZh: match.home_team_display_name_zh,
+      displayNameSource: match.home_team_display_name_source
+    });
+    const awayDisplayName = resolveDisplayNameZh({
+      teamId: match.away_team_id,
+      originalName: match.away_team_name,
+      displayNameZh: match.away_team_display_name_zh,
+      displayNameSource: match.away_team_display_name_source
+    });
+    const enrichment = buildSingleMatchEnrichment(options.db, {
+      matchId: match.id,
+      homeTeamName: match.home_team_name,
+      awayTeamName: match.away_team_name,
+      homeTeamId: match.home_team_id
+    });
 
     const latestSuccessfulRun = options.db
       .prepare(
@@ -484,6 +581,7 @@ export async function registerPublicRoutes(app: FastifyInstance, options: Public
       runId,
       predictionInput,
       context,
+      enrichment,
       now
     });
     void executionPromise.catch((error) => {

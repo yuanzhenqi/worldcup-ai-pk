@@ -22,7 +22,7 @@ describe("external intelligence repository", () => {
       summarizerModelId: "",
       cacheMinutes: 60,
       maxResultsPerQuery: 5,
-      maxQueriesPerMatch: 4
+      maxQueriesPerMatch: 8
     });
   });
 

@@ -9,17 +9,21 @@ import type {
 } from "@worldcup-ai-pk/shared";
 import {
   type AdminContextCacheLogDto,
+  type AdminDongqiudiMappingDto,
   captureApiFootballFixturesRaw,
   deleteAdminAiModel,
   deleteAdminAiProvider,
+  deleteAdminDongqiudiMapping,
   deleteAdminPromptTemplate,
   getAdminApiFootballSettings,
+  getAdminDongqiudiSettings,
   getAdminExternalIntelSettings,
   getAdminSportterySettings,
   getAdminSummary,
   listAdminAiModels,
   listAdminAiProviders,
   listAdminContextCacheLogs,
+  listAdminDongqiudiMappings,
   listAdminPromptTemplates,
   listAdminSportteryMappings,
   listAdminTeamDisplayNames,
@@ -27,10 +31,13 @@ import {
   saveAdminAiModel,
   saveAdminAiProvider,
   saveAdminApiFootballKey,
+  saveAdminDongqiudiMapping,
+  saveAdminDongqiudiSettings,
   saveAdminExternalIntelSettings,
   saveAdminSportterySettings,
   saveAdminPromptTemplate,
   saveAdminTeamDisplayName,
+  syncAdminDongqiudiMappings,
   syncApiFootballFixtures,
   syncAdminSportteryMappings,
   testAdminAiModel,
@@ -38,10 +45,11 @@ import {
   updateAdminPromptTemplate
 } from "../api/client";
 
-type AdminModule = "data-source" | "external-intel" | "context-cache" | "providers" | "models" | "prompts" | "teams";
+type AdminModule = "data-source" | "dongqiudi" | "external-intel" | "context-cache" | "providers" | "models" | "prompts" | "teams";
 
 const adminModules: Array<{ id: AdminModule; label: string }> = [
   { id: "data-source", label: "数据源配置" },
+  { id: "dongqiudi", label: "懂球帝" },
   { id: "external-intel", label: "外部情报" },
   { id: "context-cache", label: "数据缓存" },
   { id: "providers", label: "模型供应商" },
@@ -65,9 +73,9 @@ const initialModelForm = {
   modelName: "",
   displayName: "",
   enabled: true,
-  contextWindowTokens: 0,
+  contextWindowTokens: 50000,
   maxOutputTokens: 0,
-  requestTimeoutMs: 90000,
+  requestTimeoutMs: 150000,
   requestRetryCount: 1
 };
 
@@ -87,7 +95,7 @@ const initialExternalIntelSettings: ExternalIntelSettingsDto = {
   summarizerModelId: "",
   cacheMinutes: 60,
   maxResultsPerQuery: 5,
-  maxQueriesPerMatch: 4
+  maxQueriesPerMatch: 8
 };
 
 export function AdminPage() {
@@ -95,9 +103,15 @@ export function AdminPage() {
   const [apiKey, setApiKey] = useState("");
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [sportteryEnabled, setSportteryEnabled] = useState<boolean | null>(null);
+  const [dongqiudiEnabled, setDongqiudiEnabled] = useState<boolean | null>(null);
   const [externalIntelSettings, setExternalIntelSettings] = useState<ExternalIntelSettingsDto>(initialExternalIntelSettings);
   const [externalIntelMatchId, setExternalIntelMatchId] = useState("");
   const [sportteryMappingsCount, setSportteryMappingsCount] = useState(0);
+  const [dongqiudiMappingsCount, setDongqiudiMappingsCount] = useState(0);
+  const [dongqiudiMappings, setDongqiudiMappings] = useState<AdminDongqiudiMappingDto[]>([]);
+  const [dongqiudiFixtureId, setDongqiudiFixtureId] = useState("");
+  const [dongqiudiMatchId, setDongqiudiMatchId] = useState("");
+  const [dongqiudiSyncing, setDongqiudiSyncing] = useState(false);
   const [summary, setSummary] = useState<AdminSummaryDto | null>(null);
   const [providers, setProviders] = useState<AiProviderConfigDto[]>([]);
   const [models, setModels] = useState<AiModelConfigDto[]>([]);
@@ -123,8 +137,10 @@ export function AdminPage() {
     const [
       settings,
       sportterySettings,
+      dongqiudiSettings,
       externalIntel,
       sportteryMappings,
+      dongqiudiMappingsResult,
       nextSummary,
       nextProviders,
       nextModels,
@@ -134,8 +150,10 @@ export function AdminPage() {
     ] = await Promise.all([
       getAdminApiFootballSettings(),
       getAdminSportterySettings(),
+      getAdminDongqiudiSettings(),
       getAdminExternalIntelSettings(),
       listAdminSportteryMappings(),
+      listAdminDongqiudiMappings(),
       getAdminSummary(),
       listAdminAiProviders(),
       listAdminAiModels(),
@@ -146,8 +164,11 @@ export function AdminPage() {
 
     setConfigured(settings.configured);
     setSportteryEnabled(sportterySettings.enabled);
+    setDongqiudiEnabled(dongqiudiSettings.enabled);
     setExternalIntelSettings(externalIntel);
     setSportteryMappingsCount(sportteryMappings.length);
+    setDongqiudiMappingsCount(dongqiudiMappingsResult.length);
+    setDongqiudiMappings(dongqiudiMappingsResult);
     setSummary(nextSummary);
     setProviders(nextProviders);
     setModels(nextModels);
@@ -227,6 +248,73 @@ export function AdminPage() {
       setStatusText(settings.enabled ? "体彩赛前情报已启用" : "体彩赛前情报已停用");
     } catch (error) {
       setStatusText(error instanceof Error ? `体彩配置保存失败：${error.message}` : "体彩配置保存失败，请确认本地后台 API 可访问");
+    }
+  }
+
+  async function handleToggleDongqiudi() {
+    const nextEnabled = !(dongqiudiEnabled ?? false);
+    setStatusText(nextEnabled ? "正在启用懂球帝情报..." : "正在停用懂球帝情报...");
+
+    try {
+      const settings = await saveAdminDongqiudiSettings(nextEnabled);
+      setDongqiudiEnabled(settings.enabled);
+      setStatusText(settings.enabled ? "懂球帝情报已启用" : "懂球帝情报已停用");
+    } catch (error) {
+      setStatusText(error instanceof Error ? `懂球帝配置保存失败：${error.message}` : "懂球帝配置保存失败，请确认本地后台 API 可访问");
+    }
+  }
+
+  async function handleSaveDongqiudiMapping(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const fixtureId = Number(dongqiudiFixtureId.trim());
+    const matchId = Number(dongqiudiMatchId.trim());
+    if (!Number.isFinite(fixtureId) || !Number.isFinite(matchId) || fixtureId <= 0 || matchId <= 0) {
+      setStatusText("请输入有效的 API-Football fixture ID 和懂球帝比赛 ID");
+      return;
+    }
+
+    setStatusText("正在保存懂球帝映射...");
+    try {
+      await saveAdminDongqiudiMapping(fixtureId, matchId);
+      const mappings = await listAdminDongqiudiMappings();
+      setDongqiudiMappings(mappings);
+      setDongqiudiMappingsCount(mappings.length);
+      setDongqiudiFixtureId("");
+      setDongqiudiMatchId("");
+      setStatusText("懂球帝映射已保存");
+    } catch (error) {
+      setStatusText(error instanceof Error ? `懂球帝映射保存失败：${error.message}` : "懂球帝映射保存失败，请确认本地后台 API 可访问");
+    }
+  }
+
+  async function handleDeleteDongqiudiMapping(apiFootballFixtureId: number) {
+    setStatusText("正在删除懂球帝映射...");
+    try {
+      await deleteAdminDongqiudiMapping(apiFootballFixtureId);
+      const mappings = await listAdminDongqiudiMappings();
+      setDongqiudiMappings(mappings);
+      setDongqiudiMappingsCount(mappings.length);
+      setStatusText("懂球帝映射已删除");
+    } catch (error) {
+      setStatusText(error instanceof Error ? `懂球帝映射删除失败：${error.message}` : "懂球帝映射删除失败，请确认本地后台 API 可访问");
+    }
+  }
+
+  async function handleSyncDongqiudiMappings() {
+    setStatusText("正在同步懂球帝映射...");
+    setDongqiudiSyncing(true);
+    try {
+      const result = await syncAdminDongqiudiMappings();
+      const mappings = await listAdminDongqiudiMappings();
+      setDongqiudiMappings(mappings);
+      setDongqiudiMappingsCount(mappings.length);
+      setStatusText(
+        `懂球帝映射同步完成：匹配 ${result.matched} 场，未匹配 ${result.unmatched} 场（懂球帝共 ${result.totalDongqiudiMatches} 场）`
+      );
+    } catch (error) {
+      setStatusText(error instanceof Error ? `懂球帝映射同步失败：${error.message}` : "懂球帝映射同步失败，请确认本地后台 API 可访问");
+    } finally {
+      setDongqiudiSyncing(false);
     }
   }
 
@@ -582,6 +670,97 @@ export function AdminPage() {
                 </div>
                 <p className="secret-note">{sportteryMappingsCount} 场已映射</p>
               </section>
+            </>
+          ) : null}
+
+          {activeModule === "dongqiudi" ? (
+            <>
+              <header>
+                <h3>{selectedModule?.label}</h3>
+                <span>{dongqiudiEnabled ? "已启用" : "未启用"}</span>
+              </header>
+              <section className="admin-subsection">
+                <header>
+                  <h4>懂球帝赛前情报</h4>
+                  <span>{dongqiudiEnabled ? "已启用" : "未启用"}</span>
+                </header>
+                <p className="secret-note">用于预测上下文：综合实力、交锋、战绩、场均进球/失球、身价、红黄牌。</p>
+                <div className="settings-actions">
+                  <button type="button" onClick={handleToggleDongqiudi}>
+                    {dongqiudiEnabled ? "停用懂球帝情报" : "启用懂球帝情报"}
+                  </button>
+                </div>
+                <p className="secret-note">{dongqiudiMappingsCount} 场已映射</p>
+              </section>
+              <section className="admin-subsection">
+                <header>
+                  <h4>自动同步映射</h4>
+                </header>
+                <p className="secret-note">拉取懂球帝「重要比赛」聚合页（含世界杯全部球队），按球队中文名和开球时间自动匹配本地比赛。无需填写任何 ID。</p>
+                <div className="settings-actions">
+                  <button type="button" onClick={handleSyncDongqiudiMappings} disabled={dongqiudiSyncing}>
+                    {dongqiudiSyncing ? "同步中..." : "同步懂球帝映射"}
+                  </button>
+                </div>
+              </section>
+              <section className="admin-subsection">
+                <header>
+                  <h4>手动映射</h4>
+                </header>
+                <form className="admin-form-grid" onSubmit={handleSaveDongqiudiMapping}>
+                  <label>
+                    <span>API-Football Fixture ID</span>
+                    <input
+                      type="number"
+                      value={dongqiudiFixtureId}
+                      placeholder="12345"
+                      onChange={(event) => setDongqiudiFixtureId(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>懂球帝比赛 ID</span>
+                    <input
+                      type="number"
+                      value={dongqiudiMatchId}
+                      placeholder="67890"
+                      onChange={(event) => setDongqiudiMatchId(event.target.value)}
+                    />
+                  </label>
+                  <button type="submit">添加映射</button>
+                </form>
+              </section>
+              {dongqiudiMappings.length > 0 ? (
+                <section className="admin-subsection">
+                  <header>
+                    <h4>现有映射</h4>
+                  </header>
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Fixture ID</th>
+                        <th>懂球帝 ID</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dongqiudiMappings.map((mapping) => (
+                        <tr key={mapping.apiFootballFixtureId}>
+                          <td>{mapping.apiFootballFixtureId}</td>
+                          <td>{mapping.dongqiudiMatchId}</td>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDongqiudiMapping(mapping.apiFootballFixtureId)}
+                            >
+                              删除
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              ) : null}
             </>
           ) : null}
 
