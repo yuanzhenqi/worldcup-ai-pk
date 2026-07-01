@@ -28,6 +28,8 @@ export interface DongqiudiImportantMatch {
   awayTeamName: string;
   kickoffAt: string;
   status: string;
+  competitionName: string;
+  roundName: string;
 }
 
 /**
@@ -90,7 +92,9 @@ export function parseImportantMatchesHtml(html: string): DongqiudiImportantMatch
         homeTeamName: typeof record.team_A_name === "string" ? record.team_A_name : "",
         awayTeamName: typeof record.team_B_name === "string" ? record.team_B_name : "",
         kickoffAt: typeof record.start_play === "string" ? record.start_play : "",
-        status: typeof record.status === "string" ? record.status : ""
+        status: typeof record.status === "string" ? record.status : "",
+        competitionName: typeof record.competition_name === "string" ? record.competition_name : "",
+        roundName: typeof record.round_name === "string" ? record.round_name : ""
       }
     ];
   });

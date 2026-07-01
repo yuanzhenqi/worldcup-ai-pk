@@ -95,7 +95,9 @@ export async function syncDongqiudiMappingsForMatches(
     return { matched: 0, unmatched: 0, totalDongqiudiMatches: 0 };
   }
 
-  const dongqiudiMatches: DongqiudiImportantMatch[] = await client.getImportantMatches({ tabId });
+  const allDongqiudiMatches: DongqiudiImportantMatch[] = await client.getImportantMatches({ tabId });
+  // 只匹配世界杯比赛，过滤掉中超、女足等无关赛事
+  const dongqiudiMatches = allDongqiudiMatches.filter((m) => m.competitionName === "世界杯");
 
   const reverseMap = buildReverseTeamNameMap();
   const existingMappings = new Set(listDongqiudiMappings(db).map((m) => m.apiFootballFixtureId));

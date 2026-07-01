@@ -170,78 +170,78 @@ export function BettingIntelPage({ arena, loading, error, onRefreshRoundContext,
 
             <div className="intel-section-pair">
               <div className="intel-section">
-                <h3>小组出线形势</h3>
-              {match.groupStandings.length === 0 ? (
-                <p className="muted">暂无小组积分数据（世界杯未开赛或不在小组赛阶段）</p>
-              ) : (
-                <div className="table-scroll">
-                  <table className="intel-standings-table">
-                    <thead>
-                      <tr>
-                        <th>排名</th>
-                        <th>球队</th>
-                        <th>赛</th>
-                        <th>胜/平/负</th>
-                        <th>积分</th>
-                        <th>净胜球</th>
-                        <th>状态</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {match.groupStandings.map((row) => {
-                        const isPlaying = row.teamName === match.homeTeamName || row.teamName === match.awayTeamName;
-                        return (
-                          <tr key={`${row.group}-${row.teamId}`} className={isPlaying ? "intel-standings-playing" : ""}>
-                            <td>{row.rank}</td>
-                            <td>{row.teamName}{isPlaying ? " ·" : ""}</td>
-                            <td>{row.played}</td>
-                            <td>{row.win}/{row.draw}/{row.lose}</td>
-                            <td><strong>{row.points}</strong></td>
-                            <td>{row.goalsDiff > 0 ? `+${row.goalsDiff}` : row.goalsDiff}</td>
-                            <td>{row.description ?? "—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <p className="secret-note">{match.groupStandings[0]?.group}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="intel-section">
-              <h3>懂球帝实力对比</h3>
-              {(() => {
-                const c = match.dongqiudiComparison;
-                if (!c) return <p className="muted">暂无懂球帝对比数据</p>;
-                const rows: Array<{ label: string; pair: { home: string; away: string } | null }> = [
-                  { label: "综合实力", pair: c.comprehensive },
-                  { label: "近6场交锋", pair: c.h2h },
-                  { label: "近10场战绩", pair: c.recentForm },
-                  { label: "场均进球", pair: c.avgGoals },
-                  { label: "场均失球", pair: c.avgConceded },
-                  { label: "身价", pair: c.marketValue },
-                  { label: "场均红黄牌", pair: c.cards }
-                ];
-                const present = rows.filter((r) => r.pair);
-                if (present.length === 0) return <p className="muted">暂无懂球帝对比数据</p>;
-                return (
-                  <table className="intel-compare-table">
-                    <thead>
-                      <tr><th>指标</th><th>{match.homeTeamName || "主"}</th><th>{match.awayTeamName || "客"}</th></tr>
-                    </thead>
-                    <tbody>
-                      {present.map((r) => (
-                        <tr key={r.label}>
-                          <td>{r.label}</td>
-                          <td>{r.pair?.home || "—"}</td>
-                          <td>{r.pair?.away || "—"}</td>
+                <h3>{match.stage.startsWith("Group Stage") ? "小组出线形势" : "小组赛积分（淘汰赛参考）"}</h3>
+                {match.groupStandings.length === 0 ? (
+                  <p className="muted">{match.stage.startsWith("Group Stage") ? "暂无小组积分数据" : "暂无小组赛积分数据"}</p>
+                ) : (
+                  <div className="table-scroll">
+                    <table className="intel-standings-table">
+                      <thead>
+                        <tr>
+                          <th>排名</th>
+                          <th>球队</th>
+                          <th>赛</th>
+                          <th>胜/平/负</th>
+                          <th>积分</th>
+                          <th>净胜球</th>
+                          {match.stage.startsWith("Group Stage") ? <th>状态</th> : null}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                );
-              })()}
+                      </thead>
+                      <tbody>
+                        {match.groupStandings.map((row) => {
+                          const isPlaying = row.teamName === match.homeTeamName || row.teamName === match.awayTeamName;
+                          return (
+                            <tr key={`${row.group}-${row.teamId}`} className={isPlaying ? "intel-standings-playing" : ""}>
+                              <td>{row.rank}</td>
+                              <td>{row.teamName}{isPlaying ? " ·" : ""}</td>
+                              <td>{row.played}</td>
+                              <td>{row.win}/{row.draw}/{row.lose}</td>
+                              <td><strong>{row.points}</strong></td>
+                              <td>{row.goalsDiff > 0 ? `+${row.goalsDiff}` : row.goalsDiff}</td>
+                              {match.stage.startsWith("Group Stage") ? <td>{row.description ?? "—"}</td> : null}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {match.stage.startsWith("Group Stage") ? <p className="secret-note">{match.groupStandings[0]?.group}</p> : null}
+                  </div>
+                )}
+              </div>
+
+              <div className="intel-section">
+                <h3>懂球帝实力对比</h3>
+                {(() => {
+                  const c = match.dongqiudiComparison;
+                  if (!c) return <p className="muted">暂无懂球帝对比数据</p>;
+                  const rows: Array<{ label: string; pair: { home: string; away: string } | null }> = [
+                    { label: "综合实力", pair: c.comprehensive },
+                    { label: "近6场交锋", pair: c.h2h },
+                    { label: "近10场战绩", pair: c.recentForm },
+                    { label: "场均进球", pair: c.avgGoals },
+                    { label: "场均失球", pair: c.avgConceded },
+                    { label: "身价", pair: c.marketValue },
+                    { label: "场均红黄牌", pair: c.cards }
+                  ];
+                  const present = rows.filter((r) => r.pair);
+                  if (present.length === 0) return <p className="muted">暂无懂球帝对比数据</p>;
+                  return (
+                    <table className="intel-compare-table">
+                      <thead>
+                        <tr><th>指标</th><th>{match.homeTeamName || "主"}</th><th>{match.awayTeamName || "客"}</th></tr>
+                      </thead>
+                      <tbody>
+                        {present.map((r) => (
+                          <tr key={r.label}>
+                            <td>{r.label}</td>
+                            <td>{r.pair?.home || "—"}</td>
+                            <td>{r.pair?.away || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
               </div>
             </div>
 

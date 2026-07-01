@@ -269,6 +269,7 @@ function formatGroupStandings(value: unknown): BattleContextMatchSummary["groupS
 
 export interface BattleContextMatchSummary {
   matchId: string;
+  stage: string;
   homeTeamName: string;
   awayTeamName: string;
   kickoffAt: string;
@@ -381,6 +382,7 @@ export function getBattleContextSummary(round: BettingArenaRoundDto | null | und
     return [
       {
         matchId: readString(match.matchId),
+        stage: readString(match.stage),
         homeTeamName: readString(match.homeTeamName),
         awayTeamName: readString(match.awayTeamName),
         kickoffAt: readString(match.kickoffAt),

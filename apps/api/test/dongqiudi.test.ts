@@ -139,7 +139,7 @@ describe("DongqiudiClient", () => {
     const result = await client.getImportantMatches({ tabId: 70 });
 
     expect(result).toEqual([
-      { matchId: 54329952, homeTeamName: "厄瓜多尔", awayTeamName: "德国", kickoffAt: "2026-06-25 20:00:00", status: "Fixture" }
+      { matchId: 54329952, homeTeamName: "厄瓜多尔", awayTeamName: "德国", kickoffAt: "2026-06-25 20:00:00", status: "Fixture", competitionName: "", roundName: "" }
     ]);
     expect(spy).toHaveBeenCalledWith(
       "https://m.dongqiudi.com/match/70",
@@ -192,7 +192,9 @@ describe("Dongqiudi mapping sync", () => {
           homeTeamName: "德国",
           awayTeamName: "日本",
           kickoffAt: "2026-06-22 18:00:00",
-          status: "Fixture"
+          status: "Fixture",
+          competitionName: "世界杯",
+          roundName: "小组赛"
         }
       ])
     };
@@ -218,7 +220,9 @@ describe("Dongqiudi mapping sync", () => {
           homeTeamName: "未知球队",
           awayTeamName: "另一支球队",
           kickoffAt: "2026-06-22 18:00:00",
-          status: "Fixture"
+          status: "Fixture",
+          competitionName: "世界杯",
+          roundName: "小组赛"
         }
       ])
     };
